@@ -70,6 +70,7 @@ assert_true(!$spipedKeyResult['saved'], 'spiped jobs must not be saved without a
 assert_error_contains($spipedKeyResult, 'spiped key path is required when any ZFS send job uses spiped transport.', 'spiped missing-key validation should explain the required local key path.');
 
 $validSsh = base_post('ssh');
+$validSsh['config_revision'] = zfsas_config_revision($configDir);
 $validSsh['send_ssh_host'] = 'receiver.example.test';
 $validSsh['send_ssh_port'] = '22';
 $validSsh['send_ssh_user'] = 'root';

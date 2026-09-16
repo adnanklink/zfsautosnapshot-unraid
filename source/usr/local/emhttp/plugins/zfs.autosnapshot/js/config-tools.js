@@ -8,7 +8,9 @@
     var prefix = form.elements[options.prefixField];
     var status = panel.querySelector('[data-dirty]');
     var feedback = panel.querySelector('[data-prefix-feedback]');
-    function values() { return JSON.stringify(Array.from(new FormData(form).entries()).filter(function (p) { return p[0] !== 'csrf_token'; })); }
+    function values() { return JSON.stringify(Array.from(new FormData(form).entries()).filter(function (p) { if (p[0] === 'csrf_token') return false;
+        var dataset = p[0].match(/^dataset_(?:name|threshold)\[(\d+)\]$/);
+        return !dataset || form.elements['dataset_selected[' + dataset[1] + ']']?.checked; })); }
     var baseline = values();
     function update() {
       status.textContent = values() === baseline ? 'All changes saved.' : 'Unsaved changes — choose Save to apply.';

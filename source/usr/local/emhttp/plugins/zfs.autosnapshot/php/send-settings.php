@@ -34,7 +34,8 @@ $isPostRequest = (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST');
 $isAjaxSaveRequest = ((defined('ZFSAS_FORCE_SEND_AJAX_SAVE') && ZFSAS_FORCE_SEND_AJAX_SAVE) || ($isPostRequest && zfsas_send_is_ajax_request()));
 $defaultReturnUrl = zfsas_send_current_page_url('/plugins/zfs.autosnapshot/php/send-settings.php');
 
-$config = zfsas_send_parse_config_file($configFile, $defaults);
+$pageConfig = zfsas_config_read_pair($configDir);
+$config = $pageConfig['send'];
 $errors = [];
 $notices = [];
 $parseErrors = [];
@@ -44,7 +45,7 @@ $formJobs = $jobs;
 $queueJobs = zfsas_ops_recent_send_jobs(120);
 $pendingDeleteCount = zfsas_ops_pending_delete_job_count();
 $datasetDiscoveryError = null;
-$availableDatasets = zfsas_send_list_zfs_datasets($datasetDiscoveryError);
+$availableDatasets = array_values(array_unique(array_column($jobs, 'source')));
 
 if (($_GET['saved'] ?? '') === '1' && !$isPostRequest) {
     $notices[] = 'ZFS send settings saved and schedule applied.';
@@ -491,7 +492,7 @@ if ($isPostRequest) {
   <?php endif; ?>
 
   <form method="post" action="<?php echo zfsas_send_h($saveApiUrl); ?>" data-ajax-action="<?php echo zfsas_send_h($saveApiUrl); ?>" id="zfsas_send_form">
-    <?php echo zfsas_config_tools_markup('send', $configDir); ?>
+    <?php echo zfsas_config_tools_markup('send', $configDir, $pageConfig); ?>
     <input type="hidden" name="return_to" value="<?php echo zfsas_send_h($defaultReturnUrl); ?>">
     <?php if ($csrfToken !== '') : ?>
     <input type="hidden" name="csrf_token" value="<?php echo zfsas_send_h($csrfToken); ?>">
@@ -617,7 +618,7 @@ if ($isPostRequest) {
 
       <div class="zfsas-send-add-row">
         <div class="zfsas-send-field">
-          <label for="new_job_source">Source dataset</label>
+          <p id="dataset-discovery-status" class="zfsas-send-help"></p><label for="new_job_source">Source dataset</label>
           <select id="new_job_source" name="new_job_source" class="zfsas-send-select">
             <option value="">Select source dataset</option>
             <?php foreach ($availableDatasets as $dataset) : ?>
@@ -1644,5 +1645,6 @@ if ($isPostRequest) {
     startQueueUpdates();
   })();
 </script>
+<script src="/plugins/zfs.autosnapshot/js/dataset-discovery.js"></script>
 </body>
 </html>

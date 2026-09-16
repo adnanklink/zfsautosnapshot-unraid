@@ -40,8 +40,8 @@ function sendEvent($event, $payload)
     @flush();
 }
 
-ignore_user_abort(true);
-@set_time_limit(0);
+ignore_user_abort(false);
+@set_time_limit(20);
 
 if (!headers_sent()) {
     header('Content-Type: text/event-stream; charset=UTF-8');
@@ -55,31 +55,4 @@ if (!headers_sent()) {
 list($logType, $logFile) = zfsas_log_resolve_type_and_file($_GET['type'] ?? 'summary', $summaryLogFile, $debugLogFile);
 $lineCount = (int) ($_GET['lines'] ?? 400);
 
-$maxSeconds = 55;
-$startedAt = time();
-$lastFingerprint = '';
-
-while (true) {
-    if (connection_aborted()) {
-        break;
-    }
-
-    $payload = buildPayload($logFile, $logType, $lineCount);
-    $fingerprint = (string) ($payload['mtime'] ?? 0)
-        . ':' . (string) ($payload['size'] ?? 0)
-        . ':' . strlen((string) ($payload['content'] ?? ''))
-        . ':' . md5((string) ($payload['content'] ?? ''));
-
-    if ($fingerprint !== $lastFingerprint) {
-        sendEvent('payload', $payload);
-        $lastFingerprint = $fingerprint;
-    } else {
-        sendEvent('ping', ['ts' => time()]);
-    }
-
-    if ((time() - $startedAt) >= $maxSeconds) {
-        break;
-    }
-
-    sleep(1);
-}
+sendEvent('payload', buildPayload($logFile, $logType, $lineCount));

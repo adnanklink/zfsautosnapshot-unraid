@@ -11,8 +11,8 @@ function zfsas_send_stream_emit($event, $payload)
 
 @ini_set('zlib.output_compression', '0');
 @ini_set('output_buffering', '0');
-@set_time_limit(0);
-ignore_user_abort(true);
+@set_time_limit(20);
+ignore_user_abort(false);
 
 header('Content-Type: text/event-stream');
 header('Cache-Control: no-cache, no-store, must-revalidate');
@@ -37,30 +37,4 @@ if (!zfsas_ops_ensure_storage_dirs()) {
     exit;
 }
 
-$lastHash = '';
-$lastHeartbeat = time();
-
-while (!connection_aborted()) {
-    clearstatcache();
-    $payload = zfsas_ops_send_queue_status_payload(120);
-    $encoded = json_encode($payload, JSON_UNESCAPED_SLASHES);
-    $hash = sha1((string) $encoded);
-    $now = time();
-
-    if ($hash !== $lastHash) {
-        echo "event: queue\n";
-        echo 'data: ' . $encoded . "\n\n";
-        @ob_flush();
-        flush();
-        $lastHash = $hash;
-        $lastHeartbeat = $now;
-    } elseif (($now - $lastHeartbeat) >= 15) {
-        zfsas_send_stream_emit('heartbeat', [
-            'ok' => true,
-            'ts' => $now,
-        ]);
-        $lastHeartbeat = $now;
-    }
-
-    sleep(1);
-}
+zfsas_send_stream_emit('queue', zfsas_ops_send_queue_status_payload(120));

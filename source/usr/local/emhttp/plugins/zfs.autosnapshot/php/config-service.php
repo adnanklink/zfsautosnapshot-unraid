@@ -77,13 +77,25 @@ function zfsas_config_save($kind, $dir, array $submitted, $revision, $render, $s
     } finally { flock($lock, LOCK_UN); fclose($lock); }
 }
 
-function zfsas_config_tools_markup($kind, $dir)
+function zfsas_config_read_pair($dir)
 {
-    $other = $kind === 'send' ? zfsas_read_auto_snapshot_prefix($dir)
-        : zfsas_send_parse_config_file($dir . '/zfs_send.conf', zfsas_send_defaults())['SEND_SNAPSHOT_PREFIX'];
+    if (!is_dir($dir)) { @mkdir($dir, 0775, true); }
+    $lock = @fopen($dir . '/config.lock', 'c');
+    if (!$lock || !flock($lock, LOCK_SH)) { throw new RuntimeException('Unable to read configuration under its lock.'); }
+    try {
+        return ['auto' => zfsas_send_parse_config_file($dir . '/zfs_autosnapshot.conf', zfsas_auto_defaults()),
+            'send' => zfsas_send_parse_config_file($dir . '/zfs_send.conf', zfsas_send_defaults()),
+            'revision' => zfsas_config_revision($dir)];
+    } finally { flock($lock, LOCK_UN); fclose($lock); }
+}
+
+function zfsas_config_tools_markup($kind, $dir, $pair = null)
+{
+    $pair = $pair ?? zfsas_config_read_pair($dir);
+    $other = $kind === 'send' ? $pair['auto']['PREFIX'] : $pair['send']['SEND_SNAPSHOT_PREFIX'];
     $options = ['defaults' => zfsas_tuning_defaults($kind), 'otherPrefix' => $other,
         'prefixField' => $kind === 'send' ? 'send_snapshot_prefix' : 'prefix'];
-    return '<input type="hidden" name="config_revision" value="' . zfsas_config_revision($dir) . '">'
+    return '<input type="hidden" name="config_revision" value="' . $pair['revision'] . '">'
         . '<div data-config-tools="' . htmlspecialchars(json_encode($options), ENT_QUOTES, 'UTF-8') . '">'
         . '<button type="button" class="btn" data-restore-tuning>Restore tuning defaults</button> '
         . '<span data-dirty role="status"></span><p data-prefix-feedback role="status"></p>'

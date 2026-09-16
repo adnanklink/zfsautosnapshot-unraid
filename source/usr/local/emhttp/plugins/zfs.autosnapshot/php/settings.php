@@ -728,13 +728,14 @@ $isAjaxSaveRequest = ((defined('ZFSAS_FORCE_AJAX_SAVE') && ZFSAS_FORCE_AJAX_SAVE
 $installedVersion = $isAjaxSaveRequest ? '' : detectInstalledPluginVersion($pluginName);
 $defaultSettingsReturnUrl = pluginSettingsPageUrl($settingsPagePath, ['saved' => null]);
 
-$config = parseConfigFile($configFile, $defaults);
+$pageConfig = zfsas_config_read_pair($configDir);
+$config = array_merge($defaults, $pageConfig['auto']);
 $errors = [];
 $notices = [];
 $datasetParseWarnings = [];
 $configuredDatasetMap = parseDatasetsCsv($config['DATASETS'], $datasetParseWarnings);
 $availableDatasets = [];
-$sendConfig = zfsas_send_parse_config_file($sendConfigFile, $sendDefaults);
+$sendConfig = $pageConfig['send'];
 $sendParseErrors = [];
 $sendParseWarnings = [];
 $sendJobs = zfsas_send_parse_jobs($sendConfig['SEND_JOBS'] ?? '', $sendParseErrors, $sendParseWarnings);
@@ -753,16 +754,9 @@ $datasetDiscoveryError = null;
 $datasetRows = [];
 $datasetPools = [];
 
-if ($isAjaxSaveRequest) {
-    $datasetRows = buildDatasetRows([], $configuredDatasetMap, $sendDestinationDatasets);
-    $datasetPools = buildDatasetPools($datasetRows);
-} else {
-    $availableDatasets = listZfsDatasets($datasetDiscoveryError);
-    $sendDestinationCandidates = array_values(array_unique(array_merge($availableDatasets, array_keys($configuredDatasetMap))));
-    $sendDestinationDatasets = zfsas_send_destination_datasets_from_jobs($sendJobs, $sendDestinationCandidates);
-    $datasetRows = buildDatasetRows($availableDatasets, $configuredDatasetMap, $sendDestinationDatasets);
-    $datasetPools = buildDatasetPools($datasetRows);
-}
+// Render saved selections immediately; ZFS discovery is a bounded asynchronous request.
+$datasetRows = buildDatasetRows([], $configuredDatasetMap, $sendDestinationDatasets);
+$datasetPools = buildDatasetPools($datasetRows);
 
 if (!$isAjaxSaveRequest && !empty($datasetParseWarnings)) {
     foreach ($datasetParseWarnings as $warning) {
@@ -1651,7 +1645,7 @@ $renderStandalonePage = !empty($GLOBALS['zfsas_render_standalone_page']);
   <?php endif; ?>
 
   <form method="post" action="<?php echo h($saveApiUrl); ?>" data-ajax-action="<?php echo h($saveApiUrl); ?>" id="zfsas_settings_form">
-    <?php echo zfsas_config_tools_markup('auto', $configDir); ?>
+    <?php echo zfsas_config_tools_markup('auto', $configDir, $pageConfig); ?>
     <input type="hidden" name="return_to" value="<?php echo h($defaultSettingsReturnUrl); ?>">
     <?php if ($csrfToken !== '') : ?>
     <input type="hidden" name="csrf_token" value="<?php echo h($csrfToken); ?>">
@@ -1670,13 +1664,10 @@ $renderStandalonePage = !empty($GLOBALS['zfsas_render_standalone_page']);
           Check the datasets you want this plugin to manage. Only checked datasets are included in automated snapshot cleanup and creation.
         </div>
 
-        <?php if (count($datasetRows) === 0) : ?>
-          <div class="zfsas-empty">
-            No ZFS datasets were found. Create a dataset first, then reload this page.
-          </div>
-        <?php else : ?>
+        <p id="dataset-discovery-status" class="zfsas-help">Saved selections are shown while datasets load.</p>
           <div class="zfsas-dataset-toolbar">
             <div class="zfsas-pool-filter">
+              <label for="dataset_name_filter">Dataset search</label><input id="dataset_name_filter" type="search" class="zfsas-input">
               <label for="dataset_pool_filter">Pool</label>
               <select id="dataset_pool_filter" class="zfsas-select">
                 <option value="__all">All pools</option>
@@ -1703,7 +1694,7 @@ $renderStandalonePage = !empty($GLOBALS['zfsas_render_standalone_page']);
                   <th class="zfsas-threshold-col">Pool free-space target</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody id="async-dataset-rows">
                 <?php foreach ($datasetRows as $index => $row) : ?>
                   <tr class="zfsas-dataset-row<?php echo !empty($row['locked']) ? ' zfsas-row-locked' : ''; ?>" data-pool="<?php echo h($row['pool']); ?>">
                     <td class="zfsas-center">
@@ -1719,7 +1710,7 @@ $renderStandalonePage = !empty($GLOBALS['zfsas_render_standalone_page']);
                             <span class="zfsas-badge">Reserved for ZFS Send destination</span>
                           <?php endif; ?>
                           <?php if (!$row['available']) : ?>
-                            <span class="zfsas-badge">Not currently detected</span>
+                            <span class="zfsas-badge" data-undetected>Not currently detected</span>
                           <?php endif; ?>
                         </div>
                       </div>
@@ -1733,7 +1724,6 @@ $renderStandalonePage = !empty($GLOBALS['zfsas_render_standalone_page']);
               </tbody>
             </table>
           </div>
-        <?php endif; ?>
 
         <div class="zfsas-field" style="margin-top: 14px;">
           <label for="prefix">Snapshot name prefix</label>
@@ -2008,9 +1998,6 @@ $renderStandalonePage = !empty($GLOBALS['zfsas_render_standalone_page']);
   var sendSettingsUrl = <?php echo json_encode($sendSettingsUrl); ?>;
   var migrateDatasetsUrl = <?php echo json_encode($migrateDatasetsUrl); ?>;
   var snapshotManagerEmbeddedUrl = <?php echo json_encode($snapshotManagerEmbeddedUrl); ?>;
-  var snapshotManagerListUrl = <?php echo json_encode($snapshotManagerListUrl); ?>;
-  var snapshotManagerDatasetUrl = <?php echo json_encode($snapshotManagerDatasetUrl); ?>;
-  var snapshotManagerActionUrl = <?php echo json_encode($snapshotManagerActionUrl); ?>;
   var initialSection = <?php echo json_encode($initialSection); ?>;
   var logView = 'summary';
   var logPaused = false;
@@ -2024,10 +2011,6 @@ $renderStandalonePage = !empty($GLOBALS['zfsas_render_standalone_page']);
   var saveSuccessTimer = null;
   var sectionTabs = document.querySelectorAll('.zfsas-section-tab');
   var sectionPanels = document.querySelectorAll('.zfsas-section-panel');
-  var snapshotManagerLoaded = false;
-  var snapshotManagerLoading = false;
-  var snapshotManagerCurrentDataset = '';
-  var snapshotManagerSelection = {};
   var snapshotManagerFrame = byId('snapshot_manager_frame');
   var snapshotManagerFrameLoaded = false;
 
@@ -2057,6 +2040,7 @@ $renderStandalonePage = !empty($GLOBALS['zfsas_render_standalone_page']);
       panel.hidden = !isActive;
     });
 
+    snapshotManagerFrame?.contentWindow?.postMessage({type: 'zfsas:snapshot-manager:visibility', visible: sectionName === 'snapshot-manager'}, window.location.origin);
     if (sectionName === 'snapshot-manager') {
       ensureSnapshotManagerEmbeddedLoaded();
     }
@@ -2091,274 +2075,6 @@ $renderStandalonePage = !empty($GLOBALS['zfsas_render_standalone_page']);
     snapshotManagerFrame.src = src;
   }
 
-  function snapshotManagerDatasetRowsEl() {
-    return byId('snapshot_manager_dataset_rows');
-  }
-
-  function snapshotManagerSnapshotRowsEl() {
-    return byId('snapshot_manager_snapshot_rows');
-  }
-
-  function setSnapshotManagerToolbarStatus(message, isError) {
-    var el = byId('snapshot_manager_toolbar_status');
-    if (!el) {
-      return;
-    }
-    el.textContent = message;
-    el.classList.toggle('error', !!isError);
-  }
-
-  function renderSnapshotManagerFeedback(messages, isError) {
-    var el = byId('snapshot_manager_feedback');
-    if (!el) {
-      return;
-    }
-
-    if (!Array.isArray(messages) || messages.length === 0) {
-      el.innerHTML = '';
-      return;
-    }
-
-    var html = '<div class="zfsas-alert ' + (isError ? 'zfsas-alert-error' : 'zfsas-alert-warn') + '">';
-    messages.forEach(function (message) {
-      html += '<div>' + escapeHtml(message) + '</div>';
-    });
-    html += '</div>';
-    el.innerHTML = html;
-  }
-
-  function snapshotManagerSelectedSnapshots() {
-    return Object.keys(snapshotManagerSelection).filter(function (key) {
-      return !!snapshotManagerSelection[key];
-    });
-  }
-
-  function refreshSnapshotManagerBulkCount() {
-    var el = byId('snapshot_manager_bulk_count');
-    if (!el) {
-      return;
-    }
-
-    if (!snapshotManagerCurrentDataset) {
-      el.textContent = 'No dataset selected.';
-      return;
-    }
-
-    var selectedCount = snapshotManagerSelectedSnapshots().length;
-    var pendingRow = byId('snapshot_manager_dataset_title');
-    var label = selectedCount + ' snapshot' + (selectedCount === 1 ? '' : 's') + ' selected';
-    if (pendingRow && pendingRow.textContent) {
-      label += ' on ' + pendingRow.textContent + '.';
-    }
-    el.textContent = label;
-  }
-
-  function closeSnapshotManagerDrawer() {
-    var drawer = byId('snapshot_manager_drawer');
-    var backdrop = byId('snapshot_manager_backdrop');
-    if (drawer) {
-      drawer.hidden = true;
-    }
-    if (backdrop) {
-      backdrop.hidden = true;
-    }
-    snapshotManagerSelection = {};
-    refreshSnapshotManagerBulkCount();
-  }
-
-  function openSnapshotManagerDrawer() {
-    var drawer = byId('snapshot_manager_drawer');
-    var backdrop = byId('snapshot_manager_backdrop');
-    if (drawer) {
-      drawer.hidden = false;
-    }
-    if (backdrop) {
-      backdrop.hidden = false;
-    }
-  }
-
-  function snapshotManagerDatasetStatusHtml(row) {
-    var label = 'Idle';
-    var classes = ['zfsas-sm-status-chip'];
-
-    if (row.lastError) {
-      label = row.lastError;
-      classes.push('is-error');
-    } else if (row.busy && row.currentAction) {
-      label = row.currentAction;
-      classes.push('is-busy');
-    } else if (row.pendingCount > 0) {
-      label = row.pendingCount + ' queued';
-      classes.push('is-busy');
-    } else if (row.lastMessage) {
-      label = row.lastMessage;
-    }
-
-    return '<span class="' + classes.join(' ') + '">' + escapeHtml(label) + '</span>';
-  }
-
-  function renderSnapshotManagerDatasets(datasets) {
-    var tbody = snapshotManagerDatasetRowsEl();
-    if (!tbody) {
-      return;
-    }
-
-    if (!Array.isArray(datasets) || datasets.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" class="zfsas-help">No datasets were found for Snapshot Manager.</td></tr>';
-      return;
-    }
-
-    var html = '';
-    datasets.forEach(function (row) {
-      html += '<tr data-dataset="' + escapeHtml(row.dataset) + '">';
-      html += '<td><code>' + escapeHtml(row.dataset) + '</code></td>';
-      html += '<td class="zfsas-center">' + String(row.snapshotCount || 0) + '</td>';
-      html += '<td>' + snapshotManagerDatasetStatusHtml(row) + '</td>';
-      html += '<td><button type="button" class="btn snapshot-manager-open" data-dataset="' + escapeHtml(row.dataset) + '">Manage</button></td>';
-      html += '</tr>';
-    });
-
-    tbody.innerHTML = html;
-  }
-
-  function ensureSnapshotManagerLoaded() {
-    if (snapshotManagerLoaded || snapshotManagerLoading) {
-      return;
-    }
-    loadSnapshotManagerDatasets();
-  }
-
-  function loadSnapshotManagerDatasets() {
-    snapshotManagerLoading = true;
-    setSnapshotManagerToolbarStatus('Loading dataset snapshot counts...', false);
-
-    requestJson(
-      snapshotManagerListUrl + '?_=' + Date.now(),
-      function (data) {
-        snapshotManagerLoading = false;
-        snapshotManagerLoaded = true;
-        renderSnapshotManagerDatasets(data.datasets || []);
-        setSnapshotManagerToolbarStatus('Snapshot Manager dataset list refreshed.', false);
-      },
-      function (error) {
-        snapshotManagerLoading = false;
-        snapshotManagerLoaded = false;
-        renderSnapshotManagerDatasets([]);
-        setSnapshotManagerToolbarStatus('Snapshot Manager load failed: ' + error.message, true);
-      }
-    );
-  }
-
-  function renderSnapshotRows(dataset, snapshots, status) {
-    var tbody = snapshotManagerSnapshotRowsEl();
-    if (!tbody) {
-      return;
-    }
-
-    if (!Array.isArray(snapshots) || snapshots.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" class="zfsas-help">No snapshots were found for this dataset.</td></tr>';
-      return;
-    }
-
-    var html = '';
-    snapshots.forEach(function (row) {
-      var isSelected = !!snapshotManagerSelection[row.snapshot];
-      var holdLabel = row.held ? 'Release' : 'Hold';
-      var deleteDisabled = row.sendProtected ? ' disabled' : '';
-      var rollbackDisabled = row.sendProtected ? ' disabled' : '';
-      html += '<tr data-snapshot="' + escapeHtml(row.snapshot) + '">';
-      html += '<td class="zfsas-select-cell"><input type="checkbox" class="snapshot-manager-select" value="' + escapeHtml(row.snapshot) + '"' + (isSelected ? ' checked' : '') + '></td>';
-      html += '<td><code>' + escapeHtml(row.snapshotName) + '</code><div class="zfsas-sm-snapshot-meta">';
-      if (row.sendProtected) {
-        html += '<span class="zfsas-sm-meta-chip is-protected">Protected send checkpoint</span>';
-      }
-      if (row.held) {
-        html += '<span class="zfsas-sm-meta-chip">Held: ' + escapeHtml((row.holdTags || []).join(', ') || 'yes') + '</span>';
-      }
-      html += '</div></td>';
-      html += '<td>' + escapeHtml(row.createdText) + '</td>';
-      html += '<td class="zfsas-center">' + escapeHtml(row.usedText) + '</td>';
-      html += '<td class="zfsas-center">' + escapeHtml(row.writtenText) + '</td>';
-      html += '<td class="zfsas-center">' + String(row.userrefs || 0) + '</td>';
-      html += '<td class="zfsas-actions-cell">';
-      html += '<button type="button" class="btn snapshot-manager-row-action" data-action="rollback" data-snapshot="' + escapeHtml(row.snapshot) + '"' + rollbackDisabled + '>Rollback</button>';
-      html += '<button type="button" class="btn snapshot-manager-row-action" data-action="delete" data-snapshot="' + escapeHtml(row.snapshot) + '"' + deleteDisabled + '>Delete</button>';
-      html += '<button type="button" class="btn snapshot-manager-row-action" data-action="' + (row.held ? 'release' : 'hold') + '" data-snapshot="' + escapeHtml(row.snapshot) + '">' + holdLabel + '</button>';
-      html += '<button type="button" class="btn snapshot-manager-row-action" data-action="send" data-snapshot="' + escapeHtml(row.snapshot) + '">Send</button>';
-      html += '</td>';
-      html += '</tr>';
-    });
-
-    tbody.innerHTML = html;
-
-    var titleEl = byId('snapshot_manager_dataset_title');
-    if (titleEl) {
-      titleEl.textContent = dataset;
-    }
-
-    var subtitleParts = ['Snapshots listed oldest to newest.'];
-    if (status && status.pending_count > 0) {
-      subtitleParts.push(String(status.pending_count) + ' queued operation(s).');
-    } else if (status && status.current_action_label) {
-      subtitleParts.push(status.current_action_label + ' is running.');
-    }
-    var subtitleEl = byId('snapshot_manager_dataset_subtitle');
-    if (subtitleEl) {
-      subtitleEl.textContent = subtitleParts.join(' ');
-    }
-
-    var selectAllEl = byId('snapshot_manager_select_all');
-    if (selectAllEl) {
-      selectAllEl.checked = false;
-    }
-  }
-
-  function loadSnapshotManagerDataset(dataset) {
-    snapshotManagerCurrentDataset = dataset;
-    snapshotManagerSelection = {};
-    refreshSnapshotManagerBulkCount();
-    renderSnapshotManagerFeedback([], false);
-    openSnapshotManagerDrawer();
-    renderSnapshotRows(dataset, [], null);
-
-    requestJson(
-      snapshotManagerDatasetUrl + '?dataset=' + encodeURIComponent(dataset) + '&_=' + Date.now(),
-      function (data) {
-        renderSnapshotRows(dataset, data.snapshots || [], data.status || null);
-        refreshSnapshotManagerBulkCount();
-      },
-      function (error) {
-        renderSnapshotManagerFeedback(['Unable to load snapshots for ' + dataset + ': ' + error.message], true);
-      }
-    );
-  }
-
-  function requestSnapshotManagerAction(body, onSuccess) {
-    requestJsonPost(
-      snapshotManagerActionUrl,
-      body,
-      function (data) {
-        renderSnapshotManagerFeedback([data.message || 'Snapshot manager action accepted.'], false);
-        loadSnapshotManagerDatasets();
-        if (snapshotManagerCurrentDataset) {
-          window.setTimeout(function () {
-            loadSnapshotManagerDataset(snapshotManagerCurrentDataset);
-          }, 400);
-        }
-        if (typeof onSuccess === 'function') {
-          onSuccess(data);
-        }
-      },
-      function (error, payload) {
-        if (payload && payload.error) {
-          renderSnapshotManagerFeedback([payload.error], true);
-        } else {
-          renderSnapshotManagerFeedback([error.message], true);
-        }
-      }
-    );
-  }
-
   function requestTargetUrl(form) {
     var action = form ? form.getAttribute('action') : '';
     if (typeof action === 'string' && action.trim() !== '') {
@@ -2382,6 +2098,9 @@ $renderStandalonePage = !empty($GLOBALS['zfsas_render_standalone_page']);
       html += '</div>';
     }
 
+    if (Array.isArray(notices) && notices.length > 0) {
+      html += '<div class="zfsas-alert">' + notices.map(escapeHtml).join('<br>') + '</div>';
+    }
     feedbackEl.innerHTML = html;
   }
 
@@ -2744,7 +2463,9 @@ $renderStandalonePage = !empty($GLOBALS['zfsas_render_standalone_page']);
 
     rows.forEach(function (row) {
       var rowPool = row.getAttribute('data-pool') || '';
-      var shouldShow = (selectedPool === '__all' || rowPool === selectedPool);
+      var query = (byId('dataset_name_filter').value || '').toLowerCase();
+      var name = row.querySelector('input[type="hidden"]').value.toLowerCase();
+      var shouldShow = (selectedPool === '__all' || rowPool === selectedPool) && name.indexOf(query) !== -1;
       row.classList.toggle('zfsas-row-hidden', !shouldShow);
     });
   }
@@ -3061,10 +2782,15 @@ $renderStandalonePage = !empty($GLOBALS['zfsas_render_standalone_page']);
     );
   }
 
+  var logRequestBusy = false;
+  var logRequestGeneration = 0;
   function fetchLiveLog(forceScrollToBottom) {
+    if (logRequestBusy || document.hidden) { return; }
+    var generation = logRequestGeneration;
+    logRequestBusy = true;
     var outputEl = byId('log_output');
     if (!outputEl) {
-      return;
+      logRequestBusy = false; return;
     }
 
     setLogStatus((logPaused ? 'Paused' : 'Updating') + ' ' + currentLogViewLabel() + '...', false);
@@ -3072,10 +2798,12 @@ $renderStandalonePage = !empty($GLOBALS['zfsas_render_standalone_page']);
     requestJson(
       buildLogApiUrl(false),
       function (data) {
-        applyLogPayload(data, forceScrollToBottom);
+        logRequestBusy = false;
+        if (generation === logRequestGeneration) { applyLogPayload(data, forceScrollToBottom); }
       },
       function (error) {
-        setLogStatus('Log refresh failed: ' + error.message, true);
+        logRequestBusy = false;
+        if (generation === logRequestGeneration) { setLogStatus('Log refresh failed: ' + error.message, true); }
       }
     );
   }
@@ -3105,45 +2833,10 @@ $renderStandalonePage = !empty($GLOBALS['zfsas_render_standalone_page']);
     }
   }
 
-  function startLogStream() {
-    if (typeof window.EventSource !== 'function') {
-      return false;
-    }
-
-    stopLogStream();
-    stopLogPolling();
-
-    try {
-      logStreamSource = new EventSource(buildLogStreamUrl());
-    } catch (error) {
-      logStreamSource = null;
-      return false;
-    }
-
-    function handleStreamPayload(event) {
-      var payload;
-      try {
-        payload = JSON.parse(String(event.data || ''));
-      } catch (parseError) {
-        return;
-      }
-      applyLogPayload(payload, false);
-    }
-
-    logStreamSource.addEventListener('payload', handleStreamPayload);
-    logStreamSource.onmessage = handleStreamPayload;
-
-    logStreamSource.onerror = function () {
-      stopLogStream();
-      setLogStatus('Live stream interrupted. Falling back to refresh mode...', true);
-      startLogPolling();
-      fetchLiveLog(false);
-    };
-
-    return true;
-  }
+  function startLogStream() { return false; }
 
   function restartLogTransport(forceScrollToBottom) {
+    logRequestGeneration++;
     stopLogStream();
     stopLogPolling();
 
@@ -3205,6 +2898,9 @@ $renderStandalonePage = !empty($GLOBALS['zfsas_render_standalone_page']);
     });
   }
 
+  document.addEventListener('zfsas:datasets-ready', function () { byId('dataset-discovery-status').textContent = ''; applyPoolFilter(); refreshDatasetCount(); });
+  byId('dataset_name_filter').addEventListener('input', function () { applyPoolFilter(); refreshDatasetCount(); });
+  byId('async-dataset-rows').addEventListener('change', refreshDatasetCount);
   var datasetBoxes = document.querySelectorAll('.zfsas-dataset-checkbox');
   datasetBoxes.forEach(function (box) {
     if (box.disabled) {
@@ -3289,7 +2985,7 @@ $renderStandalonePage = !empty($GLOBALS['zfsas_render_standalone_page']);
   }
 
   window.addEventListener('message', function (event) {
-    if (event.origin !== window.location.origin) {
+    if (event.origin !== window.location.origin || event.source !== snapshotManagerFrame?.contentWindow) {
       return;
     }
 
@@ -3303,195 +2999,6 @@ $renderStandalonePage = !empty($GLOBALS['zfsas_render_standalone_page']);
       snapshotManagerFrame.style.height = Math.max(nextHeight, 980) + 'px';
     }
   });
-
-  var snapshotManagerRefreshBtn = byId('snapshot_manager_refresh');
-  if (snapshotManagerRefreshBtn) {
-    snapshotManagerRefreshBtn.addEventListener('click', function () {
-      loadSnapshotManagerDatasets();
-    });
-  }
-
-  var snapshotManagerCloseBtn = byId('snapshot_manager_close');
-  if (snapshotManagerCloseBtn) {
-    snapshotManagerCloseBtn.addEventListener('click', closeSnapshotManagerDrawer);
-  }
-
-  var snapshotManagerBackdrop = byId('snapshot_manager_backdrop');
-  if (snapshotManagerBackdrop) {
-    snapshotManagerBackdrop.addEventListener('click', closeSnapshotManagerDrawer);
-  }
-
-  var snapshotManagerRefreshDatasetBtn = byId('snapshot_manager_refresh_dataset');
-  if (snapshotManagerRefreshDatasetBtn) {
-    snapshotManagerRefreshDatasetBtn.addEventListener('click', function () {
-      if (!snapshotManagerCurrentDataset) {
-        renderSnapshotManagerFeedback(['Choose a dataset first.'], true);
-        return;
-      }
-      loadSnapshotManagerDataset(snapshotManagerCurrentDataset);
-    });
-  }
-
-  var snapshotManagerDatasetRows = snapshotManagerDatasetRowsEl();
-  if (snapshotManagerDatasetRows) {
-    snapshotManagerDatasetRows.addEventListener('click', function (event) {
-      var button = event.target.closest('.snapshot-manager-open');
-      if (!button) {
-        return;
-      }
-
-      var dataset = button.getAttribute('data-dataset') || '';
-      if (!dataset) {
-        return;
-      }
-
-      loadSnapshotManagerDataset(dataset);
-    });
-  }
-
-  var snapshotManagerSnapshotRows = snapshotManagerSnapshotRowsEl();
-  if (snapshotManagerSnapshotRows) {
-    snapshotManagerSnapshotRows.addEventListener('change', function (event) {
-      var checkbox = event.target.closest('.snapshot-manager-select');
-      if (!checkbox) {
-        return;
-      }
-      snapshotManagerSelection[checkbox.value] = checkbox.checked;
-      refreshSnapshotManagerBulkCount();
-    });
-
-    snapshotManagerSnapshotRows.addEventListener('click', function (event) {
-      var button = event.target.closest('.snapshot-manager-row-action');
-      if (!button) {
-        return;
-      }
-
-      var action = button.getAttribute('data-action') || '';
-      var snapshot = button.getAttribute('data-snapshot') || '';
-      if (!snapshotManagerCurrentDataset || !snapshot) {
-        return;
-      }
-
-      if (action === 'delete') {
-        if (!window.confirm('Queue deletion for snapshot ' + snapshot + '?')) {
-          return;
-        }
-      } else if (action === 'rollback') {
-        if (!window.confirm('Rollback ' + snapshotManagerCurrentDataset + ' to ' + snapshot + '? This removes newer snapshots and can discard recent changes.')) {
-          return;
-        }
-      }
-
-      var body = {
-        action: action,
-        dataset: snapshotManagerCurrentDataset,
-        snapshots: [snapshot]
-      };
-
-      if (action === 'send') {
-        var destination = window.prompt('Destination dataset for one-off send from ' + snapshot + ':', '');
-        if (destination === null) {
-          return;
-        }
-        destination = destination.trim();
-        if (destination === '') {
-          renderSnapshotManagerFeedback(['Destination dataset is required for one-off send.'], true);
-          return;
-        }
-        body.destination = destination;
-      }
-
-      requestSnapshotManagerAction(body);
-    });
-  }
-
-  var snapshotManagerSelectAll = byId('snapshot_manager_select_all');
-  if (snapshotManagerSelectAll) {
-    snapshotManagerSelectAll.addEventListener('change', function () {
-      document.querySelectorAll('.snapshot-manager-select').forEach(function (checkbox) {
-        checkbox.checked = snapshotManagerSelectAll.checked;
-        snapshotManagerSelection[checkbox.value] = checkbox.checked;
-      });
-      refreshSnapshotManagerBulkCount();
-    });
-  }
-
-  var snapshotManagerTakeSnapshotBtn = byId('snapshot_manager_take_snapshot');
-  if (snapshotManagerTakeSnapshotBtn) {
-    snapshotManagerTakeSnapshotBtn.addEventListener('click', function () {
-      if (!snapshotManagerCurrentDataset) {
-        renderSnapshotManagerFeedback(['Choose a dataset first.'], true);
-        return;
-      }
-
-      var defaultName = 'manual-' + new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19);
-      var snapshotName = window.prompt('New snapshot name for ' + snapshotManagerCurrentDataset + ':', defaultName);
-      if (snapshotName === null) {
-        return;
-      }
-      snapshotName = snapshotName.trim();
-      if (snapshotName === '') {
-        renderSnapshotManagerFeedback(['Snapshot name cannot be empty.'], true);
-        return;
-      }
-
-      requestSnapshotManagerAction({
-        action: 'take_snapshot',
-        dataset: snapshotManagerCurrentDataset,
-        snapshot_name: snapshotName
-      });
-    });
-  }
-
-  function queueSelectedSnapshotManagerAction(action, confirmMessage) {
-    if (!snapshotManagerCurrentDataset) {
-      renderSnapshotManagerFeedback(['Choose a dataset first.'], true);
-      return;
-    }
-
-    var snapshots = snapshotManagerSelectedSnapshots();
-    if (snapshots.length === 0) {
-      renderSnapshotManagerFeedback(['Select at least one snapshot first.'], true);
-      return;
-    }
-
-    if (confirmMessage && !window.confirm(confirmMessage.replace('{count}', String(snapshots.length)))) {
-      return;
-    }
-
-    requestSnapshotManagerAction({
-      action: action,
-      dataset: snapshotManagerCurrentDataset,
-      snapshots: snapshots
-    }, function () {
-      snapshotManagerSelection = {};
-      if (snapshotManagerSelectAll) {
-        snapshotManagerSelectAll.checked = false;
-      }
-      refreshSnapshotManagerBulkCount();
-    });
-  }
-
-  var snapshotManagerDeleteSelectedBtn = byId('snapshot_manager_delete_selected');
-  if (snapshotManagerDeleteSelectedBtn) {
-    snapshotManagerDeleteSelectedBtn.addEventListener('click', function () {
-      queueSelectedSnapshotManagerAction('delete', 'Queue deletion for {count} selected snapshot(s)?');
-    });
-  }
-
-  var snapshotManagerHoldSelectedBtn = byId('snapshot_manager_hold_selected');
-  if (snapshotManagerHoldSelectedBtn) {
-    snapshotManagerHoldSelectedBtn.addEventListener('click', function () {
-      queueSelectedSnapshotManagerAction('hold', '');
-    });
-  }
-
-  var snapshotManagerReleaseSelectedBtn = byId('snapshot_manager_release_selected');
-  if (snapshotManagerReleaseSelectedBtn) {
-    snapshotManagerReleaseSelectedBtn.addEventListener('click', function () {
-      queueSelectedSnapshotManagerAction('release', '');
-    });
-  }
 
   if (manualRunBtn) {
     manualRunBtn.addEventListener('click', function () {
@@ -3651,6 +3158,7 @@ $renderStandalonePage = !empty($GLOBALS['zfsas_render_standalone_page']);
   });
 })();
 </script>
+<script src="/plugins/zfs.autosnapshot/js/dataset-discovery.js"></script>
 <?php if ($renderStandalonePage) : ?>
 </body>
 </html>
