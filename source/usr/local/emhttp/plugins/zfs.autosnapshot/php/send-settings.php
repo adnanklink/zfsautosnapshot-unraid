@@ -1461,6 +1461,8 @@ if ($isPostRequest) {
       var childrenOptions = childrenEl ? childrenEl.innerHTML : '<option value="0">No</option><option value="1">Yes</option>';
       var transportOptions = transportEl ? transportEl.innerHTML : '<option value="local">Local pool/dataset</option>';
       var row = document.createElement('tr');
+      row.dataset.scheduleTime = document.querySelector('[name="new_job_time"]')?.value || '00:00';
+      row.dataset.scheduleDay = document.querySelector('[name="new_job_day"]')?.value || '0';
       row.innerHTML = '' +
         '<td>' +
           '<input type="hidden" name="job_id[' + index + ']" value="">' +
@@ -1645,6 +1647,12 @@ if ($isPostRequest) {
     startQueueUpdates();
   })();
 </script>
+<script id="send-schedule-specs" type="application/json"><?php
+$displaySpecs = [];
+foreach ($formJobs as $job) { $displaySpecs[$job['id']] = zfsas_send_schedule_spec($config, $job); }
+echo json_encode($displaySpecs ?: new stdClass(), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
+?></script>
+<script src="/plugins/zfs.autosnapshot/js/send-schedule.js"></script>
 <script src="/plugins/zfs.autosnapshot/js/dataset-discovery.js"></script>
 </body>
 </html>

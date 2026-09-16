@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . "/schedule-spec.php";
+require_once __DIR__ . "/send-schedule.php";
 function zfsas_auto_defaults()
 {
     return ['DATASETS' => '', 'PREFIX' => 'autosnapshot-', 'DRY_RUN' => '0',
@@ -78,6 +79,10 @@ function zfsas_config_save($kind, $dir, array $submitted, $revision, $render, $s
                 $result['schedulePreview'] = ZfsasSchedule::preview($spec, time(), ZfsasSchedule::hostTimezone());
             } catch (InvalidArgumentException | JsonException $error) { $result['errors'][] = $error->getMessage(); return $result; }
         }
+        if ($kind === 'send') {
+            try { $submitted['SEND_SCHEDULE_SPECS'] = zfsas_send_schedule_specs_save($send, $submitted, $submitted['__schedule_options'] ?? [], time()); }
+            catch (InvalidArgumentException | JsonException $error) { $result['errors'][] = $error->getMessage(); return $result; }
+        }
         $prefixes = zfsas_known_send_prefixes($dir);
         $prefixes[] = $sendPrefix;
         if (zfsas_send_write_config_atomically($dir . '/send-prefix-history', implode("\n", array_unique($prefixes)) . "\n") === false) {
@@ -85,6 +90,7 @@ function zfsas_config_save($kind, $dir, array $submitted, $revision, $render, $s
         }
         $file = $dir . ($kind === 'auto' ? '/zfs_autosnapshot.conf' : '/zfs_send.conf');
         $content = $render($submitted);
+        if ($kind === 'send') { $content = rtrim($content, "\n") . "\nSEND_SCHEDULE_SPECS=" . zfsas_send_quote_config_string($submitted['SEND_SCHEDULE_SPECS']) . "\n"; }
         if ($kind === 'auto') { $content = rtrim($content, "\n") . "\nSCHEDULE_SPEC=" . zfsas_send_quote_config_string($submitted['SCHEDULE_SPEC']) . "\n"; }
         if (zfsas_send_write_config_atomically($file, $content) === false) {
             $result['errors'][] = 'Unable to write configuration atomically.'; return $result;

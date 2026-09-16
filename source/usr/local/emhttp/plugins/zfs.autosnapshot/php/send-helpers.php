@@ -362,6 +362,7 @@ function zfsas_send_defaults()
         'SEND_SPIPED_REMOTE_PORT' => '8023',
         'SEND_SPIPED_KEY_PATH' => '',
         'SEND_JOBS' => '',
+        'SEND_SCHEDULE_SPECS' => '{}',
     ];
 }
 
@@ -931,6 +932,17 @@ function zfsas_send_handle_save_request($post, $configDir, $configFile, $syncScr
 
     if (empty($errors)) {
         $submitted['SEND_JOBS'] = zfsas_send_render_jobs_string($submittedJobs);
+        $submitted['__schedule_options'] = [];
+        foreach (($post['job_source'] ?? []) as $index => $source) {
+            $id = $post['job_id'][$index] ?? '';
+            if (!preg_match('/^[a-f0-9]{12}$/D', $id)) { $id = zfsas_send_job_id(zfsas_send_normalize_dataset_path($source), zfsas_send_normalize_dataset_path($post['job_destination'][$index] ?? '')); }
+            $submitted['__schedule_options'][$id] = ['convert'=>$post['job_convert'][$index] ?? ''];
+            foreach (['time','day'] as $field) { if (isset($post['job_' . $field][$index])) { $submitted['__schedule_options'][$id][$field] = $post['job_' . $field][$index]; } }
+        }
+        if (!empty($post['new_job_source']) && !empty($post['new_job_destination'])) {
+            $id = zfsas_send_job_id(zfsas_send_normalize_dataset_path($post['new_job_source']), zfsas_send_normalize_dataset_path($post['new_job_destination']));
+            $submitted['__schedule_options'][$id] = ['time'=>$post['new_job_time'] ?? '00:00', 'day'=>$post['new_job_day'] ?? '0'];
+        }
         $config = $submitted;
 
         if (!is_dir($configDir)) {

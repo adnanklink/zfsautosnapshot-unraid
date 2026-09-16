@@ -4,7 +4,21 @@ require_once __DIR__ . '/send-helpers.php';
 require_once __DIR__ . '/schedule-spec.php';
 try {
     $pair = zfsas_config_read_pair('/boot/config/plugins/zfs.autosnapshot');
-    if (isset($_GET['spec'])) {
+    if (($_GET['kind'] ?? '') === 'send') {
+        $id = $_GET['job_id'] ?? '';
+        $jobs = zfsas_send_parse_jobs($pair['send']['SEND_JOBS'], $errors, $warnings);
+        $found = null;
+        foreach ($jobs as $job) { if ($job['id'] === $id) { $found = $job; break; } }
+        $job = $found ?? ['id'=>'000000000000', 'frequency'=>'6h'];
+        $base = $pair['send'];
+        if ($found) {
+            $mapping = json_decode($base['SEND_SCHEDULE_SPECS'], true, 64, JSON_THROW_ON_ERROR);
+            $mapping[$id] = zfsas_send_schedule_spec($base, $found);
+            $base['SEND_SCHEDULE_SPECS'] = json_encode($mapping, JSON_THROW_ON_ERROR);
+        }
+        $job['frequency'] = $_GET['frequency'] ?? $job['frequency'];
+        $spec = zfsas_send_schedule_save($base, $job, ['convert'=>$_GET['convert'] ?? '', 'time'=>$_GET['time'] ?? '00:00', 'day'=>$_GET['day'] ?? '0'], !$found, time());
+    } elseif (isset($_GET['spec'])) {
         if (!is_string($_GET['spec']) || strlen($_GET['spec']) > 4096) { throw new InvalidArgumentException('Invalid schedule specification.'); }
         $spec = ZfsasSchedule::validate(json_decode($_GET['spec'], true, 32, JSON_THROW_ON_ERROR));
     } else {

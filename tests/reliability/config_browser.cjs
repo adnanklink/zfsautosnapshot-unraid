@@ -33,6 +33,15 @@ const plugin = path.resolve(__dirname, '../../source/usr/local/emhttp/plugins/zf
     await page.selectOption('#new_job_source','tank/data');
     await page.locator('[name="send_max_parallel"]').fill('4');
     await page.locator('[name="send_rate_limit"]').fill('20M');
+    await page.locator('[name="new_job_time"]').fill('23:17');
+    await page.selectOption('[name="new_job_day"]','2');
+    await page.selectOption('#new_job_frequency','7d');
+    await page.locator('[name="new_job_destination"]').fill('backup/data');
+    await page.locator('#zfsas_add_send_job').click();
+    await page.waitForSelector('[name="job_time[0]"]');
+    assert.equal(await page.locator('[name="job_time[0]"]').inputValue(),'23:17');
+    assert.equal(await page.locator('[name="job_day[0]"]').inputValue(),'2');
+    await page.selectOption('#new_job_source','tank/data');
    }
    await page.locator('[data-restore-tuning]').click();
    assert.equal(await page.locator('[name="'+retention+'"]').inputValue(),'14');

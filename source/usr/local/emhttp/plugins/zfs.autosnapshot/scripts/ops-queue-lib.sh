@@ -77,6 +77,7 @@ SEND_SPIPED_REMOTE_HOST=""
 SEND_SPIPED_REMOTE_PORT="$DEFAULT_SEND_SPIPED_REMOTE_PORT"
 SEND_SPIPED_KEY_PATH=""
 SEND_JOBS=""
+SEND_SCHEDULE_SPECS="{}"
 
 SCHEDULE_JOB_IDS=()
 declare -A SCHEDULE_SOURCE_ROOT=()
@@ -753,6 +754,7 @@ load_send_config() {
   SEND_SPIPED_REMOTE_PORT="$DEFAULT_SEND_SPIPED_REMOTE_PORT"
   SEND_SPIPED_KEY_PATH=""
   SEND_JOBS=""
+SEND_SCHEDULE_SPECS="{}"
 
   LOADED_SEND_CONFIG_HASH="$(send_config_hash)"
   [[ -f "$SEND_CONFIG_FILE" ]] || return 0
@@ -766,7 +768,7 @@ load_send_config() {
       raw="${BASH_REMATCH[2]}"
       value="$(parse_config_value "$raw")"
       case "$key" in
-        SEND_SNAPSHOT_PREFIX|SEND_MAX_PARALLEL|SEND_RATE_LIMIT|SEND_PREP_EXTRA_WORKERS|SEND_KEEP_ALL_FOR_DAYS|SEND_KEEP_DAILY_UNTIL_DAYS|SEND_KEEP_WEEKLY_UNTIL_DAYS|SEND_SSH_HOST|SEND_SSH_PORT|SEND_SSH_USER|SEND_SSH_KEY_PATH|SEND_SPIPED_LISTEN_HOST|SEND_SPIPED_PORT|SEND_SPIPED_REMOTE_HOST|SEND_SPIPED_REMOTE_PORT|SEND_SPIPED_KEY_PATH|SEND_JOBS)
+        SEND_SNAPSHOT_PREFIX|SEND_MAX_PARALLEL|SEND_RATE_LIMIT|SEND_PREP_EXTRA_WORKERS|SEND_KEEP_ALL_FOR_DAYS|SEND_KEEP_DAILY_UNTIL_DAYS|SEND_KEEP_WEEKLY_UNTIL_DAYS|SEND_SSH_HOST|SEND_SSH_PORT|SEND_SSH_USER|SEND_SSH_KEY_PATH|SEND_SPIPED_LISTEN_HOST|SEND_SPIPED_PORT|SEND_SPIPED_REMOTE_HOST|SEND_SPIPED_REMOTE_PORT|SEND_SPIPED_KEY_PATH|SEND_JOBS|SEND_SCHEDULE_SPECS)
           printf -v "$key" '%s' "$value"
           ;;
       esac
@@ -4395,6 +4397,8 @@ enqueue_scheduled_send_jobs_due_locked() {
   local now_epoch="$1"
   local job_id frequency current_window last_completed_window requested_at requested_epoch
   local resume_basename previous_basename dest_pool run_group_id prep_job_id pool readiness_message send_transport pool_key
+  local due_specs spec_id spec_due
+  local -A configured_due=()
   local -a due_jobs=()
   local -a due_pool_keys=()
   local -A due_window=()
@@ -4408,6 +4412,13 @@ enqueue_scheduled_send_jobs_due_locked() {
   local -A pool_key_transport=()
   local -A seen_pool=()
 
+  if [[ "$SEND_SCHEDULE_SPECS" != '{}' && -n "$SEND_SCHEDULE_SPECS" ]]; then
+    due_specs="$(printf '%s' "$SEND_SCHEDULE_SPECS" | php "${BASH_SOURCE[0]%/*}/../php/send-schedule-occurrences.php" "$now_epoch")" || return 1
+    while IFS='|' read -r spec_id spec_due; do
+      [[ "$spec_id" =~ ^[a-f0-9]{12}$ ]] || continue
+      configured_due["$spec_id"]="$spec_due"
+    done <<< "$due_specs"
+  fi
   load_schedule_state
   requested_epoch="$now_epoch"
   requested_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ' -r "$requested_epoch" 2>/dev/null || date -u +'%Y-%m-%dT%H:%M:%SZ')"
@@ -4416,7 +4427,11 @@ enqueue_scheduled_send_jobs_due_locked() {
   for job_id in "${SCHEDULE_JOB_IDS[@]}"; do
     schedule_paused "$job_id" && continue
     frequency="${SCHEDULE_FREQUENCY[$job_id]}"
-    current_window="$(frequency_window_key "$frequency" "$now_epoch")"
+    if [[ -n "${configured_due[$job_id]+set}" ]]; then
+      current_window="${configured_due[$job_id]}"
+    else
+      current_window="$(frequency_window_key "$frequency" "$now_epoch")"
+    fi
     [[ "$current_window" =~ ^[0-9]+$ ]] || continue
 
     last_completed_window="$(last_completed_schedule_window_key "$job_id")"

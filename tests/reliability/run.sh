@@ -16,6 +16,7 @@ php tests/reliability/coordinator_socket.php
 php tests/reliability/coordinator_executor.php
 php tests/reliability/coordinator_recovery.php
 php tests/reliability/schedules.php
+php tests/reliability/send_schedules.php
 node tests/reliability/selection.cjs
 # Each endpoint suite expects an isolated filesystem; run batch_endpoints.php in
 # a separate container with plugin and sbin mounts (see docs/reliability-audit.md).

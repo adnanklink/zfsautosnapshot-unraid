@@ -5,8 +5,10 @@ final class ZfsasSchedule
     public static function validate(array $spec): array
     {
         if (($spec['version'] ?? null) !== 1) { throw new InvalidArgumentException('Unsupported schedule version.'); }
+        if (isset($spec['notBefore']) && !is_int($spec['notBefore'])) { throw new InvalidArgumentException('Invalid schedule activation time.'); }
         $kind = $spec['kind'] ?? '';
-        if (!in_array($kind, ['disabled', 'interval', 'daily', 'weekly', 'cron', 'legacy_interval'], true)) { throw new InvalidArgumentException('Invalid schedule kind.'); }
+        if (!in_array($kind, ['disabled', 'interval', 'daily', 'weekly', 'cron', 'legacy_interval', 'legacy_window'], true)) { throw new InvalidArgumentException('Invalid schedule kind.'); }
+        if ($kind === 'legacy_window' && !in_array($spec['seconds'] ?? null, [21600,43200,86400,604800], true)) { throw new InvalidArgumentException('Invalid legacy send interval.'); }
         if (in_array($kind, ['interval', 'legacy_interval'], true)) {
             if (!is_int($spec['seconds'] ?? null) || $spec['seconds'] < 60 || $spec['seconds'] > 366 * 86400
                 || !is_int($spec['anchor'] ?? null)) { throw new InvalidArgumentException('Interval requires integer seconds and a Save anchor.'); }
@@ -86,6 +88,22 @@ final class ZfsasSchedule
     {
         self::validate($spec);
         if ($spec['kind'] === 'disabled') { return null; }
+        if ($spec['kind'] === 'legacy_window') {
+            $window = static function (int $epoch) use ($zone, $spec): int {
+                $offset = $zone->getOffset(new DateTimeImmutable('@' . $epoch));
+                $local = $epoch + $offset;
+                return $local - ($local % $spec['seconds']) - $offset;
+            };
+            $accepted = $window($time);
+            if (!$next) { return $accepted; }
+            // Legacy recurrence changes at local window boundaries, including
+            // timezone transitions. Preview the first minute the old scheduler
+            // would observe a strictly newer window.
+            for ($candidate = $time - ($time % 60) + 60, $end = $time + $spec['seconds'] + 86400; $candidate <= $end; $candidate += 60) {
+                if ($window($candidate) > $accepted) { return $candidate; }
+            }
+            return null;
+        }
         if (in_array($spec['kind'], ['interval', 'legacy_interval'], true)) {
             $anchor = $spec['anchor']; $seconds = $spec['seconds'];
             $index = (int) floor(($time - $anchor) / $seconds) + ($next ? 1 : 0);
@@ -112,7 +130,8 @@ final class ZfsasSchedule
             foreach ($minutes as $minute) { $epochs[self::localMinute($day, $minute, $zone)] = true; }
             $epochs = array_keys($epochs); sort($epochs, SORT_NUMERIC);
             if (!$next) { $epochs = array_reverse($epochs); }
-            foreach ($epochs as $epoch) { if ($next ? $epoch > $time : $epoch <= $time) { return $epoch; } }
+            foreach ($epochs as $epoch) { if ($epoch < ($spec['notBefore'] ?? PHP_INT_MIN)) { continue; } if ($next ? $epoch > $time : $epoch <= $time) { return $epoch; } }
+            if (!$next && $day->getTimestamp() < ($spec['notBefore'] ?? PHP_INT_MIN)) { return null; }
             $day = $day->modify($next ? '+1 day' : '-1 day');
         }
         return null;

@@ -56,5 +56,20 @@ setup_prefixes('snap-', 'snap-send-');
 $response = finish_endpoint(start_endpoint('save-send-settings.php', ['send_snapshot_prefix' => 'send-', 'config_revision' => zfsas_config_revision($dir)]));
 check(!empty($response['saved']), 'Existing invalid configuration cannot be corrected');
 check(array_key_exists('schedulerApplied', $response), 'Scheduler result is not distinguished from saved config');
+// Send calendar options use the same revision-checked atomic endpoint.
+$response = finish_endpoint(start_endpoint('save-send-settings.php', ['config_revision'=>zfsas_config_revision($dir),
+    'new_job_source'=>'tank/data', 'new_job_destination'=>'backup/data', 'new_job_frequency'=>'1d', 'new_job_threshold'=>'1G', 'new_job_time'=>'23:17']));
+check(!empty($response['saved']), 'New calendar send save failed: '.json_encode($response));
+$config=zfsas_send_parse_config_file($dir.'/zfs_send.conf',zfsas_send_defaults());
+$id=zfsas_send_job_id('tank/data','backup/data'); $specs=json_decode($config['SEND_SCHEDULE_SPECS'],true);
+check($specs[$id]['kind']==='daily' && $specs[$id]['hour']===23 && $specs[$id]['minute']===17,'Saved calendar controls lost');
+$post=['job_id'=>[$id], 'job_source'=>['tank/data'], 'job_destination'=>['backup/data'], 'job_frequency'=>['1d'], 'job_threshold'=>['2G']];
+$response=finish_endpoint(start_endpoint('save-send-settings.php',$post+['config_revision'=>zfsas_config_revision($dir)]));
+check(!empty($response['saved']),'Unrelated send save failed');
+$config=zfsas_send_parse_config_file($dir.'/zfs_send.conf',zfsas_send_defaults());
+check(json_decode($config['SEND_SCHEDULE_SPECS'],true)===$specs,'Unrelated endpoint save shifted time or anchor');
+$before=file_get_contents($dir.'/zfs_send.conf');
+$response=finish_endpoint(start_endpoint('save-send-settings.php',$post+['job_time'=>['25:00'],'config_revision'=>zfsas_config_revision($dir)]));
+check(empty($response['saved']) && file_get_contents($dir.'/zfs_send.conf')===$before,'Invalid calendar time changed config');
 unlink($runner);
 echo "PASS: real save endpoints, all prefix overlap directions, safe stems, stale/concurrent saves, conflict repair, prefix history\n";
