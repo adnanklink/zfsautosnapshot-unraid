@@ -1,0 +1,9 @@
+#!/bin/bash
+set -euo pipefail
+helper=/usr/local/emhttp/plugins/zfs.autosnapshot/scripts/log-maintenance-lib.sh
+if [[ -r "$helper" ]]; then
+  # shellcheck source=/dev/null
+  source "$helper"
+  zfsas_log_prepare_for_append /var/log/zfs_autosnapshot_coordinator.log /var/log/zfs_autosnapshot_coordinator.archive.log 1048576 600 20 2097152 || true
+fi
+exec php /usr/local/emhttp/plugins/zfs.autosnapshot/php/coordinator-client.php "$@"

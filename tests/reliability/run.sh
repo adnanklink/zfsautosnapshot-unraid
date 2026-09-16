@@ -9,6 +9,12 @@ bash tests/reliability/destination.sh
 bash tests/reliability/dependencies.sh
 php tests/reliability/settings_endpoints.php
 php tests/reliability/snapshots.php
+php tests/reliability/coordinator_state.php
+php tests/reliability/coordinator_retention.php
+php tests/reliability/coordinator_socket.php
+php tests/reliability/coordinator_executor.php
+php tests/reliability/coordinator_recovery.php
+php tests/reliability/schedules.php
 node tests/reliability/selection.cjs
 # Each endpoint suite expects an isolated filesystem; run batch_endpoints.php in
 # a separate container with plugin and sbin mounts (see docs/reliability-audit.md).

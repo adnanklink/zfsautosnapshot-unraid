@@ -261,10 +261,11 @@ STOP_FILE="$OPS_STOP_FILE"
 SNAPSHOT_PREFIX='zfs-send-'
 TARGET_CFG="$TARGET_SEND_CFG"
 ALLOW_ORPHAN_DESTROY_MATCHES=0
-for RUN_MATCH in "$OPS_KICKER_RUN_MATCH" "$OPS_HANDLER_RUN_MATCH" "$OPS_SEND_WORKER_RUN_MATCH" "$OPS_DELETE_WORKER_RUN_MATCH" "/usr/local/emhttp/plugins/zfs.autosnapshot/php/snapshot-batch-worker.php"; do
+for RUN_MATCH in "/usr/local/emhttp/plugins/zfs.autosnapshot/php/coordinator-daemon.php" "/usr/local/emhttp/plugins/zfs.autosnapshot/scripts/coordinator-attempt.sh" "$OPS_KICKER_RUN_MATCH" "$OPS_HANDLER_RUN_MATCH" "$OPS_SEND_WORKER_RUN_MATCH" "$OPS_DELETE_WORKER_RUN_MATCH" "/usr/local/emhttp/plugins/zfs.autosnapshot/php/snapshot-batch-worker.php"; do
   stop_running_jobs
 done
 zfsas_stop_recorded_send_groups
+php /usr/local/emhttp/plugins/zfs.autosnapshot/php/coordinator-shutdown.php
 
 # Legacy records remain available for operator inspection.
 # Preserve queued identities, approvals, cancellation state and lock inodes.

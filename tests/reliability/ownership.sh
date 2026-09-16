@@ -61,6 +61,23 @@ exec 9>"$ZFSAS_MIGRATOR_LOCK_FILE"; flock 9
 for file in status.env folders.tsv containers.tsv; do [[ "$(cat "$ZFSAS_MIGRATOR_PLUGIN_ROOT/$file")" == 'active owner' ]]; done
 [[ "$(cat "$ZFSAS_MIGRATOR_LOG_FILE")" == 'active log' ]]
 flock -u 9; exec 9>&-
+# Migration and recovery share the exact gate namespace with other workers.
+export ZFSAS_OPS_ROOT="$OPS_ROOT"
+eval "$(sed -n '/^acquire_migration_gates() {/,/^}/p' "$ROOT/source/usr/local/sbin/zfs_autosnapshot_migrate_datasets")"
+ensure_dir() { mkdir -p "$1"; }; apply_owner() { :; }
+ACTIVE_DATASET=tank/data/child
+acquire_dataset_gates -s tank/data
+# A separate process closes any partially acquired descriptors on failure.
+! (acquire_migration_gates)
+release_dataset_gates
+(
+  acquire_migration_gates
+  ! acquire_dataset_gates -s tank/data
+  acquire_dataset_gates -s other/data
+  release_dataset_gates
+)
+acquire_dataset_gates -s tank/data
+release_dataset_gates
 # Detached children cannot retain the parent's dataset/owner flock.
 exec 8>"$fixture/detach.lock"; flock 8
 "$ROOT/source/usr/local/emhttp/plugins/zfs.autosnapshot/scripts/detach-worker.sh" sleep 10 &

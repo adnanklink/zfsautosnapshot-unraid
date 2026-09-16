@@ -867,6 +867,7 @@ if ($isPostRequest) {
     $cron = buildCronFromSettings($submitted, $errors);
     $submitted['CRON_SCHEDULE'] = $cron;
 
+    $submitted['__convert_schedule'] = ($_POST['convert_schedule'] ?? '') === '1';
     $config = $submitted;
 
     if (empty($errors)) {
@@ -1776,6 +1777,15 @@ $renderStandalonePage = !empty($GLOBALS['zfsas_render_standalone_page']);
 
       <div class="zfsas-card">
         <h3>Run Schedule</h3>
+        <div id="auto-coordinator-status">
+          <p data-status role="status">Checking coordinator status…</p>
+          <button type="button" class="btn" data-cancel disabled>Cancel run and pause</button>
+          <button type="button" class="btn" data-resume disabled>Resume schedule</button>
+          <p>Runtime history is kept in RAM and is lost on reboot. A saved pause remains until Resume.</p>
+        </div>
+        <p>Existing interval schedules retain their cron alignment until converted. New intervals first run one interval after Save; Run Now does not change that time.</p>
+        <label><input type="checkbox" name="convert_schedule" value="1" id="convert_schedule"> Convert this schedule to the new timing rules on Save</label>
+        <p id="schedule-next-preview" role="status">Next run preview loads when scheduling fields change.</p>
         <div class="zfsas-field">
           <label for="schedule_mode">How often should automatic runs happen?</label>
           <select id="schedule_mode" name="schedule_mode" class="zfsas-select">
@@ -3000,6 +3010,7 @@ $renderStandalonePage = !empty($GLOBALS['zfsas_render_standalone_page']);
     }
   });
 
+  var manualAutoCommandId = null;
   if (manualRunBtn) {
     manualRunBtn.addEventListener('click', function () {
       if (manualRunBusy) {
@@ -3009,10 +3020,11 @@ $renderStandalonePage = !empty($GLOBALS['zfsas_render_standalone_page']);
       manualRunBusy = true;
       manualRunBtn.disabled = true;
       setManualRunStatus('Starting manual run...', false);
+      if (!manualAutoCommandId) manualAutoCommandId = 'manual-auto-' + Date.now() + '-' + Math.random().toString(16).slice(2);
 
       requestJsonPost(
         runApiUrl,
-        {},
+        {command_id: manualAutoCommandId},
         function (data) {
           manualRunBusy = false;
           manualRunBtn.disabled = false;
@@ -3022,6 +3034,7 @@ $renderStandalonePage = !empty($GLOBALS['zfsas_render_standalone_page']);
             return;
           }
 
+          manualAutoCommandId = null;
           var message = (typeof data.message === 'string' && data.message.length > 0)
             ? data.message
             : 'Manual run started.';
@@ -3163,3 +3176,7 @@ $renderStandalonePage = !empty($GLOBALS['zfsas_render_standalone_page']);
 </body>
 </html>
 <?php endif; ?>
+
+<script src="/plugins/zfs.autosnapshot/js/schedule-preview.js"></script>
+
+<script src="/plugins/zfs.autosnapshot/js/coordinator-status.js"></script>

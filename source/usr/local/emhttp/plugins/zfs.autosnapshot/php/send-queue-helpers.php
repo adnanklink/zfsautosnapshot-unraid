@@ -426,35 +426,14 @@ function zfsas_ops_delete_queue_daemon_running()
 function zfsas_ops_start_delete_queue_daemon(&$error = null)
 {
     $error = null;
-    $script = '/usr/local/sbin/zfs_autosnapshot_delete_worker';
-    $log = '/var/log/zfs_autosnapshot_send.log';
-
-    if (zfsas_ops_delete_queue_daemon_running()) {
+    try {
+        require_once __DIR__ . '/coordinator-client.php';
+        zfsas_coordinator_ensure();
+        $response = zfsas_coordinator_request(['action' => 'delete']);
+        if (!$response['ok']) { throw new RuntimeException($response['error']); }
         return true;
-    }
+    } catch (Throwable $exception) { $error = $exception->getMessage(); return false; }
 
-    if (!is_file($script) || !is_executable($script)) {
-        $error = 'Delete queue daemon is missing or not executable.';
-        return false;
-    }
-
-    $command = 'nohup /bin/bash ' . escapeshellarg(__DIR__ . '/../scripts/detach-worker.sh') . ' ' . escapeshellarg($script) . ' >> ' . escapeshellarg($log) . ' 2>&1 < /dev/null & echo $!';
-    $output = [];
-    $exitCode = 0;
-    @exec($command, $output, $exitCode);
-    if ($exitCode !== 0) {
-        $error = 'Unable to start the delete queue daemon.';
-        return false;
-    }
-
-    for ($attempt = 0; $attempt < 20; $attempt++) {
-        if (zfsas_ops_delete_queue_daemon_running()) {
-            return true;
-        }
-        usleep(100000);
-    }
-
-    return zfsas_ops_delete_queue_daemon_running();
 }
 
 function zfsas_ops_delete_queue_command_line($payload)

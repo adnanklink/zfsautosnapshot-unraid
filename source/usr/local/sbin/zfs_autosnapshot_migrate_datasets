@@ -1478,11 +1478,35 @@ rsync_recover_exact() {
   sync
 }
 
+# Use the same RAM gate namespace and sorted ancestor identities as sends,
+# deletion and Snapshot Manager. Keep descriptors open until this worker exits.
+acquire_migration_gates() {
+  local root="${ZFSAS_OPS_ROOT:-/tmp/zfs-autosnapshot-ops}" dataset key fd
+  ensure_dir "$root/dataset-locks"
+  exec {fd}>"$root/auto-cleanup.lock" || return 1
+  chmod 0660 "$root/auto-cleanup.lock"; apply_owner "$root/auto-cleanup.lock"
+  flock -n -s "$fd" || { exec {fd}>&-; return 1; }
+  MIGRATION_GATE_FDS=("$fd")
+  while IFS= read -r dataset; do
+    key="$(printf '%s' "$dataset" | sha256sum | cut -d' ' -f1)"
+    exec {fd}>"$root/dataset-locks/$key.lock" || return 1
+    chmod 0660 "$root/dataset-locks/$key.lock"; apply_owner "$root/dataset-locks/$key.lock"
+    flock -n -x "$fd" || { exec {fd}>&-; return 1; }
+    MIGRATION_GATE_FDS+=("$fd")
+  done < <( {
+    dataset="$ACTIVE_DATASET"
+    while [[ "$dataset" == */* ]]; do printf '%s\n' "$dataset"; dataset="${dataset%/*}"; done
+    printf '%s\n' "$dataset"
+  } | sort -u )
+}
+
 run_delayed_recovery() {
   if ! load_recovery_state; then
     log "No pending Dataset Migrator recovery state found."
     return 0
   fi
+
+  acquire_migration_gates || { die "Dataset is busy with snapshot or send work. Retry recovery after that work stops."; return 1; }
 
   if [[ "${RECOVERY_VERSION:-1}" == 2 ]]; then
     [[ "$RECOVERY_DATASET_GUID" =~ ^[0-9]+$ && "$(zfs get -H -p -o value guid "$ACTIVE_DATASET")" == "$RECOVERY_DATASET_GUID" ]] || { die "Migration dataset identity changed; review recovery manually."; return 1; }
@@ -1620,6 +1644,8 @@ if (( RUN_RECOVERY == 1 )); then
   run_delayed_recovery
   exit 0
 fi
+
+acquire_migration_gates || { die "Dataset is busy with snapshot or send work. Retry migration after that work stops."; exit 1; }
 
 if parity_sync_in_progress; then
   die "A parity check or sync is currently running. Stop it before proceeding."

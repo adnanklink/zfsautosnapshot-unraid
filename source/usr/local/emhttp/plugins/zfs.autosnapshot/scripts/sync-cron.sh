@@ -6,7 +6,7 @@ CONFIG_DIR="/boot/config/plugins/${PLUGIN_NAME}"
 CONFIG_FILE="${CONFIG_DIR}/zfs_autosnapshot.conf"
 SEND_CONFIG_FILE="${CONFIG_DIR}/zfs_send.conf"
 CRON_FILE="/etc/cron.d/zfs_autosnapshot"
-RUN_CMD="/usr/local/sbin/zfs_autosnapshot"
+RUN_CMD="/usr/local/sbin/zfs_autosnapshot_coordinator watchdog"
 QUEUE_KICKER_CMD="/usr/local/sbin/zfs_autosnapshot_queue_kicker"
 
 if [[ "${ZFSAS_CONFIG_LOCK_HELD:-0}" != 1 ]]; then
@@ -286,6 +286,7 @@ trap cleanup_cron_tmp EXIT
 	if [[ -n "$CRON_SCHEDULE_EFFECTIVE" ]]; then
 		echo "${CRON_SCHEDULE_EFFECTIVE} ${RUN_CMD} >> /var/log/zfs_autosnapshot.log 2>&1"
 	fi
+	echo "* * * * * /usr/local/sbin/zfs_autosnapshot_coordinator watchdog >> /var/log/zfs_autosnapshot_coordinator.log 2>&1"
 	echo "* * * * * ${QUEUE_KICKER_CMD} >> /var/log/zfs_autosnapshot_send.log 2>&1"
 } >"$CRON_FILE_TMP"
 

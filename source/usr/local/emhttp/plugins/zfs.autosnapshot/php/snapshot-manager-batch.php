@@ -42,6 +42,15 @@ try {
         $batch = zfsas_sm_new_batch($dataset, $request['operation'] ?? '');
         $token = $batch['token']; zfsas_sm_batch_store($batch);
     }
+    // Polling reads atomic manifests and deletion results only. It must never
+    // acquire a write lock, republish progress, or restore execution authority.
+    if ($action === 'status') {
+        $batch = zfsas_sm_read_json_file(zfsas_sm_batch_path($token));
+        if (!$batch) { throw new RuntimeException('Batch history is unavailable. After reboot, review a new selection before executing.'); }
+        if ($dataset !== '' && $dataset !== $batch['dataset']) { throw new RuntimeException('Batch dataset mismatch.'); }
+        zfsas_sm_batch_reconcile($batch);
+        zfsas_emit_marked_json(zfsas_sm_batch_payload($batch, $request['page'] ?? 1));
+    }
     $lock = zfsas_sm_batch_lock($token);
     try {
         $batch = zfsas_sm_read_json_file(zfsas_sm_batch_path($token));
@@ -74,8 +83,9 @@ try {
                 if ($batch['configRevision'] !== zfsas_config_revision(zfsas_sm_plugin_config_dir())) { throw new RuntimeException('Configuration changed. Preview again.'); }
                 $batch['state'] = 'queued'; $batch['approvedAt'] = time();
                 zfsas_sm_batch_store($batch);
-                if (!zfsas_sm_start_batch_worker($dataset)) { throw new RuntimeException('Batch saved, but worker launch failed. Refresh status to recover it.'); }
             } elseif (!in_array($batch['state'], ['queued', 'running', 'complete'], true)) { throw new RuntimeException('Review this selection before submitting.'); }
+            $receipt = zfsas_sm_start_batch_worker($dataset, $token);
+            $batch['runId'] = $receipt['runId'];
         } elseif ($action === 'retry') {
             $rows = zfsas_sm_dataset_snapshots($dataset, $error, true);
             if ($error) { throw new RuntimeException($error); }
@@ -89,14 +99,6 @@ try {
         zfsas_sm_batch_store($batch);
         $payload = zfsas_sm_batch_payload($batch, $request['page'] ?? 1);
     } finally { flock($lock, LOCK_UN); fclose($lock); }
-    // A crashed worker can be recovered by polling; only the owner executes work.
-    if ($action === 'status' && in_array($batch['state'], ['queued', 'running'], true)) {
-        $owner = @fopen(zfsas_sm_batches_dir() . '/' . hash('sha256', $dataset) . '.worker', 'c');
-        if ($owner && flock($owner, LOCK_EX | LOCK_NB)) {
-            flock($owner, LOCK_UN); fclose($owner);
-            if (array_filter($batch['items'], function ($item) { return in_array($item['state'], ['queued', 'running'], true); })) { zfsas_sm_start_batch_worker($dataset); }
-        } elseif ($owner) { fclose($owner); }
-    }
     zfsas_emit_marked_json($payload);
 } catch (Throwable $error) {
     zfsas_emit_marked_json(['ok' => false, 'error' => $error->getMessage()], 409);

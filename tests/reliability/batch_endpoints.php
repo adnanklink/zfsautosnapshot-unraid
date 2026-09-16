@@ -67,10 +67,18 @@ $over=endpoint(['action'=>'capture','operation'=>'hold','dataset'=>'tank/data','
 $r=capture('hold',$items);check($r['eligible']===601,'Large review omitted items');
 check(!file_exists('/tmp/batch-fixture/actions'),'Review mutated snapshots');
 $token=$r['token'];
-check(endpoint(['action'=>'submit','token'=>$token])['ok'],'Submit failed');
-check(endpoint(['action'=>'submit','token'=>$token])['ok'],'Duplicate submit failed');
+$submitted=endpoint(['action'=>'submit','token'=>$token]); check($submitted['ok'] && !empty($submitted['runId']),'Submit failed');
+check(endpoint(['action'=>'submit','token'=>$token])['runId']===$submitted['runId'],'Duplicate submit lost run identity');
 $r=wait_batch($token);check($r['counts']['completed']===600 && $r['counts']['failed']===1,'Partial failure accounting: '.json_encode($r['counts']));
 check(count(file('/tmp/batch-fixture/actions'))===600,'Duplicate actions repeated successes');
+// Polls must not even republish an unchanged manifest or create lock files.
+$path=zfsas_sm_batch_path($token); $before=file_get_contents($path); $stat=stat($path);
+for($poll=0;$poll<3;$poll++) { check(endpoint(['action'=>'status','token'=>$token])['ok'],'Read-only poll failed'); }
+clearstatcache(true,$path); check(file_get_contents($path)===$before && stat($path)['ino']===$stat['ino'],'Polling republished runtime state');
+$envelope=json_decode(file_get_contents('/tmp/zfs-autosnapshot-coordinator/checkpoint.json'),true);
+$journal=json_decode($envelope['payload'],true); $taskId=$journal['runs'][$submitted['runId']]['tasks'][0];
+$attempts=array_filter($journal['attempts'],fn($attempt)=>$attempt['taskId']===$taskId);
+check(count($attempts)>=13,'Coordinator did not bound 601-item work into chunks of 50');
 unlink('/tmp/batch-fixture/fail');
 $retry=endpoint(['action'=>'retry','token'=>$token]);check($retry['selected']===1 && $retry['eligible']===1,'Retry included successes');
 check(endpoint(['action'=>'submit','token'=>$retry['token']])['ok'],'Retry submit failed');

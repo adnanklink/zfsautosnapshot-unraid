@@ -26,7 +26,12 @@ fi
 
 CONFIG_DIR="/boot/config/plugins/zfs.autosnapshot"
 CONFIG_FILE="${CONFIG_FILE:-$CONFIG_DIR/zfs_autosnapshot.conf}"
-[[ ! -e "${CONFIG_FILE%/*}/maintenance" ]] || exit 0
+[[ ! -e "${CONFIG_FILE%/*}/maintenance" && ! -e "$CONFIG_DIR/maintenance" ]] || exit 0
+# Production direct launches submit work; isolated fixtures and captured workers
+# retain the execution entry point without recursively submitting themselves.
+if [[ "${ZFSAS_COORDINATED:-0}" != 1 && "$CONFIG_DIR" == /boot/config/plugins/zfs.autosnapshot && "$CONFIG_FILE" == "$CONFIG_DIR/zfs_autosnapshot.conf" && -x /usr/local/sbin/zfs_autosnapshot_coordinator ]]; then
+  exec /usr/local/sbin/zfs_autosnapshot_coordinator auto
+fi
 PLUGIN_NAME="zfs.autosnapshot"
 RUNTIME_DIR="/var/run/zfs-autosnapshot"
 AUTOSNAPSHOT_ACTIVE_FILE="${RUNTIME_DIR}/zfs_autosnapshot.active"
@@ -452,7 +457,15 @@ increment_delete_counter() {
 	esac
 }
 
+assert_captured_config_current() {
+  [[ -n "${ZFSAS_CONFIG_REVISION:-}" ]] || return 0
+  local current_revision
+  current_revision="$( { cat "$CONFIG_DIR/zfs_autosnapshot.conf"; printf '\0'; cat "$CONFIG_DIR/zfs_send.conf" 2>/dev/null || true; } | sha256sum | cut -d ' ' -f1)"
+  [[ "$current_revision" == "$ZFSAS_CONFIG_REVISION" ]] || die "Configuration changed during this run; stopping before the next ZFS mutation."
+}
+
 do_destroy() {
+    assert_captured_config_current
 	local snap="$1"
 	local reason="${2:-unknown}"
 
@@ -519,6 +532,7 @@ destroy_with_watchdog() {
 }
 
 do_snapshot() {
+    assert_captured_config_current
 	local snap="$1"
 
 	if ((DRY_RUN)); then

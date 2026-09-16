@@ -208,10 +208,11 @@ STOP_FILE="$OPS_STOP_FILE"
 CONFIG_FILE="$SEND_CONFIG_FILE"
 SNAPSHOT_PREFIX='zfs-send-'
 ALLOW_ORPHAN_DESTROY_MATCHES=0
-for RUN_MATCH in "$OPS_KICKER_RUN_MATCH" "$OPS_HANDLER_RUN_MATCH" "$OPS_SEND_WORKER_RUN_MATCH" "$OPS_DELETE_WORKER_RUN_MATCH" "/usr/local/emhttp/plugins/zfs.autosnapshot/php/snapshot-batch-worker.php"; do
+for RUN_MATCH in "/usr/local/emhttp/plugins/zfs.autosnapshot/php/coordinator-daemon.php" "/usr/local/emhttp/plugins/zfs.autosnapshot/scripts/coordinator-attempt.sh" "$OPS_KICKER_RUN_MATCH" "$OPS_HANDLER_RUN_MATCH" "$OPS_SEND_WORKER_RUN_MATCH" "$OPS_DELETE_WORKER_RUN_MATCH" "/usr/local/emhttp/plugins/zfs.autosnapshot/php/snapshot-batch-worker.php"; do
   stop_running_jobs
 done
 zfsas_stop_recorded_send_groups
+php /usr/local/emhttp/plugins/zfs.autosnapshot/php/coordinator-shutdown.php
 
 
 RUNTIME_DIR="$RECOVERY_RUNTIME_DIR"

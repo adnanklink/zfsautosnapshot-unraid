@@ -2,23 +2,32 @@
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 require_once __DIR__ . '/snapshot-manager-helpers.php';
 $dataset = $argv[1] ?? '';
+$token = $argv[2] ?? '';
+// Only an attempt granted by the coordinator may execute an approved manifest.
+if (getenv('ZFSAS_COORDINATED') !== '1' || !preg_match('/^[a-f0-9]{32}$/', $token)) { exit(1); }
 if (is_file(zfsas_sm_plugin_config_dir() . '/maintenance')) { exit(0); }
 if (!zfsas_sm_is_valid_dataset_name($dataset)) { exit(1); }
 zfsas_sm_ensure_dir(zfsas_sm_batches_dir());
 $owner = fopen(zfsas_sm_batches_dir() . '/' . hash('sha256', $dataset) . '.worker', 'c');
-// Blocking ownership means a submit that races the previous worker's exit leaves
-// a successor waiting to scan the queue. Lock files are never unlinked.
-if (!$owner || !flock($owner, LOCK_EX)) { exit(1); }
+// Contention is a coordinator wait, not a worker parked on a resource.
+if (!$owner || !flock($owner, LOCK_EX | LOCK_NB)) { exit(75); }
 zfsas_ops_apply_owner(zfsas_sm_batches_dir() . '/' . hash('sha256', $dataset) . '.worker');
 $more = true;
 while ($more && !is_file(zfsas_sm_plugin_config_dir() . '/maintenance')) {
     $more = false;
-    foreach (glob(zfsas_sm_batches_dir() . '/*.json') ?: [] as $path) {
+    foreach ([zfsas_sm_batch_path($token)] as $path) {
         $batch = zfsas_sm_read_json_file($path);
         if (!$batch || $batch['dataset'] !== $dataset || !in_array($batch['state'], ['queued', 'running'], true)) { continue; }
+        if (empty($batch['approvedAt'])) { exit(1); }
+        zfsas_sm_batch_reconcile($batch);
+        if (!array_filter($batch['items'], static fn($item) => in_array($item['state'], ['queued', 'running'], true))) {
+            if ($batch['action'] === 'delete' && $batch['state'] !== 'complete') { zfsas_ops_start_delete_queue_daemon($daemonError); }
+            exit(0);
+        }
         $locks = zfsas_sm_dataset_gates($dataset);
-        if ($locks === false) { sleep(1); $more = true; continue; }
-        $lock = zfsas_sm_batch_lock($batch['token']);
+        if ($locks === false) { exit(75); }
+        $lock = fopen($path . '.lock', 'c');
+        if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) { exit(75); }
         try {
             $batch = zfsas_sm_read_json_file($path);
             $batch['state'] = 'running';
@@ -55,4 +64,6 @@ while ($more && !is_file(zfsas_sm_plugin_config_dir() . '/maintenance')) {
         }
         if ($batch['action'] === 'delete') { zfsas_ops_start_delete_queue_daemon($daemonError); }
     }
+    // At most 50 items per granted attempt. The coordinator admits the next chunk.
+    exit($more ? 75 : 0);
 }

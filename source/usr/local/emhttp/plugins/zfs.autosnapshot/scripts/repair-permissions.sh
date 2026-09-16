@@ -105,6 +105,7 @@ fi
 
 ensure_file "$TARGET_SEND_CFG"
 
+ensure_executable "/usr/local/sbin/zfs_autosnapshot_coordinator"
 ensure_executable "/usr/local/sbin/zfs_autosnapshot"
 ensure_executable "/usr/local/sbin/zfs_autosnapshot_send"
 ensure_executable "/usr/local/sbin/zfs_autosnapshot_queue_kicker"

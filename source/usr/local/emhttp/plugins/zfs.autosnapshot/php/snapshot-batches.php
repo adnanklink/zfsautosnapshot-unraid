@@ -83,16 +83,18 @@ function zfsas_sm_batch_payload(array $batch, $page = 1)
     $pages = max(1, (int) ceil(count($batch['items']) / 100));
     $page = max(1, min($pages, (int) $page));
     return ['ok' => true, 'token' => $batch['token'], 'dataset' => $batch['dataset'], 'action' => $batch['action'],
+        'runId' => $batch['runId'] ?? null, 'commandId' => 'batch-' . $batch['token'],
         'state' => $batch['state'], 'selected' => count($batch['items']), 'eligible' => $eligible,
         'counts' => $counts, 'expires' => $batch['expires'], 'page' => $page, 'pages' => $pages,
         'items' => array_slice(array_values($batch['items']), ($page - 1) * 100, 100)];
 }
-function zfsas_sm_start_batch_worker($dataset)
+function zfsas_sm_start_batch_worker($dataset, $token)
 {
-    $worker = __DIR__ . '/snapshot-batch-worker.php';
-    $output = []; $exit = 0;
-    exec('nohup /bin/bash ' . escapeshellarg(__DIR__ . '/../scripts/detach-worker.sh') . ' php ' . escapeshellarg($worker) . ' ' . escapeshellarg($dataset) . ' >> /var/log/zfs_autosnapshot_snapshot_manager.log 2>&1 < /dev/null &', $output, $exit);
-    return $exit === 0;
+    require_once __DIR__ . '/coordinator-client.php';
+    zfsas_coordinator_ensure();
+    $response = zfsas_coordinator_request(['action' => 'batch', 'token' => $token, 'dataset' => $dataset]);
+    if (!$response['ok']) { throw new RuntimeException($response['error']); }
+    return $response['result'];
 }
 function zfsas_sm_dataset_gates($dataset) { return zfsas_ops_dataset_gates($dataset); }
 function zfsas_sm_execute_item(array &$batch, array &$item, array $map)

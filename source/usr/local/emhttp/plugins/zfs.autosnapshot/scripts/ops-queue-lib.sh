@@ -573,6 +573,11 @@ start_delete_queue_daemon() {
 
   delete_queue_daemon_running && return 0
 
+  if [[ -x /usr/local/sbin/zfs_autosnapshot_coordinator ]]; then
+    /usr/local/sbin/zfs_autosnapshot_coordinator delete >/dev/null || return 1
+    return 0
+  fi
+
   mkdir -p "$DELETE_WORKER_RUNTIME_DIR" >/dev/null 2>&1 || true
   nohup /bin/bash /usr/local/emhttp/plugins/zfs.autosnapshot/scripts/detach-worker.sh /usr/local/sbin/zfs_autosnapshot_delete_worker >> "$LOG_FILE" 2>&1 < /dev/null &
 
