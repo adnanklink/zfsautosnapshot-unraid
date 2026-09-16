@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/send-helpers.php';
+require_once __DIR__ . '/send-control.php';
 
 function zfsas_ops_plugin_config_dir()
 {
@@ -175,7 +176,7 @@ function zfsas_ops_parse_job_file($path)
     return $payload;
 }
 
-function zfsas_ops_write_job_file($path, $payload)
+function zfsas_ops_write_job_file_unlocked($path, $payload)
 {
     $dir = dirname($path);
     if (!zfsas_ops_ensure_dir($dir)) {
@@ -194,8 +195,10 @@ function zfsas_ops_write_job_file($path, $payload)
         $lines[] = $key . '="' . zfsas_ops_kv_escape($value) . '"';
     }
 
-    $written = @file_put_contents($path, implode(PHP_EOL, $lines) . PHP_EOL);
-    if ($written === false) {
+    $tmp = tempnam($dir, '.job-');
+    $written = $tmp === false ? false : @file_put_contents($tmp, implode(PHP_EOL, $lines) . PHP_EOL);
+    if ($written === false || !@rename($tmp, $path)) {
+        if ($tmp) { @unlink($tmp); }
         return false;
     }
 
@@ -625,6 +628,12 @@ function zfsas_ops_pool_prep_has_active_dependents($prepJobId, $files = null)
 
 function zfsas_ops_send_job_progress_percent($job)
 {
+    if (($job['STATE'] ?? '') === 'running' && ($job['PHASE'] ?? '') === 'sending' && !empty($job['__path'])) {
+        $progress = explode(' ', trim((string) @file_get_contents($job['__path'] . '.progress')));
+        if (($progress[0] ?? '') === ($job['ATTEMPT_TOKEN'] ?? '') && isset($progress[1])) {
+            return max(0, min(99, (int) $progress[1]));
+        }
+    }
     $explicit = (int) ($job['PROGRESS_PERCENT'] ?? -1);
     if ($explicit >= 0) {
         return max(0, min(100, $explicit));
@@ -862,6 +871,7 @@ function zfsas_ops_send_queue_status_payload($limit = 120)
     return [
         'ok' => true,
         'jobs' => $rows,
+        'pausedSchedules' => array_map('basename', glob(zfsas_ops_plugin_config_dir() . '/send-control/paused/*') ?: []),
         'pendingDeleteCount' => zfsas_ops_pending_delete_job_count(),
     ];
 }
@@ -1291,6 +1301,7 @@ function zfsas_ops_job_exists_for_window($scheduleJobId, $windowKey)
 
 function zfsas_ops_scheduled_job_blocked($scheduleJobId)
 {
+    if (is_file(zfsas_ops_control_path('paused', $scheduleJobId))) { return true; }
     foreach (zfsas_ops_list_jobs(['send']) as $job) {
         if ((string) ($job['JOB_MODE'] ?? '') !== 'scheduled') {
             continue;
@@ -1368,6 +1379,7 @@ function zfsas_ops_retry_send_job($jobId, &$error = null)
             $error = 'Only failed send jobs can be retried.';
             return false;
         }
+        if (zfsas_ops_run_canceled($job)) { $error = 'Canceled runs cannot be retried. Resume the schedule for a new run.'; return false; }
         $job['STATE'] = 'queued';
         $job['PHASE'] = 'queued';
         $job['RETRY_AT'] = '0';
@@ -1509,49 +1521,6 @@ function zfsas_ops_delete_failed_send_log($jobId, &$error = null)
     }
 
     return true;
-}
-
-function zfsas_ops_cancel_send_job($jobId, &$error = null)
-{
-    $error = null;
-    foreach (zfsas_ops_list_jobs(['send']) as $job) {
-        if ((string) ($job['JOB_ID'] ?? '') !== (string) $jobId) {
-            continue;
-        }
-
-        $state = (string) ($job['STATE'] ?? '');
-        if (!in_array($state, ['queued', 'running', 'retry_wait'], true)) {
-            $error = 'Only queued, waiting, or running send jobs can be canceled.';
-            return false;
-        }
-
-        if ($state === 'running') {
-            $workerPid = (int) ($job['WORKER_PID'] ?? 0);
-            if ($workerPid <= 1) {
-                $error = 'The send worker pid is missing for this running job.';
-                return false;
-            }
-
-            zfsas_ops_signal_process($workerPid, 15);
-            if (!zfsas_ops_wait_for_process_exit($workerPid, 5000)) {
-                zfsas_ops_signal_process($workerPid, 9);
-                if (!zfsas_ops_wait_for_process_exit($workerPid, 2000)) {
-                    $error = 'Unable to stop the running send worker for this job.';
-                    return false;
-                }
-            }
-
-            $reloaded = zfsas_ops_parse_job_file((string) $job['__path']);
-            if (is_array($reloaded)) {
-                $job = $reloaded;
-            }
-        }
-
-        return zfsas_ops_mark_send_job_canceled($job, $error);
-    }
-
-    $error = 'Send job not found.';
-    return false;
 }
 
 function zfsas_ops_snapshot_identity($snapshot)

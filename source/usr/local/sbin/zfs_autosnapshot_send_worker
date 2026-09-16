@@ -5,6 +5,11 @@ set -Eeuo pipefail
 # shellcheck source=/dev/null
 source /usr/local/emhttp/plugins/zfs.autosnapshot/scripts/ops-queue-lib.sh
 
+# Direct launches and queue launches both get an isolated session/process group.
+if [[ "$(ps -o pgid= -p $$ | tr -d ' ')" != "$$" ]]; then
+  exec setsid "$0" "$@"
+fi
+WORKER_START="$(process_start_time $$)"
 WORKER_ROLE="send"
 CLAIM_SELECTOR="${ZFSAS_CLAIM_SELECTOR:-non_pool_prep}"
 ASSIGNED_JOB_PATH="${ZFSAS_JOB_PATH:-}"
@@ -38,6 +43,11 @@ SEND_FINALIZE_JOB_WRITE_KEYS=(
 
 cleanup() {
   local exit_code="$?"
+  trap - EXIT INT TERM
+  if ! stop_send_process_group "$$" "$WORKER_START" "$$"; then
+    # Keep ownership records for recovery when shutdown cannot be verified.
+    exit 1
+  fi
   if [[ -n "$CURRENT_JOB_ID" ]]; then
     release_job_claim "$CURRENT_JOB_ID"
   fi
@@ -52,7 +62,10 @@ cleanup() {
 }
 
 persist_job() {
-  job_write "$CURRENT_JOB_PATH" job
+  if ! job_write "$CURRENT_JOB_PATH" job; then
+    # A stale worker cannot continue doing work after losing publication rights.
+    exit 1
+  fi
 }
 
 set_job_progress() {
@@ -76,12 +89,12 @@ complete_job() {
   job[LAST_MESSAGE]="$message"
   job[LAST_ERROR]=""
   job[WORKER_PID]=""
-  if [[ "$(job_get job JOB_MODE)" == "scheduled" ]] && job_completes_schedule_window job; then
-    record_completed_schedule_window "$(job_get job SCHEDULE_JOB_ID)" "$(job_get job WINDOW_KEY)" || true
-  fi
   set_job_success_purge_after job "$ttl"
   delete_preserved_failed_send_log "$(job_get job JOB_ID)" >/dev/null 2>&1 || true
   persist_job
+  if [[ "$(job_get job JOB_MODE)" == "scheduled" ]] && job_completes_schedule_window job; then
+    record_completed_schedule_window "$(job_get job SCHEDULE_JOB_ID)" "$(job_get job WINDOW_KEY)" || true
+  fi
 }
 
 skip_job() {
@@ -876,6 +889,7 @@ queue_child_send_jobs() {
   queued_job[JOB_TYPE]="send"
   queued_job[JOB_MODE]="scheduled"
   queued_job[JOB_ACTION]="finalize"
+  queued_job[EXPECTED_CHILD_COUNT]="$member_count"
   queued_job[STATE]="queued"
   queued_job[PHASE]="queued"
   queued_job[REQUESTED_EPOCH]="$requested_epoch"
@@ -1237,21 +1251,28 @@ process_cleanup_member_job() {
 }
 
 process_finalize_job() {
-  local parent_run_id
+  local parent_run_id expected index path state
+  local -A child=()
   parent_run_id="$(job_get job PARENT_RUN_ID)"
-
-  if run_child_jobs_have_failed "$parent_run_id"; then
-    skip_job "Skipped; child failed."
-    return 0
+  expected="$(job_get job EXPECTED_CHILD_COUNT)"
+  if [[ ! "$expected" =~ ^[0-9]+$ ]]; then
+    fail_current_job_final "Missing expected child manifest; window not completed."
+    return 1
   fi
-
-  if run_child_jobs_still_active "$parent_run_id"; then
-    defer_current_job "Waiting for children." 1
-    return 2
-  fi
-
+  for ((index=0; index<expected; index++)); do
+    path=""
+    if ! find_job_by_id "send-child-${parent_run_id}-${index}" path || ! job_load "$path" child; then
+      fail_current_job_final "Expected child ${index} is missing; window not completed."
+      return 1
+    fi
+    state="$(job_get child STATE)"
+    case "$state" in
+      complete) ;;
+      queued|running|retry_wait) defer_current_job "Waiting for children." 1; return 2 ;;
+      *) fail_current_job_final "Child ${index} did not succeed; window not completed."; return 1 ;;
+    esac
+  done
   complete_job "Scheduled window complete."
-  return 0
 }
 
 process_pool_prep_job() {
@@ -1444,7 +1465,9 @@ main() {
   fi
   parse_send_jobs_config
 
-  trap cleanup EXIT INT TERM
+  trap cleanup EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
   if [[ -n "${ZFSAS_WORKER_LOCK_DIR:-}" ]]; then
     case "${WORKER_ROLE}:${ZFSAS_WORKER_LOCK_DIR}" in
       send:"$SEND_WORKER_RUNTIME_DIR"/worker-*.lockdir|pool_prep:"$SEND_WORKER_RUNTIME_DIR"/pool-prep-*.lockdir)
@@ -1522,6 +1545,10 @@ main() {
     fi
 
     log "Processing send job $(job_get job JOB_ID) ($(job_get job JOB_MODE):$(effective_job_action job))"
+    send_job_cancelled job && break
+    job[ATTEMPT_TOKEN]="$$-${WORKER_START}-${RANDOM}"
+    job[WORKER_PGID]="$$"
+    job[WORKER_START]="$WORKER_START"
     job[STATE]="running"
     # shellcheck disable=SC2034
     job[WORKER_PID]="$$"

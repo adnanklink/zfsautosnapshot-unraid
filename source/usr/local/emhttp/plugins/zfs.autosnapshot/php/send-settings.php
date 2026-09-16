@@ -1088,21 +1088,36 @@ if ($isPostRequest) {
     pendingDeleteStatusEl.textContent = 'Pending snapshot deletes: ' + total;
   }
 
+    var queueRequestBusy = false;
     function handleQueuePayload(payload) {
       if (!payload || payload.ok !== true) {
         throw new Error((payload && payload.error) ? payload.error : 'Queue status failed.');
       }
       renderQueueJobs(payload.jobs || []);
+      var paused = document.getElementById('zfsas-paused-schedules');
+      if (!paused && queueRowsBody) {
+        paused = document.createElement('div'); paused.id = 'zfsas-paused-schedules';
+        queueRowsBody.closest('table').parentNode.appendChild(paused);
+      }
+      if (paused) {
+        paused.innerHTML = (payload.pausedSchedules || []).map(function (id) {
+          return '<p>Schedule ' + escapeHtml(id) + ' is paused. <button type="button" class="btn" data-resume-schedule="' + escapeHtml(id) + '">Resume</button></p>';
+        }).join('');
+      }
       renderPendingDeleteCount(payload.pendingDeleteCount || 0);
     }
 
     function loadQueueJobs() {
+      if (queueRequestBusy || document.hidden) { return; }
+      queueRequestBusy = true;
       requestJson(
         queueStatusApiUrl + '?_=' + Date.now(),
         function (payload) {
+          queueRequestBusy = false;
           handleQueuePayload(payload);
         },
         function (error) {
+          queueRequestBusy = false;
           if (!queueRowsBody) {
             return;
           }
@@ -1136,77 +1151,16 @@ if ($isPostRequest) {
       queuePollTimer = window.setInterval(loadQueueJobs, 5000);
     }
 
-    function scheduleQueueStreamReconnect() {
-      queueStreamErrorCount += 1;
-      loadQueueJobs();
-      stopQueueStreaming();
-      if (queueStreamErrorCount >= 3) {
-        startQueuePolling();
-        return;
-      }
-      queueStreamReconnectTimer = window.setTimeout(function () {
-        startQueueStreaming(false);
-      }, Math.min(5000, 1000 * queueStreamErrorCount));
-    }
-
-    function startQueueStreaming(resetErrors) {
-      if (!window.EventSource) {
-        return false;
-      }
-
-      if (queuePollTimer !== null) {
-        window.clearInterval(queuePollTimer);
-        queuePollTimer = null;
-      }
-      stopQueueStreaming();
-
-      if (resetErrors !== false) {
-        queueStreamErrorCount = 0;
-      }
-      queueStreamLastMessageAt = Date.now();
-      loadQueueJobs();
-      queueStream = new EventSource(queueStreamApiUrl + '?_=' + Date.now());
-      queueStream.onopen = function () {
-        queueStreamLastMessageAt = Date.now();
-        loadQueueJobs();
-      };
-      queueStream.addEventListener('queue', function (event) {
-        var payload;
-        try {
-          payload = JSON.parse(event.data);
-          handleQueuePayload(payload);
-        } catch (error) {
-          queueStreamErrorCount += 1;
-          if (queueStreamErrorCount >= 3) {
-            startQueuePolling();
-          }
-          return;
-        }
-        queueStreamErrorCount = 0;
-        queueStreamLastMessageAt = Date.now();
-      });
-      queueStream.addEventListener('heartbeat', function () {
-        queueStreamLastMessageAt = Date.now();
-      });
-      queueStream.onerror = function () {
-        if (Date.now() - queueStreamLastMessageAt < 3000) {
-          return;
-        }
-        scheduleQueueStreamReconnect();
-      };
-      queueStreamWatchdogTimer = window.setInterval(function () {
-        if (Date.now() - queueStreamLastMessageAt > 30000) {
-          scheduleQueueStreamReconnect();
-        }
-      }, 5000);
-      return true;
-    }
-
-    function startQueueUpdates() {
-      if (!startQueueStreaming()) {
-        startQueuePolling();
-      }
-    }
+    function startQueueUpdates() { startQueuePolling(); }
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) { loadQueueJobs(); } });
+    document.addEventListener('click', function (event) {
+      var button = event.target.closest('[data-resume-schedule]');
+      if (!button) { return; }
+      button.disabled = true;
+      requestJsonPost(queueActionApiUrl, {action: 'resume', job_id: button.getAttribute('data-resume-schedule')},
+        function (payload) { setRunStatus(payload.message, false); loadQueueJobs(); },
+        function (error) { button.disabled = false; setRunStatus(error.message, true); });
+    });
 
   function clearSaveButtonSuccessState() {
     if (!saveButton) {
@@ -1660,7 +1614,7 @@ if ($isPostRequest) {
         return;
       }
 
-      if (action === 'cancel' && !window.confirm('Cancel this send job? If it is running, the worker will be stopped and the job will stay in the queue as a canceled item until you clear it.')) {
+      if (action === 'cancel' && !window.confirm('Cancel the whole current run and pause its schedule? All child transfers will stop. Use Resume to allow future runs.')) {
         return;
       }
 

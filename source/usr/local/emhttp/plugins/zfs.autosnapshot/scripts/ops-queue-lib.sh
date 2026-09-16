@@ -1005,7 +1005,7 @@ job_load() {
   return 0
 }
 
-job_write() {
+job_write_unlocked() {
   local path="$1"
   local assoc_name="$2"
   local tmp
@@ -1029,7 +1029,7 @@ job_write() {
   return 0
 }
 
-job_write_ordered() {
+job_write_ordered_unlocked() {
   local path="$1"
   local assoc_name="$2"
   shift 2
@@ -1067,6 +1067,74 @@ job_write_ordered() {
   chmod 0640 "$path" >/dev/null 2>&1 || true
   ops_apply_owner "$path"
   return 0
+}
+
+# Shared with PHP. Cancellation tombstones are persistent and checked while publishing.
+send_job_cancelled() {
+  local -n control_job="$1"
+  local run_id="${control_job[PARENT_RUN_ID]:-${control_job[JOB_ID]:-}}"
+  [[ "${control_job[CANCELLED_BY_USER]:-0}" == 1 || -f "$CONFIG_DIR/send-control/cancelled/$run_id" ]]
+}
+
+schedule_paused() {
+  [[ -f "$CONFIG_DIR/send-control/paused/$1" ]]
+}
+
+job_write_guarded() {
+  local writer="$1" path="$2" assoc_name="$3" state_fd rc=1
+  shift 3
+  local -n write_ref="$assoc_name"
+  local -A disk_job=()
+  mkdir -p "$OPS_ROOT" || return 1
+  exec {state_fd}>"$OPS_ROOT/send-state.lock" || return 1
+  flock "$state_fd" || { exec {state_fd}>&-; return 1; }
+  if [[ "${write_ref[JOB_TYPE]:-}" != send ]] || ! send_job_cancelled "$assoc_name"; then
+    job_load "$path" disk_job || true
+    if [[ "${disk_job[REVISION]:-0}" == "${write_ref[REVISION]:-0}" ]]; then
+      write_ref[REVISION]="$(( ${write_ref[REVISION]:-0} + 1 ))"
+      "$writer" "$path" "$assoc_name" "$@" && rc=0
+    fi
+  fi
+  flock -u "$state_fd"
+  exec {state_fd}>&-
+  return "$rc"
+}
+
+job_write() { job_write_guarded job_write_unlocked "$@"; }
+job_write_ordered() { job_write_guarded job_write_ordered_unlocked "$@"; }
+
+# Workers are session leaders. A surviving old process group must be stopped before
+# recovery releases reservations or launches a new attempt. Never signal a reused PID.
+process_start_time() {
+  local stat
+  stat="$(cat "/proc/$1/stat" 2>/dev/null)" || return 1
+  stat="${stat##*) }"
+  awk '{print $20}' <<< "$stat"
+}
+
+send_group_members() {
+  local group="$1" exclude="${2:-0}"
+  ps -eo pid=,pgid=,stat= | awk -v g="$group" -v e="$exclude" '$2 == g && $1 != e && $3 !~ /^Z/ {print $1}'
+}
+
+stop_send_process_group() {
+  local group="$1" expected_start="${2:-}" exclude="${3:-0}" pid round
+  [[ "$group" =~ ^[0-9]+$ ]] && (( group > 1 )) || return 0
+  if [[ -r "/proc/$group/stat" && -n "$expected_start" ]]; then
+    [[ "$(process_start_time "$group")" == "$expected_start" ]] || return 1
+  fi
+  # Signal members, excluding the worker currently running its EXIT trap.
+  for round in {1..30}; do
+    local -a members=()
+    mapfile -t members < <(send_group_members "$group" "$exclude")
+    ((${#members[@]})) || return 0
+    for pid in "${members[@]}"; do
+      if (( round < 20 )); then kill -TERM "$pid" 2>/dev/null || true
+      else kill -KILL "$pid" 2>/dev/null || true; fi
+    done
+    sleep 0.1
+  done
+  [[ -z "$(send_group_members "$group" "$exclude")" ]]
 }
 
 job_set() {
@@ -1172,9 +1240,17 @@ record_completed_schedule_window() {
   [[ -n "$schedule_job_id" ]] || return 1
   [[ "$window_key" =~ ^[0-9]+$ ]] || return 1
 
+  local state_fd
+  exec {state_fd}>"$OPS_ROOT/send-state.lock" || return 1
+  flock "$state_fd" || return 1
+  if schedule_paused "$schedule_job_id"; then
+    exec {state_fd}>&-
+    return 1
+  fi
   load_schedule_state
   SCHEDULE_LAST_COMPLETED_WINDOW["$schedule_job_id"]="$window_key"
   write_schedule_state
+  exec {state_fd}>&-
 }
 
 latest_current_window_send_basename_for_dataset() {
@@ -2805,7 +2881,11 @@ report_zfs_send_progress_bytes() {
   (( percent > end_percent )) && percent="$end_percent"
 
   if declare -F set_job_progress >/dev/null 2>&1; then
-    set_job_progress "sending" "$percent" "Sending."
+    # Progress is advisory and must never publish a stale lifecycle record.
+    local progress_tmp
+    progress_tmp="$(mktemp "${CURRENT_JOB_PATH}.progress.XXXXXX")" || return 0
+    printf '%s %s\n' "${job[ATTEMPT_TOKEN]:-}" "$percent" > "$progress_tmp"
+    mv "$progress_tmp" "${CURRENT_JOB_PATH}.progress"
   fi
 }
 
@@ -4200,11 +4280,13 @@ schedule_job_blocked() {
   local -A job=()
   local state
 
+  schedule_paused "$schedule_job_id" && return 0
   while IFS= read -r file; do
     job_load "$file" job || continue
     [[ "$(job_get job JOB_TYPE)" == "send" ]] || continue
     [[ "$(job_get job JOB_MODE)" == "scheduled" ]] || continue
     [[ "$(job_get job SCHEDULE_JOB_ID)" == "$schedule_job_id" ]] || continue
+    send_job_cancelled job && continue
     state="$(job_get job STATE)"
     if [[ "$state" == "queued" || "$state" == "running" || "$state" == "retry_wait" || "$state" == "failed" ]]; then
       return 0
@@ -4254,6 +4336,7 @@ enqueue_scheduled_send_jobs_due() {
   run_group_id="scheduled-${requested_epoch}"
 
   for job_id in "${SCHEDULE_JOB_IDS[@]}"; do
+    schedule_paused "$job_id" && continue
     frequency="${SCHEDULE_FREQUENCY[$job_id]}"
     current_window="$(frequency_window_key "$frequency" "$now_epoch")"
     [[ "$current_window" =~ ^[0-9]+$ ]] || continue
@@ -4337,6 +4420,18 @@ prune_old_jobs() {
     state="$(job_get job STATE)"
     case "$state" in
       complete|skipped)
+        # Child success is evidence required by its finalizer; retain it until that
+        # finalizer is complete. A missing child can never imply success.
+        if [[ "$(job_get job JOB_ACTION)" == send_member ]]; then
+          local final_path="" parent_id
+          parent_id="$(job_get job PARENT_RUN_ID)"
+          local -A final_job=()
+          if find_job_by_id "finalize-${parent_id}" final_path && job_load "$final_path" final_job; then
+            [[ "$(job_get final_job STATE)" == complete ]] || continue
+          else
+            continue
+          fi
+        fi
         action="$(job_get job JOB_ACTION)"
         if [[ "$action" == "pool_prep" ]]; then
           prep_job_id="$(job_get job JOB_ID)"
@@ -4512,6 +4607,7 @@ send_job_ready_for_selector() {
   local state retry_at job_id
 
   [[ "${job_ref[JOB_TYPE]:-}" == "send" ]] || return 1
+  send_job_cancelled "$assoc_name" && return 1
   send_job_matches_selector "$assoc_name" "$selector" || return 1
   state="${job_ref[STATE]:-}"
   retry_at="${job_ref[RETRY_AT]:-0}"
@@ -4631,9 +4727,25 @@ reconcile_stale_jobs() {
   while IFS= read -r file; do
     job_load "$file" job || continue
     state="$(job_get job STATE)"
+    if [[ "$state" == canceling ]]; then
+      stop_send_process_group "$(job_get job WORKER_PGID)" "$(job_get job WORKER_START)" || continue
+      local cancel_fd
+      exec {cancel_fd}>"$OPS_ROOT/send-state.lock"
+      flock "$cancel_fd"
+      job_load "$file" job || { exec {cancel_fd}>&-; continue; }
+      job[STATE]="failed"; job[PHASE]="canceled"; job[WORKER_PID]=""
+      job[LAST_MESSAGE]="Canceled; schedule paused until Resume."
+      job[LAST_ERROR]="Canceled by user."
+      job[REVISION]="$(( ${job[REVISION]:-0} + 1 ))"
+      job_write_unlocked "$file" job || true
+      exec {cancel_fd}>&-
+      continue
+    fi
     [[ "$state" == "running" ]] || continue
     worker_pid="$(job_get job WORKER_PID)"
     process_alive "$worker_pid" && continue
+    stop_send_process_group "$(job_get job WORKER_PGID)" "$(job_get job WORKER_START)" || continue
+    send_job_cancelled job && continue
 
     phase="$(job_get job PHASE)"
     case "$phase" in
