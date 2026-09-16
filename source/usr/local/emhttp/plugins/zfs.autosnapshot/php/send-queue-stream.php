@@ -27,14 +27,4 @@ ob_implicit_flush(true);
 
 echo "retry: 2000\n\n";
 
-if (!zfsas_ops_ensure_storage_dirs()) {
-    zfsas_send_stream_emit('queue', [
-        'ok' => false,
-        'error' => 'ZFS send queue storage is unavailable.',
-        'jobs' => [],
-        'pendingDeleteCount' => 0,
-    ]);
-    exit;
-}
-
 zfsas_send_stream_emit('queue', zfsas_ops_send_queue_status_payload(120));

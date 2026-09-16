@@ -8,6 +8,19 @@ function zfsas_auto_defaults()
         'SCHEDULE_WEEKLY_HOUR' => '3', 'SCHEDULE_WEEKLY_MINUTE' => '0', 'CUSTOM_CRON_SCHEDULE' => '', 'CRON_SCHEDULE' => ''];
 }
 
+// A per-configuration lock on RAM, shared with sync-cron.sh. Reading settings
+// must never create a file or change directory metadata on the boot device.
+function zfsas_config_lock($dir)
+{
+    $root = '/tmp/zfs-autosnapshot-config-locks';
+    if (!is_dir($root)) { @mkdir($root, 0775, true); }
+    @chown($root, 'nobody'); @chgrp($root, 'users');
+    $path = $root . '/' . hash('sha256', $dir) . '.lock';
+    $lock = @fopen($path, 'c');
+    @chmod($path, 0660); @chown($path, 'nobody'); @chgrp($path, 'users');
+    return $lock;
+}
+
 function zfsas_config_revision($dir)
 {
     return hash('sha256', (string) @file_get_contents($dir . '/zfs_autosnapshot.conf') . "\0" . (string) @file_get_contents($dir . '/zfs_send.conf'));
@@ -40,8 +53,7 @@ function zfsas_known_send_prefixes($dir)
 function zfsas_config_save($kind, $dir, array $submitted, $revision, $render, $syncScript)
 {
     $result = ['saved' => false, 'schedulerApplied' => false, 'errors' => [], 'notices' => [], 'revision' => zfsas_config_revision($dir)];
-    if (!is_dir($dir)) { @mkdir($dir, 0775, true); }
-    $lock = @fopen($dir . '/config.lock', 'c');
+    $lock = zfsas_config_lock($dir);
     if (!$lock || !flock($lock, LOCK_EX)) { $result['errors'][] = 'Unable to lock configuration.'; return $result; }
     try {
         $auto = zfsas_send_parse_config_file($dir . '/zfs_autosnapshot.conf', zfsas_auto_defaults());
@@ -79,8 +91,7 @@ function zfsas_config_save($kind, $dir, array $submitted, $revision, $render, $s
 
 function zfsas_config_read_pair($dir)
 {
-    if (!is_dir($dir)) { @mkdir($dir, 0775, true); }
-    $lock = @fopen($dir . '/config.lock', 'c');
+    $lock = zfsas_config_lock($dir);
     if (!$lock || !flock($lock, LOCK_SH)) { throw new RuntimeException('Unable to read configuration under its lock.'); }
     try {
         return ['auto' => zfsas_send_parse_config_file($dir . '/zfs_autosnapshot.conf', zfsas_auto_defaults()),

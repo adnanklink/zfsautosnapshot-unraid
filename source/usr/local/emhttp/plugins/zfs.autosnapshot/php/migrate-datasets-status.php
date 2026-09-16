@@ -2,13 +2,6 @@
 require_once __DIR__ . '/response-helpers.php';
 require_once __DIR__ . '/migrate-datasets-helpers.php';
 
-if (!zfsas_migrate_ensure_storage()) {
-    zfsas_emit_marked_json([
-        'ok' => false,
-        'error' => 'Dataset migrator storage is unavailable.',
-    ], 500);
-}
-
 $selectedDataset = zfsas_migrate_trim($_GET['dataset'] ?? '');
 $datasetError = null;
 $previewError = null;

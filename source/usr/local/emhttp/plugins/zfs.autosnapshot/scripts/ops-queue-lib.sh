@@ -18,10 +18,10 @@ OPS_STATUS_DIR="${OPS_ROOT}/status"
 DELETE_QUEUE_STATE_FILE="${OPS_STATUS_DIR}/delete-queue.state"
 DELETE_QUEUE_INBOX_FILE="${OPS_ROOT}/delete-queue.inbox"
 DELETE_QUEUE_INBOX_LOCK_FILE="${OPS_ROOT}/delete-queue.inbox.lock"
-PERSISTED_QUEUE_DIR="${CONFIG_DIR}/runtime_queue"
+PERSISTED_QUEUE_DIR="${OPS_ROOT}/runtime_queue"
 PERSISTED_DELETE_QUEUE_FILE="${PERSISTED_QUEUE_DIR}/delete-queue.persist"
-FAILED_SEND_LOGS_DIR="${CONFIG_DIR}/failed_send_logs"
-SEND_SCHEDULE_STATE_FILE="${CONFIG_DIR}/send_schedule_state.state"
+FAILED_SEND_LOGS_DIR="/var/log/zfs-autosnapshot-failed-sends"
+SEND_SCHEDULE_STATE_FILE="${OPS_STATUS_DIR}/send_schedule_state.state"
 RUNTIME_DIR="/var/run/zfs-autosnapshot-ops"
 QUEUE_MANAGER_LOCK_DIR="${RUNTIME_DIR}/queue-manager.lockdir"
 SEND_WORKER_RUNTIME_DIR="${RUNTIME_DIR}/send-workers"
@@ -667,12 +667,12 @@ preserve_failed_send_log_for_job() {
 
   {
     if [[ -f "$path" ]]; then
-      cat "$path"
+      tail -c "$SEND_LOG_ARCHIVE_MAX_BYTES" "$path"
       printf '\n'
     else
       printf 'ZFS Send Failure Log Archive\n'
       printf 'Job ID: %s\n' "$job_id"
-      printf 'This file keeps every preserved shared-send-log snapshot captured when this queue item entered final failed state.\n\n'
+      printf 'This RAM-only file keeps bounded failure captures for this boot.\n\n'
     fi
     printf '===== Failure Capture %s =====\n' "$now_utc"
     printf 'State: %s\n' "${job_ref[STATE]:-failed}"
@@ -685,14 +685,16 @@ preserve_failed_send_log_for_job() {
     [[ -n "${job_ref[LAST_MESSAGE]:-}" ]] && printf 'Last Message: %s\n' "${job_ref[LAST_MESSAGE]}"
     printf 'Shared Log Source: %s\n\n' "$LOG_FILE"
     if [[ -f "$LOG_FILE" && ! -L "$LOG_FILE" && -r "$LOG_FILE" ]]; then
-      cat "$LOG_FILE"
+      tail -c "$SEND_LOG_MAX_BYTES" "$LOG_FILE"
       printf '\n'
     else
       printf 'Shared send log was unavailable or unreadable at preservation time.\n\n'
     fi
   } > "$tmp"
 
-  mv -f "$tmp" "$path"
+  tail -c "$SEND_LOG_ARCHIVE_MAX_BYTES" "$tmp" > "${tmp}.bounded" || return 1
+  rm -f "$tmp"
+  mv -f "${tmp}.bounded" "$path"
   chmod 0640 "$path" >/dev/null 2>&1 || true
   ops_apply_owner "$path"
 }
@@ -1237,7 +1239,7 @@ load_schedule_state() {
 
 write_schedule_state() {
   local tmp job_id
-  ops_ensure_dir "$CONFIG_DIR" || return 1
+  ops_ensure_dir "$OPS_STATUS_DIR" || return 1
   tmp="$(mktemp "${SEND_SCHEDULE_STATE_FILE}.tmp.XXXXXX")" || return 1
 
   while IFS= read -r job_id; do

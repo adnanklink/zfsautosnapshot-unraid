@@ -299,6 +299,9 @@ ALLOW_ORPHAN_DESTROY_MATCHES=0
 RUN_MATCH="$MIGRATOR_RUN_MATCH"
 stop_running_jobs
 
+# Runtime state is RAM-only; old deletion/batch authority requires fresh review.
+"${PLUGIN_DIR}/scripts/migrate-runtime-state.sh"
+
 sync_exit=0
 if [[ -x "${PLUGIN_DIR}/scripts/sync-cron.sh" ]]; then
   "${PLUGIN_DIR}/scripts/sync-cron.sh" || sync_exit=$?

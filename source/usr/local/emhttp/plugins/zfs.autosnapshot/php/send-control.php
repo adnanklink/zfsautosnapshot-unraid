@@ -15,6 +15,16 @@ function zfsas_ops_control_path($kind, $id)
     return zfsas_ops_plugin_config_dir() . '/send-control/' . $kind . '/' . zfsas_ops_sanitize_job_id_for_path($id);
 }
 
+// Explicit control decisions are the only send runtime writes allowed on flash.
+function zfsas_ops_persist_control($path, $value)
+{
+    if (is_file($path) && @file_get_contents($path) === $value) { return true; }
+    if (!zfsas_ops_ensure_dir(dirname($path)) || zfsas_send_write_config_atomically($path, $value) === false) { return false; }
+    $output = []; $code = 1;
+    exec('sync -f ' . escapeshellarg(dirname($path)) . ' 2>&1', $output, $code);
+    return $code === 0;
+}
+
 function zfsas_ops_run_id($job)
 {
     return (string) ($job['PARENT_RUN_ID'] ?? $job['JOB_ID'] ?? '');
@@ -74,12 +84,12 @@ function zfsas_ops_cancel_send_job($jobId, &$error = null)
         }
         $run = zfsas_ops_run_id($selected);
         $fence = zfsas_ops_control_path('cancelled', $run);
-        if (!zfsas_ops_ensure_dir(dirname($fence)) || file_put_contents($fence, (string) time()) === false) {
+        if (!is_file($fence) && !zfsas_ops_persist_control($fence, $run)) {
             $error = 'Unable to persist cancellation.'; return false;
         }
         if (!empty($selected['SCHEDULE_JOB_ID'])) {
             $pause = zfsas_ops_control_path('paused', $selected['SCHEDULE_JOB_ID']);
-            if (!zfsas_ops_ensure_dir(dirname($pause)) || file_put_contents($pause, $run) === false) {
+            if (!zfsas_ops_persist_control($pause, $run)) {
                 $error = 'Cancellation saved, but unable to persist the schedule pause.'; return false;
             }
         }
@@ -143,7 +153,12 @@ function zfsas_ops_resume_schedule($scheduleId, &$error = null)
             }
         }
         $path = zfsas_ops_control_path('paused', $scheduleId);
-        return !is_file($path) || unlink($path);
+        if (!is_file($path)) { return true; }
+        if (!unlink($path)) { $error = 'Unable to persist Resume.'; return false; }
+        $output = []; $code = 1;
+        exec('sync -f ' . escapeshellarg(dirname($path)) . ' 2>&1', $output, $code);
+        if ($code !== 0) { $error = 'Resume could not be synchronized to flash.'; return false; }
+        return true;
     } finally { flock($lock, LOCK_UN); fclose($lock); }
 }
 

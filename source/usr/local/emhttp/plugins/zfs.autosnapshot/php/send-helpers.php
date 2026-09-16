@@ -790,6 +790,7 @@ function zfsas_send_render_config($config)
 
 function zfsas_send_write_config_atomically($configFile, $content)
 {
+    if (is_file($configFile) && @file_get_contents($configFile) === $content) { return strlen($content); }
     $dir = dirname($configFile);
     $tmpFile = tempnam($dir, basename($configFile) . '.tmp.');
     if ($tmpFile === false) {
@@ -802,6 +803,12 @@ function zfsas_send_write_config_atomically($configFile, $content)
         return false;
     }
 
+    $handle = @fopen($tmpFile, 'r+');
+    if (!$handle || !fsync($handle)) {
+        if ($handle) { fclose($handle); }
+        @unlink($tmpFile); return false;
+    }
+    fclose($handle);
     @chmod($tmpFile, 0660);
     if (!@rename($tmpFile, $configFile)) {
         @unlink($tmpFile);

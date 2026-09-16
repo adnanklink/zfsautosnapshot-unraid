@@ -40,7 +40,7 @@ function zfsas_ops_delete_queue_inbox_lock_path()
 
 function zfsas_ops_persisted_queue_dir()
 {
-    return zfsas_ops_plugin_config_dir() . '/runtime_queue';
+    return zfsas_ops_root_dir() . '/runtime_queue';
 }
 
 function zfsas_ops_delete_queue_persisted_path()
@@ -50,7 +50,7 @@ function zfsas_ops_delete_queue_persisted_path()
 
 function zfsas_ops_failed_send_logs_dir()
 {
-    return zfsas_ops_plugin_config_dir() . '/failed_send_logs';
+    return '/var/log/zfs-autosnapshot-failed-sends';
 }
 
 function zfsas_ops_shared_send_log_path()

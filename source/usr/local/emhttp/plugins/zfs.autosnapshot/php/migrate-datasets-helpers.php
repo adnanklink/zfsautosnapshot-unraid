@@ -14,7 +14,7 @@ function zfsas_migrate_h($value)
 
 function zfsas_migrate_plugin_dir()
 {
-    return '/boot/config/plugins/zfs.autosnapshot/dataset_migrator';
+    return '/tmp/zfs-autosnapshot-migrator';
 }
 
 function zfsas_migrate_logs_dir()

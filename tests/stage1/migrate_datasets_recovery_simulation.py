@@ -18,7 +18,7 @@ def write_executable(path: Path, content: str) -> None:
     path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
 
-def main() -> None:
+def main(version: int = 1) -> None:
     with tempfile.TemporaryDirectory(prefix="zfsas-migrator-recovery-") as tmp:
         root = Path(tmp)
         plugin_root = root / "plugin"
@@ -58,6 +58,22 @@ def main() -> None:
             encoding="utf-8",
         )
 
+        if version == 2:
+            with (plugin_root / "recovery.env").open("a") as checkpoint:
+                checkpoint.write('RECOVERY_VERSION="2"\nRECOVERY_DATASET_GUID="11"\nRECOVERY_TARGET_GUID="22"\n')
+                checkpoint.write('declare -ga CONTAINER_IDS=([0]="cid111" [1]="cid222")\n')
+                checkpoint.write('declare -ga CONTAINER_NAMES=([0]="app-db" [1]="app-web")\n')
+                checkpoint.write('declare -ga CONTAINER_RESTART_NAMES=([0]="always" [1]="on-failure")\n')
+                checkpoint.write('declare -ga CONTAINER_RESTART_MAXS=([0]="0" [1]="3")\n')
+                checkpoint.write('declare -ga CONTAINER_WAS_RUNNING=([0]="1" [1]="1")\n')
+                checkpoint.write('declare -ga CONTAINER_POLICY_DISABLED=([0]="1" [1]="1")\n')
+                checkpoint.write('declare -ga CONTAINER_NETWORK_MODES=([0]="default" [1]="default")\n')
+                checkpoint.write('declare -ga CONTAINER_DEPENDENCY_REFS=([0]="" [1]="")\n')
+                checkpoint.write('declare -ga CONTAINER_DEPENDENCY_INDEXES=([0]="" [1]="")\n')
+            # A reboot loses all display state. Only the safety checkpoint remains.
+            (plugin_root / "folders.tsv").unlink()
+            (plugin_root / "containers.tsv").unlink()
+
         fake_common = "#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' \"$(basename \"$0\") $*\" >> \"$ZFSAS_TEST_OPERATION_LOG\"\n"
         write_executable(
             fakebin / "zfs",
@@ -65,7 +81,7 @@ def main() -> None:
             + "case \"${1:-}\" in\n"
             + "  list) if [[ \" $* \" == *\" -o avail \"* ]]; then printf '9999999999\\n'; fi; exit 0 ;;\n"
             + "  create) mkdir -p \"$ZFSAS_TEST_DESTINATION\"; exit 0 ;;\n"
-            + "  get) printf '%s\\n' \"$ZFSAS_TEST_DESTINATION\"; exit 0 ;;\n"
+            + "  get) if [[ \" $* \" == *\" guid \"* ]]; then if [[ \"${@: -1}\" == tank/user ]]; then echo 11; else echo 22; fi; exit 0; fi; printf '%s\\n' \"$ZFSAS_TEST_DESTINATION\"; exit 0 ;;\n"
             + "  *) exit 0 ;;\n"
             + "esac\n",
         )
@@ -176,3 +192,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+    main(2)

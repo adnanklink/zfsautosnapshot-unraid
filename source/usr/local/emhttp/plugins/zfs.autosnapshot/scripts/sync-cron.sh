@@ -10,8 +10,11 @@ RUN_CMD="/usr/local/sbin/zfs_autosnapshot"
 QUEUE_KICKER_CMD="/usr/local/sbin/zfs_autosnapshot_queue_kicker"
 
 if [[ "${ZFSAS_CONFIG_LOCK_HELD:-0}" != 1 ]]; then
-  mkdir -p "$CONFIG_DIR"
-  exec 8>"$CONFIG_DIR/config.lock"
+  mkdir -p /tmp/zfs-autosnapshot-config-locks
+  config_lock_key="$(printf %s "$CONFIG_DIR" | sha256sum | cut -d ' ' -f1)"
+  exec 8>"/tmp/zfs-autosnapshot-config-locks/${config_lock_key}.lock"
+  chmod 0660 "/tmp/zfs-autosnapshot-config-locks/${config_lock_key}.lock"
+  chown nobody:users /tmp/zfs-autosnapshot-config-locks "/tmp/zfs-autosnapshot-config-locks/${config_lock_key}.lock" 2>/dev/null || true
   flock 8
 fi
 
@@ -253,7 +256,6 @@ build_cron_schedule() {
 	esac
 }
 
-mkdir -p "$CONFIG_DIR"
 
 load_config_file "$CONFIG_FILE"
 load_config_file "$SEND_CONFIG_FILE"

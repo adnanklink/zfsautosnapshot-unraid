@@ -37,7 +37,7 @@ function zfsas_sm_plugin_config_dir()
 
 function zfsas_sm_root_dir()
 {
-    return zfsas_sm_plugin_config_dir() . '/snapshot_manager';
+    return '/tmp/zfs-autosnapshot-snapshot-manager';
 }
 
 function zfsas_sm_queue_root_dir()
