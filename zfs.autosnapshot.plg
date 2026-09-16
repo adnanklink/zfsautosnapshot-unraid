@@ -1,13 +1,13 @@
 <?xml version='1.0' standalone='yes'?>
-<PLUGIN name="zfs.autosnapshot" author="Brandon Stone" version="2026.09.16.01" icon="zfs-autosnapshot.png" pluginURL="https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/fix/job-coordination/dist/zfs.autosnapshot.plg" support="https://forums.unraid.net/topic/197348-plugin-zfs-auto-snapshot/" min="6.12.0" launch="Settings/ZFSAutoSnapshot">Plain-English ZFS snapshot scheduling, retention cleanup, and low-space protection for Unraid.
+<PLUGIN name="zfs.autosnapshot" author="Brandon Stone" version="2026.09.16.02" icon="zfs-autosnapshot.png" pluginURL="https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/fix/job-coordination/dist/zfs.autosnapshot.plg" support="https://forums.unraid.net/topic/197348-plugin-zfs-auto-snapshot/" min="6.12.0" launch="Settings/ZFSAutoSnapshot">Plain-English ZFS snapshot scheduling, retention cleanup, and low-space protection for Unraid.
   <CHANGES>
-### 2026.09.16.01 (2026-09-16)
-- Development release from the fix/job-coordination branch; replication coordination is still being migrated and this is not a completed stable release.
-- Moved routine queues, cursors, batch history and migration progress into RAM. Runtime history is lost on reboot; explicit pauses and essential migration recovery checkpoints persist.
-- Added a PHP coordinator for Auto Snapshot, bounded Snapshot Manager attempts and deletion-worker launches, with verified process shutdown and persistent Auto Snapshot Cancel/Resume.
-- Added Save-anchored intervals, explicit legacy schedule conversion, and Send daily/weekly time controls and previews.
-- Allowed prerequisite cleanup around exact send references and later occurrences after exhausted send failures; preserved destination, GUID, hold and resume safety checks.
-- Added reviewed bulk snapshot actions, fixed selections, failed-only retries and shared migration resource locks.
+### 2026.09.16.02 (2026-09-16)
+- Development update; full replication coordinator integration remains unfinished.
+- Queued automatic snapshots adopt updated settings only before their first attempt. Changed manual requests require fresh approval; schedule conversion preserves the new first-run time.
+- Frozen replication membership and snapshot/dataset GUIDs prevent child transfers from changing identity during recovery. Finalization requires matching success from every expected child.
+- Older pending finalizers without identity evidence fail safely; review a new run instead of assuming completion.
+- Replication cleanup launches deletion through the coordinator. Requests arriving during worker shutdown remain queued for another verified attempt.
+- Avoided redundant batch-manifest writes after completion and repaired interrupted configuration captures.
 
   </CHANGES>
 
@@ -17,9 +17,9 @@ ZFS Auto Snapshot adds plain-English scheduling and safe snapshot lifecycle mana
 
   <SUPPORT>https://forums.unraid.net/topic/197348-plugin-zfs-auto-snapshot/</SUPPORT>
 
-  <FILE Name="/boot/config/plugins/zfs.autosnapshot/zfs-autosnapshot-2026.09.16.01-noarch-1.txz" Min="6.12.0">
-    <URL>https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/fix/job-coordination/dist/zfs-autosnapshot-2026.09.16.01-noarch-1.txz</URL>
-    <MD5>fc188ec60732dc5b9e7d3c6055a44169</MD5>
+  <FILE Name="/boot/config/plugins/zfs.autosnapshot/zfs-autosnapshot-2026.09.16.02-noarch-1.txz" Min="6.12.0">
+    <URL>https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/fix/job-coordination/dist/zfs-autosnapshot-2026.09.16.02-noarch-1.txz</URL>
+    <MD5>4a7b3af19a004e02279508c3b71bd098</MD5>
   </FILE>
 
   <FILE Run="/bin/bash">
@@ -27,10 +27,10 @@ ZFS Auto Snapshot adds plain-English scheduling and safe snapshot lifecycle mana
 set -euo pipefail
 
 PKG_DIR="/boot/config/plugins/zfs.autosnapshot"
-PKG_FILE="zfs-autosnapshot-2026.09.16.01-noarch-1.txz"
+PKG_FILE="zfs-autosnapshot-2026.09.16.02-noarch-1.txz"
 PKG_PATH="${PKG_DIR}/${PKG_FILE}"
 PKG_URL="https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/fix/job-coordination/dist/${PKG_FILE}"
-PKG_MD5="fc188ec60732dc5b9e7d3c6055a44169"
+PKG_MD5="4a7b3af19a004e02279508c3b71bd098"
 PKG_NAME="zfs-autosnapshot"
 
 if command -v upgradepkg >/dev/null 2>&1; then
