@@ -2,6 +2,8 @@
 
 require_once __DIR__ . '/response-helpers.php';
 require_once __DIR__ . '/send-queue-helpers.php';
+require_once __DIR__ . '/snapshot-inventory.php';
+require_once __DIR__ . '/snapshot-batches.php';
 
 function zfsas_sm_trim($value)
 {
@@ -25,7 +27,7 @@ function zfsas_sm_is_valid_snapshot_name($snapshotName)
 
 function zfsas_sm_dataset_key($dataset)
 {
-    return substr(sha1(strtolower(zfsas_sm_trim($dataset))), 0, 16);
+    return substr(sha1(zfsas_sm_trim($dataset)), 0, 16);
 }
 
 function zfsas_sm_plugin_config_dir()
@@ -66,9 +68,9 @@ function zfsas_sm_action_label($action)
         case 'delete':
             return 'Delete Snapshot';
         case 'hold':
-            return 'Hold Snapshot';
+            return 'Add plugin hold';
         case 'release':
-            return 'Release Snapshot';
+            return 'Release plugin hold';
         case 'rollback':
             return 'Rollback Snapshot';
         case 'send':
@@ -179,8 +181,10 @@ function zfsas_sm_write_json_file($path, $payload)
         return false;
     }
 
-    $written = @file_put_contents($path, $encoded . "\n");
-    if ($written === false) {
+    $tmp = tempnam($dir, ".publish-");
+    $written = $tmp === false ? false : @file_put_contents($tmp, $encoded . "\n");
+    if ($written === false || !@rename($tmp, $path)) {
+        if ($tmp) { @unlink($tmp); }
         return false;
     }
 
@@ -379,104 +383,11 @@ function zfsas_sm_snapshot_hold_tags($snapshot)
 
 function zfsas_sm_actionable_snapshot_rows($action, array $rows, &$skippedCount = 0)
 {
-    $skippedCount = 0;
-    $action = (string) $action;
-    $filtered = [];
-
-    foreach ($rows as $row) {
-        if (!is_array($row)) {
-            $skippedCount++;
-            continue;
-        }
-
-        if (!empty($row['pendingDelete'])) {
-            $skippedCount++;
-            continue;
-        }
-
-        if ($action === 'hold' && !empty($row['held'])) {
-            $skippedCount++;
-            continue;
-        }
-
-        if ($action === 'release' && empty($row['held'])) {
-            $skippedCount++;
-            continue;
-        }
-
-        $filtered[] = $row;
-    }
-
+    $filtered = array_values(array_filter($rows, function ($row) use ($action) {
+        return is_array($row) && zfsas_sm_exclusion($action, $row) === '';
+    }));
+    $skippedCount = count($rows) - count($filtered);
     return $filtered;
-}
-
-function zfsas_sm_dataset_snapshots($dataset, &$error = null)
-{
-    $error = null;
-
-    if (!zfsas_sm_is_valid_dataset_name($dataset)) {
-        $error = 'Invalid dataset name.';
-        return [];
-    }
-
-    $command = 'zfs list -H -p -s creation -t snapshot -o name,creation,used,written,userrefs -d 1 ' . escapeshellarg($dataset);
-    $lines = zfsas_sm_exec_lines($command, $exitCode);
-    if ($exitCode !== 0) {
-        $error = 'Unable to read snapshots for the selected dataset.';
-        return [];
-    }
-
-    $queuedDeletes = zfsas_ops_delete_snapshot_map();
-    $sendPrefixBase = zfsas_sm_read_send_snapshot_prefix_base();
-    $rows = [];
-    foreach ($lines as $line) {
-        $parts = preg_split('/\t+/', trim((string) $line));
-        if (!is_array($parts) || count($parts) < 5) {
-            continue;
-        }
-
-        $fullName = (string) $parts[0];
-        if (strpos($fullName, '@') === false) {
-            continue;
-        }
-
-        list($rowDataset, $snapshotName) = explode('@', $fullName, 2);
-        if ($rowDataset !== $dataset) {
-            continue;
-        }
-
-        $pendingDelete = $queuedDeletes[$fullName] ?? null;
-
-        $createdEpoch = (int) $parts[1];
-        $used = (int) $parts[2];
-        $written = (int) $parts[3];
-        $userrefs = (int) $parts[4];
-        $holdTags = ($userrefs > 0) ? zfsas_sm_snapshot_hold_tags($fullName) : [];
-        $sendProtected = zfsas_sm_is_send_protected_snapshot($snapshotName);
-        $sendScheduleJobId = $sendProtected ? zfsas_ops_schedule_job_id_from_snapshot_name($snapshotName, $sendPrefixBase) : '';
-
-        $rows[] = [
-            'dataset' => $dataset,
-            'snapshot' => $fullName,
-            'snapshotName' => $snapshotName,
-            'createdEpoch' => $createdEpoch,
-            'createdText' => zfsas_sm_format_utc($createdEpoch),
-            'usedBytes' => $used,
-            'usedText' => zfsas_sm_human_bytes($used),
-            'writtenBytes' => $written,
-            'writtenText' => zfsas_sm_human_bytes($written),
-            'userrefs' => $userrefs,
-            'held' => $userrefs > 0,
-            'holdTags' => $holdTags,
-            'sendProtected' => $sendProtected,
-            'sendScheduleJobId' => $sendScheduleJobId,
-            'pendingDelete' => is_array($pendingDelete),
-            'pendingDeleteState' => is_array($pendingDelete) ? (string) ($pendingDelete['STATE'] ?? 'queued') : '',
-            'pendingDeleteJobId' => is_array($pendingDelete) ? (string) ($pendingDelete['JOB_ID'] ?? '') : '',
-        ];
-    }
-
-    return $rows;
 }
 
 function zfsas_sm_start_worker($dataset, &$error = null)

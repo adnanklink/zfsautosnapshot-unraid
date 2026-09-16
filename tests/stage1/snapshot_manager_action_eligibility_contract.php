@@ -17,21 +17,21 @@ $rows = [
         'snapshot' => 'tank/appdata@already-held',
         'snapshotName' => 'already-held',
         'createdEpoch' => 100,
-        'held' => true,
+        'held' => true, 'pluginHeld' => true, 'metadataComplete' => true,
         'pendingDelete' => false,
     ],
     [
         'snapshot' => 'tank/appdata@unheld',
         'snapshotName' => 'unheld',
         'createdEpoch' => 200,
-        'held' => false,
+        'held' => false, 'pluginHeld' => false, 'metadataComplete' => true,
         'pendingDelete' => false,
     ],
     [
         'snapshot' => 'tank/appdata@delete-queued',
         'snapshotName' => 'delete-queued',
         'createdEpoch' => 300,
-        'held' => false,
+        'held' => false, 'pluginHeld' => false, 'metadataComplete' => true,
         'pendingDelete' => true,
     ],
 ];
@@ -53,7 +53,7 @@ if ((int) $skippedRelease !== 2) {
 }
 
 $actionPhp = file_get_contents($root . '/source/usr/local/emhttp/plugins/zfs.autosnapshot/php/snapshot-manager-action.php');
-if (strpos($actionPhp, 'zfsas_sm_actionable_snapshot_rows($action, $ordered') === false) {
+if (strpos($actionPhp, 'zfsas_sm_batch_review($batch, $rows)') === false) {
     fail_contract('snapshot-manager-action.php must apply server-side eligibility before queueing operations');
 }
 

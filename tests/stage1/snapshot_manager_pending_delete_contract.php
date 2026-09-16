@@ -22,8 +22,8 @@ $snapshotName = 'autosnap_2026-05-20_0700';
 
 $fakeZfs = <<<'SH'
 #!/usr/bin/env bash
-if [[ "$1 $2 $3 $4 $5 $6 $7 $8 $9" == *"list -H -p -s creation -t snapshot"* ]]; then
-  printf 'tank/appdata@autosnap_2026-05-20_0700\t1779260400\t1024\t512\t0\n'
+if [[ "$1 $2 $3 $4 $5 $6 $7 $8 $9" == *"list -H -p -t snapshot"* ]]; then
+  printf 'tank/appdata@autosnap_2026-05-20_0700\t1779260400\t1024\t512\t0\t123\t456\t-\n'
   exit 0
 fi
 if [[ "$1 $2 $3" == "list -H -o"* ]]; then
@@ -60,7 +60,7 @@ $line = implode("\t", [
 file_put_contents($opsRoot . '/delete-queue.inbox', $line . PHP_EOL);
 
 $error = null;
-$rows = zfsas_sm_dataset_snapshots($dataset, $error);
+$rows = zfsas_sm_dataset_snapshots($dataset, $error, true);
 if ($error !== null) {
     fail_contract('snapshot list returned error: ' . $error);
 }

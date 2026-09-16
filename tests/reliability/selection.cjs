@@ -1,0 +1,16 @@
+const assert = require('node:assert/strict');
+const Selection = require('../../source/usr/local/emhttp/plugins/zfs.autosnapshot/js/snapshot-selection.js');
+const s = new Selection(); s.context('tank/data');
+const rows = Array.from({length: 10000}, (_, i) => ({identity: 'tank/data@s' + i + '#' + i, guid: String(i), metadataComplete: true}));
+rows[3].pendingDelete = true;
+s.toggle(rows.slice(0, 100), 1, true, false); s.toggle(rows.slice(0, 100), 5, true, true);
+assert.equal(s.items.size, 4); assert(!s.items.has(rows[3].identity));
+s.toggle(rows.slice(0, 100), 2, false, true); assert.equal(s.items.size, 1);
+s.page(rows.slice(100, 200), true); assert.equal(s.items.size, 101);
+assert(s.header(rows.slice(0, 100)).indeterminate);
+s.sortChanged(); assert.equal(s.items.size, 101); assert.equal(s.anchor, null);
+s.clear(); s.capture(rows); assert.equal(s.items.size, 9999);
+s.refresh([...rows, {identity: 'new#10001', metadataComplete: true}]); assert.equal(s.items.size, 9999);
+const old = s.stamp(); s.context('tank/other'); assert(!s.accepts(old)); assert.equal(s.items.size, 0);
+const filterStamp = s.stamp(); s.context('tank/other'); assert(!s.accepts(filterStamp));
+console.log('PASS: Shift-select/deselect, disabled rows, cross-page and captured selections, sort anchors, stale response guards');
