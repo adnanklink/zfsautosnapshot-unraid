@@ -6,7 +6,7 @@ The plugin also includes ZFS Send replication, a Dataset Migrator, Snapshot Mana
 
 ## Branch status: `fix/job-coordination`
 
-This is the development branch of [adnanklink/zfsautosnapshot-unraid](https://github.com/adnanklink/zfsautosnapshot-unraid/tree/fix/job-coordination). It includes the completed `fix/send-cancellation` work and ongoing job-coordination changes. **The published development package is `2026.09.16.01`; full coordinator integration is not finished.** The source also includes newer Auto Snapshot configuration-admission changes that are not yet packaged.
+This is the development branch of [adnanklink/zfsautosnapshot-unraid](https://github.com/adnanklink/zfsautosnapshot-unraid/tree/fix/job-coordination). It includes the completed `fix/send-cancellation` work and ongoing job-coordination changes. **The published development package is `2026.09.16.01`; full coordinator integration is not finished.** The source also includes newer Auto Snapshot configuration admission, replication recovery, and deletion coordination changes that are not yet packaged.
 
 Implemented on this branch:
 
@@ -16,6 +16,8 @@ Implemented on this branch:
 - Auto Snapshot cancellation persistently pauses its schedule until Resume. Status distinguishes a saved cancellation from completed worker shutdown.
 - New interval schedules start one interval after Save; Run Now does not move the cadence. Existing schedules preserve their actual alignment until explicitly converted. Send now has daily start-time and weekly day/time controls with shared schedule previews.
 - Waiting sends protect exact planned snapshots and bases so prerequisite cleanup can free space. Exhausted send failures remain visible while later scheduled occurrences can run.
+- Replication freezes recursive membership and snapshot/dataset GUIDs before publishing child transfers. Recovery preserves completed children; finalization requires matching identity evidence from every expected child. Older pending finalizers without this evidence fail safely.
+- Replication cleanup now requests coordinator-owned deletion workers. Work arriving during worker exit is retained and retried after verified shutdown.
 - Snapshot Manager executes at most 50 items per attempt, reuses run IDs for duplicate submissions, and requires fresh review for failed-only retries. Status polling does not start workers or rewrite manifests.
 - Dataset Migrator shares dataset locks with snapshot/send work and keeps safety checkpoints separate from recurring progress updates.
 

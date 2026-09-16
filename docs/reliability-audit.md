@@ -75,3 +75,15 @@ validation without launching a worker; schedule conversion cannot bypass the new
 first-run time. `coordinator_replan.php` runs in the reliability suite. Run
 `coordinator_replan_daemon.php` separately in a disposable container, like
 `coordinator_auto.php`. Replanning after partial execution remains unimplemented.
+
+Replication follow-up: `send_manifest.sh` now reproduces interrupted child
+publication and a changed recursive dataset inventory. Frozen membership and
+GUID-bound finalizer evidence prevent a previous successful child from being
+accepted for a different transfer. Legacy pending finalizers lacking that evidence
+fail validation. Full replication coordination remains outstanding.
+
+Run `coordinator_delete.php` in its own disposable container. It submits deletion
+work during worker exit and verifies a second granted attempt in the same run,
+without consuming a failure retry. Replication cleanup now uses this coordinator
+launch path. The batch endpoint regression also caught and verified a fix for
+unnecessary unchanged manifest publication after worker completion.

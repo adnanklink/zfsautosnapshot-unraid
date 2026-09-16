@@ -202,3 +202,45 @@ The full stage-one and reliability suites, existing Auto Snapshot daemon test,
 read-only-boot coordinator fixture, PHP lint, changed-shell checks and temporary
 package inventory verification pass. These changes are not in the published
 `2026.09.16.01` package; release artifacts are unchanged.
+
+## Follow-up: fixed replication manifests and deletion ownership (source only)
+
+Replication preparation now commits a versioned membership manifest to RAM before
+publishing its first child. It captures source datasets, destinations, selected
+snapshot names, snapshot GUIDs and source dataset GUIDs. Recovery reuses that
+membership instead of enumerating a changed recursive tree or filtering a new
+set of missing resume members. Existing successful children are retained only
+when their immutable transfer identity matches. Finalizers carry expected child
+identity digests and require explicit matching success for every child. The
+source dataset GUID is also checked before transfer. Selected members whose
+child files have not yet been published remain protected from cleanup.
+
+Legacy pending finalizers without identity evidence fail validation; they do not
+mark an occurrence complete merely because positional child IDs exist. Existing
+successful history is not rewritten. This does not yet solve the earlier crash
+window between ZFS snapshot creation and publication of the preparation record,
+and it does not implement automatic replanning after partially completed work.
+The Bash queue handler still owns replication admission and retries.
+
+Replication cleanup now uses the coordinator deletion submission path. The Bash
+helper no longer falls back to an untracked worker when the coordinator is
+unavailable; queued requests remain in RAM. After verified deletion-worker
+shutdown, the coordinator checks the inbox, interrupted processing files and
+queued state before completing the pump. Late submissions coalesced into an
+exiting run therefore receive another granted attempt without consuming a
+transient retry. Deletion's individual queue transitions remain worker-owned.
+The coordinator also skips unchanged batch-manifest publication after worker
+completion, fixing an inode-change race observed by the read-only polling test.
+
+Verification: the full reliability and stage-one suites pass. `send_manifest.sh`
+interrupts fan-out after one child, changes the discovered dataset tree, preserves
+successful evidence, rejects changed GUIDs and verifies explicit zero-child
+resume finalization. It passes with `/boot` mounted read-only. Run
+`coordinator_delete.php` in a separate disposable container; its production daemon
+fixture verifies late enqueue, one run with two verified attempts, and stranded
+inbox/queued-state recovery. Actual 601-item batch endpoint tests, the existing
+read-only-boot coordinator fixture, ShellCheck, PHP/Bash checks and temporary
+package verification pass. Disposable real-ZFS full/incremental, cancel/resume,
+low-space cleanup, base and unrelated-snapshot preservation tests pass; no test
+pools remained. The real-ZFS suite does not yet exercise full coordinator-owned
+replication phases. No release artifacts or installation were changed.
