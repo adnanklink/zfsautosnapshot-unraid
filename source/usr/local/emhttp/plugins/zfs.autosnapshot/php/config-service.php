@@ -1,9 +1,10 @@
 <?php
+require_once __DIR__ . "/schedule-spec.php";
 function zfsas_auto_defaults()
 {
     return ['DATASETS' => '', 'PREFIX' => 'autosnapshot-', 'DRY_RUN' => '0',
         'KEEP_ALL_FOR_DAYS' => '14', 'KEEP_DAILY_UNTIL_DAYS' => '30', 'KEEP_WEEKLY_UNTIL_DAYS' => '183',
-        'SCHEDULE_MODE' => 'disabled', 'SCHEDULE_EVERY_MINUTES' => '15', 'SCHEDULE_EVERY_HOURS' => '1',
+        'SCHEDULE_SPEC' => '', 'SCHEDULE_MODE' => 'disabled', 'SCHEDULE_EVERY_MINUTES' => '15', 'SCHEDULE_EVERY_HOURS' => '1',
         'SCHEDULE_DAILY_HOUR' => '3', 'SCHEDULE_DAILY_MINUTE' => '0', 'SCHEDULE_WEEKLY_DAY' => '0',
         'SCHEDULE_WEEKLY_HOUR' => '3', 'SCHEDULE_WEEKLY_MINUTE' => '0', 'CUSTOM_CRON_SCHEDULE' => '', 'CRON_SCHEDULE' => ''];
 }
@@ -31,6 +32,7 @@ function zfsas_tuning_defaults($kind)
     $defaults = $kind === 'send' ? zfsas_send_defaults() : zfsas_auto_defaults();
     $result = [];
     foreach ($defaults as $key => $value) {
+        if ($key === 'SCHEDULE_SPEC') { continue; }
         if (strpos($key, 'KEEP_') === 0 || strpos($key, 'SEND_KEEP_') === 0
             || ($kind === 'auto' && (strpos($key, 'SCHEDULE_') === 0 || $key === 'CUSTOM_CRON_SCHEDULE'))
             || in_array($key, ['SEND_MAX_PARALLEL', 'SEND_RATE_LIMIT', 'SEND_PREP_EXTRA_WORKERS'], true)) {
@@ -69,13 +71,22 @@ function zfsas_config_save($kind, $dir, array $submitted, $revision, $render, $s
             $result['errors'][] = zfsas_snapshot_prefix_conflict_message($autoPrefix, $sendPrefix);
             return $result;
         }
+        if ($kind === 'auto') {
+            try {
+                $spec = ZfsasSchedule::autoSave($auto, $submitted, !empty($submitted['__convert_schedule']), time());
+                $submitted['SCHEDULE_SPEC'] = json_encode($spec, JSON_THROW_ON_ERROR);
+                $result['schedulePreview'] = ZfsasSchedule::preview($spec, time(), ZfsasSchedule::hostTimezone());
+            } catch (InvalidArgumentException | JsonException $error) { $result['errors'][] = $error->getMessage(); return $result; }
+        }
         $prefixes = zfsas_known_send_prefixes($dir);
         $prefixes[] = $sendPrefix;
         if (zfsas_send_write_config_atomically($dir . '/send-prefix-history', implode("\n", array_unique($prefixes)) . "\n") === false) {
             $result['errors'][] = 'Unable to preserve replication checkpoint prefix history.'; return $result;
         }
         $file = $dir . ($kind === 'auto' ? '/zfs_autosnapshot.conf' : '/zfs_send.conf');
-        if (zfsas_send_write_config_atomically($file, $render($submitted)) === false) {
+        $content = $render($submitted);
+        if ($kind === 'auto') { $content = rtrim($content, "\n") . "\nSCHEDULE_SPEC=" . zfsas_send_quote_config_string($submitted['SCHEDULE_SPEC']) . "\n"; }
+        if (zfsas_send_write_config_atomically($file, $content) === false) {
             $result['errors'][] = 'Unable to write configuration atomically.'; return $result;
         }
         $result['saved'] = true;
@@ -89,14 +100,22 @@ function zfsas_config_save($kind, $dir, array $submitted, $revision, $render, $s
     } finally { flock($lock, LOCK_UN); fclose($lock); }
 }
 
-function zfsas_config_read_pair($dir)
+function zfsas_config_read_pair($dir, $nonblocking = false)
 {
     $lock = zfsas_config_lock($dir);
-    if (!$lock || !flock($lock, LOCK_SH)) { throw new RuntimeException('Unable to read configuration under its lock.'); }
+    if (!$lock) { throw new RuntimeException('Unable to open configuration lock.'); }
+    if (!flock($lock, LOCK_SH | ($nonblocking ? LOCK_NB : 0))) {
+        fclose($lock);
+        if ($nonblocking) { return null; }
+        throw new RuntimeException('Unable to read configuration under its lock.');
+    }
     try {
         return ['auto' => zfsas_send_parse_config_file($dir . '/zfs_autosnapshot.conf', zfsas_auto_defaults()),
             'send' => zfsas_send_parse_config_file($dir . '/zfs_send.conf', zfsas_send_defaults()),
-            'revision' => zfsas_config_revision($dir)];
+            'revision' => zfsas_config_revision($dir),
+            'rawAuto' => (string) @file_get_contents($dir . '/zfs_autosnapshot.conf'),
+            'rawSend' => (string) @file_get_contents($dir . '/zfs_send.conf'),
+            'prefixHistory' => (string) @file_get_contents($dir . '/send-prefix-history')];
     } finally { flock($lock, LOCK_UN); fclose($lock); }
 }
 
