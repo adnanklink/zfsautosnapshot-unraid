@@ -4,6 +4,33 @@ ZFS Auto Snapshot is an Unraid plugin for managing ZFS snapshots from the WebGUI
 
 The plugin also includes ZFS Send replication, a Dataset Migrator, Snapshot Manager bulk and cleanup tools, and a diagnostics download for support.
 
+## Branch status: `fix/job-coordination`
+
+This is the development branch of [adnanklink/zfsautosnapshot-unraid](https://github.com/adnanklink/zfsautosnapshot-unraid/tree/fix/job-coordination). It includes the completed `fix/send-cancellation` work and ongoing job-coordination changes. **The source is ahead of the packaged release; full coordinator integration is not finished.**
+
+Implemented on this branch:
+
+- Runtime queues, completion cursors, batch manifests, migration progress and coordinator records live in RAM. Flash is reserved for configuration, explicit Cancel/Resume decisions, and essential migration recovery checkpoints.
+- A PHP coordinator with a local Unix socket owns Auto Snapshot runs, bounded Snapshot Manager attempts and shared deletion-worker launches. It records attempt ownership before granting execution and verifies that old process groups have stopped before recovery.
+- Auto Snapshot cancellation persistently pauses its schedule until Resume. Status distinguishes a saved cancellation from completed worker shutdown.
+- New interval schedules start one interval after Save; Run Now does not move the cadence. Existing schedules preserve their actual alignment until explicitly converted. Send now has daily start-time and weekly day/time controls with shared schedule previews.
+- Waiting sends protect exact planned snapshots and bases so prerequisite cleanup can free space. Exhausted send failures remain visible while later scheduled occurrences can run.
+- Snapshot Manager executes at most 50 items per attempt, reuses run IDs for duplicate submissions, and requires fresh review for failed-only retries. Status polling does not start workers or rewrite manifests.
+- Dataset Migrator shares dataset locks with snapshot/send work and keeps safety checkpoints separate from recurring progress updates.
+
+Runtime history is lost on reboot. Interrupted manual sends require explicit Retry; interrupted batches require a fresh review, and earlier per-item results may be unavailable. Persistent schedule pauses and migration recovery checkpoints survive. Exactly-once execution across reboot is not guaranteed.
+
+## Remaining plan
+
+- Move replication creation, preparation, fan-out, retries and finalization from the Bash queue handler into the coordinator.
+- Move deletion's internal task transitions under coordinator authority and complete batch cancellation integration.
+- Complete automatic replanning after configuration changes and reboot recovery based only on proven ZFS metadata.
+- Extend dependency/recovery status and verify all execution paths for zero routine flash writes, bounded idle work, and clock/timezone changes.
+
+Stage-one and reliability suites, actual PHP endpoints, Chromium tests, PHP/ShellCheck checks, and temporary package verification have passed. Scoped read-only-flash syscall tests found no attempted boot-flash writes. Disposable real-ZFS tests cover full/incremental transfer, cancellation/resume, prerequisite cleanup under a quota shortage, and preservation of bases and unrelated snapshots. These checks do not certify the unfinished integration.
+
+See the [implementation record and flash-write inventory](docs/job-coordination-progress.md) and [reliability audit](docs/reliability-audit.md) for coverage and remaining limits.
+
 ## What it does
 
 - Creates snapshots for the ZFS datasets you select.
@@ -18,18 +45,50 @@ The plugin only manages snapshots that match its configured snapshot prefix. By 
 
 ## Install
 
-Use this plugin URL in Unraid:
+Minimum Unraid version: `6.12.0`, the first Unraid release series with native ZFS pool support.
+
+### Installing this development branch
+
+The branch installation URL is:
+
+```text
+https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/fix/job-coordination/dist/zfs.autosnapshot.plg
+```
+
+**Do not use this URL to install the new changes yet.** The checked-in manifest and package still describe the older `2026.08.24.01` release and reference `bstone108` upstream. A source push does not rebuild those files. The branch URL becomes usable for these changes only after a fresh package and manifest are built and published as described below.
+
+Once that branch package is published:
+
+1. In Unraid, open **Plugins → Install Plugin**.
+2. Paste the branch URL above and select **Install**.
+3. Open **Settings → ZFS Auto Snapshot**.
+4. Review the configuration and use Dry Run before enabling scheduled mutations.
+
+This fork uses the same plugin identity as upstream; it replaces the existing plugin rather than installing alongside it. Existing configuration is retained. Read the branch status and reboot limitations before using a development build.
+
+### Building and publishing an installable branch package
+
+On a development machine with Git, Bash, tar and xz:
+
+```bash
+git clone --branch fix/job-coordination --single-branch https://github.com/adnanklink/zfsautosnapshot-unraid.git
+cd zfsautosnapshot-unraid
+
+# Example development version; choose a new, unused version for each publication.
+./scripts/build-release.sh 2026.09.16.01-dev \
+  https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/fix/job-coordination/dist
+```
+
+The script builds and verifies the package, generates a manifest with the fork's branch URLs and package checksum, and copies the manifest to the repository root. Before publication, update `VERSION`, `CHANGELOG.md` and the release notes in `zfs.autosnapshot.plg.in` to describe the chosen build, then rebuild. Publish the generated `.txz`, `dist/zfs.autosnapshot.plg`, `dist/zfs-autosnapshot.png` and root `zfs.autosnapshot.plg` on this same branch in a separate release-artifact commit. The Unraid URL needs those files on GitHub; a local build alone does not update it.
+
+The release workflow automatically publishes only `main` and `testing`. A push to `fix/job-coordination` runs verification but does not publish installation artifacts. Alternatively, after updating the version and release notes, manually run **Build Release Artifacts** for this branch if that workflow is available in the fork. Its version guard requires a new package version.
+
+### Existing upstream release
+
+To install the existing upstream release rather than this development work, use:
 
 ```text
 https://raw.githubusercontent.com/bstone108/zfsautosnapshot-unraid/main/dist/zfs.autosnapshot.plg
-```
-
-Minimum Unraid version: `6.12.0`, because that is the first Unraid release series with native ZFS pool support.
-
-After install, open:
-
-```text
-Settings -> ZFS Auto Snapshot
 ```
 
 ## First setup
@@ -84,7 +143,7 @@ The WebGUI supports:
 - weekly on a chosen day and time
 - custom cron for advanced use
 
-When you save settings, the plugin writes the cron entry for you.
+Saving settings updates the scheduler. Cron provides a once-per-minute watchdog; Auto Snapshot execution is submitted to the coordinator. New elapsed intervals are anchored at Save. Legacy schedules show their actual alignment and require explicit conversion; saving unrelated settings does not convert them. New calendar schedules run once through repeated daylight-saving times and catch up at the first valid time after a nonexistent local time.
 
 ## Running manually
 
@@ -102,7 +161,7 @@ Each send job has:
 
 - a source dataset
 - a destination dataset
-- a frequency
+- a frequency, with a local start time for daily schedules and day/time for weekly schedules
 - an option to include child datasets
 - a destination free-space target
 
@@ -187,10 +246,10 @@ When reporting a bug, include:
 GitHub issues:
 
 ```text
-https://github.com/bstone108/zfsautosnapshot-unraid/issues
+https://github.com/adnanklink/zfsautosnapshot-unraid/issues
 ```
 
-Support thread:
+Original upstream support thread (identify this development fork when reporting issues):
 
 ```text
 https://forums.unraid.net/topic/197348-plugin-zfs-auto-snapshot/
@@ -220,7 +279,7 @@ You can edit the config file by hand if needed, but the WebGUI is the intended p
 
 ## Development notes
 
-Release artifacts are built by GitHub Actions. The source template is:
+Release artifacts can be built locally or by GitHub Actions. Source-change commits do not include generated artifacts. The source template is:
 
 ```text
 zfs.autosnapshot.plg.in
@@ -234,7 +293,7 @@ For a normal release:
 2. Update `CHANGELOG.md`.
 3. Update `zfs.autosnapshot.plg.in`.
 4. Push the branch.
-5. Let GitHub Actions build and commit the generated artifacts.
+5. On `main` or `testing`, let GitHub Actions build and commit generated artifacts. Other branches require a manual release workflow or separately published local build; see Install above.
 
 To reproduce a package locally:
 
