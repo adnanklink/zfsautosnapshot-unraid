@@ -5,6 +5,8 @@ function zfsas_ops_state_lock()
     if (!zfsas_ops_ensure_storage_dirs()) { return false; }
     $lock = @fopen(zfsas_ops_root_dir() . '/send-state.lock', 'c');
     if (!$lock || !flock($lock, LOCK_EX)) { return false; }
+    zfsas_ops_apply_owner(zfsas_ops_root_dir() . '/send-state.lock');
+    @chmod(zfsas_ops_root_dir() . '/send-state.lock', 0660);
     return $lock;
 }
 
@@ -143,4 +145,28 @@ function zfsas_ops_resume_schedule($scheduleId, &$error = null)
         $path = zfsas_ops_control_path('paused', $scheduleId);
         return !is_file($path) || unlink($path);
     } finally { flock($lock, LOCK_UN); fclose($lock); }
+}
+
+function zfsas_ops_dataset_gates($dataset)
+{
+    $names = [];
+    do { $names[] = $dataset; $position = strrpos($dataset, '/'); $dataset = $position === false ? '' : substr($dataset, 0, $position); } while ($dataset !== '');
+    sort($names, SORT_STRING); $locks = [];
+    $dir = zfsas_ops_root_dir() . '/dataset-locks'; zfsas_ops_ensure_dir($dir);
+    $autoPath = zfsas_ops_root_dir() . '/auto-cleanup.lock';
+    $auto = fopen($autoPath, 'c');
+    if (!$auto || !flock($auto, LOCK_SH | LOCK_NB)) { if ($auto) { fclose($auto); } return false; }
+    zfsas_ops_apply_owner($autoPath); @chmod($autoPath, 0660); $locks[] = $auto;
+    foreach ($names as $name) {
+        $lock = fopen($dir . '/' . hash('sha256', $name) . '.lock', 'c');
+        if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) {
+            if ($lock) { fclose($lock); }
+            foreach ($locks as $held) { fclose($held); }
+            return false;
+        }
+        zfsas_ops_apply_owner($dir . '/' . hash('sha256', $name) . '.lock');
+        @chmod($dir . '/' . hash('sha256', $name) . '.lock', 0660);
+        $locks[] = $lock;
+    }
+    return $locks;
 }

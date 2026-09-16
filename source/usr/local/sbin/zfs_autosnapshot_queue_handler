@@ -13,7 +13,10 @@ spawn_send_worker() {
   if [[ -n "$job_path" ]]; then
     claim_send_job_path_for_launch "$job_path" job_id || return 1
   fi
-  ZFSAS_WORKER_LOCK_DIR="$worker_lock_dir" ZFSAS_CLAIM_SELECTOR="$claim_selector" ZFSAS_JOB_PATH="$job_path" ZFSAS_JOB_ID="$job_id" ZFSAS_LAUNCHER_PID="$$" nohup setsid /usr/local/sbin/zfs_autosnapshot_send_worker >> "$LOG_FILE" 2>&1 < /dev/null &
+  (
+    [[ -z "${QUEUE_MANAGER_FD:-}" ]] || exec {QUEUE_MANAGER_FD}>&-
+    exec env ZFSAS_WORKER_LOCK_DIR="$worker_lock_dir" ZFSAS_CLAIM_SELECTOR="$claim_selector" ZFSAS_JOB_PATH="$job_path" ZFSAS_JOB_ID="$job_id" ZFSAS_LAUNCHER_PID="$$" nohup /bin/bash /usr/local/emhttp/plugins/zfs.autosnapshot/scripts/detach-worker.sh setsid /usr/local/sbin/zfs_autosnapshot_send_worker >> "$LOG_FILE" 2>&1 < /dev/null
+  ) &
   rc=$?
   if (( rc != 0 )) && [[ -n "$job_id" ]]; then
     release_job_claim "$job_id"
@@ -29,7 +32,10 @@ spawn_pool_prep_worker() {
   if [[ -n "$job_path" ]]; then
     claim_send_job_path_for_launch "$job_path" job_id || return 1
   fi
-  ZFSAS_WORKER_LOCK_DIR="$worker_lock_dir" ZFSAS_JOB_PATH="$job_path" ZFSAS_JOB_ID="$job_id" ZFSAS_LAUNCHER_PID="$$" nohup setsid /usr/local/sbin/zfs_autosnapshot_send_worker --pool-prep-only >> "$LOG_FILE" 2>&1 < /dev/null &
+  (
+    [[ -z "${QUEUE_MANAGER_FD:-}" ]] || exec {QUEUE_MANAGER_FD}>&-
+    exec env ZFSAS_WORKER_LOCK_DIR="$worker_lock_dir" ZFSAS_JOB_PATH="$job_path" ZFSAS_JOB_ID="$job_id" ZFSAS_LAUNCHER_PID="$$" nohup /bin/bash /usr/local/emhttp/plugins/zfs.autosnapshot/scripts/detach-worker.sh setsid /usr/local/sbin/zfs_autosnapshot_send_worker --pool-prep-only >> "$LOG_FILE" 2>&1 < /dev/null
+  ) &
   rc=$?
   if (( rc != 0 )) && [[ -n "$job_id" ]]; then
     release_job_claim "$job_id"
@@ -38,7 +44,10 @@ spawn_pool_prep_worker() {
 }
 
 spawn_delete_worker() {
-  nohup /usr/local/sbin/zfs_autosnapshot_delete_worker >> "$LOG_FILE" 2>&1 < /dev/null &
+  (
+    [[ -z "${QUEUE_MANAGER_FD:-}" ]] || exec {QUEUE_MANAGER_FD}>&-
+    exec env nohup /bin/bash /usr/local/emhttp/plugins/zfs.autosnapshot/scripts/detach-worker.sh /usr/local/sbin/zfs_autosnapshot_delete_worker >> "$LOG_FILE" 2>&1 < /dev/null
+  ) &
 }
 
 handler_cleanup() {

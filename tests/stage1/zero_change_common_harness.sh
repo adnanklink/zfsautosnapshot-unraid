@@ -35,10 +35,11 @@ mock_add_snapshot() {
   SNAP_WRITTEN["$snap"]="$written"
   SNAP_USERREFS["$snap"]="0"
   SNAP_CLONES["$snap"]="-"
-  SNAP_GUID["$snap"]="guid-${snap//[^A-Za-z0-9]/_}"
+  SNAP_GUID["$snap"]="${snap##*@}"
   SNAP_TXG["$snap"]="$creation"
 }
 
+zfs_guid_for_transport() { [[ -n "${SNAP_GUID[$1]:-}" ]] && printf '%s' "${SNAP_GUID[$1]}"; }
 dataset_exists() { [[ -n "${DATASET_EXISTS[$1]:-}" ]]; }
 snapshot_exists() { [[ -n "${SNAP_CREATION[$1]:-}" ]]; }
 list_tree_datasets() { printf '%s\n' "$1"; }

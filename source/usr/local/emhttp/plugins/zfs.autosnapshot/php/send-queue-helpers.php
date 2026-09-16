@@ -392,6 +392,10 @@ function zfsas_ops_delete_queue_active_rows()
     $seen = [];
 
     foreach (array_merge(zfsas_ops_delete_queue_persisted_rows(), zfsas_ops_delete_queue_state_rows(), zfsas_ops_delete_queue_inbox_rows()) as $row) {
+        // Result publication precedes the throttled queue-state flush. Terminal
+        // results are authoritative, including for an immediate failed-item retry.
+        $resultId = (string) ($row['JOB_ID'] ?? '');
+        if (preg_match('/^[A-Za-z0-9_.-]+$/', $resultId) && is_file(zfsas_ops_status_dir() . '/delete-results/' . $resultId . '.result')) { continue; }
         $key = '';
         if (($row['DELETE_SCOPE'] ?? 'snapshot') === 'checkpoint' && !empty($row['SEND_SCHEDULE_JOB_ID']) && !empty($row['SNAPSHOT_NAME'])) {
             $key = 'checkpoint|' . (string) $row['SEND_SCHEDULE_JOB_ID'] . '|' . (string) $row['SNAPSHOT_NAME'];
@@ -434,7 +438,7 @@ function zfsas_ops_start_delete_queue_daemon(&$error = null)
         return false;
     }
 
-    $command = 'nohup ' . escapeshellarg($script) . ' >> ' . escapeshellarg($log) . ' 2>&1 < /dev/null & echo $!';
+    $command = 'nohup /bin/bash ' . escapeshellarg(__DIR__ . '/../scripts/detach-worker.sh') . ' ' . escapeshellarg($script) . ' >> ' . escapeshellarg($log) . ' 2>&1 < /dev/null & echo $!';
     $output = [];
     $exitCode = 0;
     @exec($command, $output, $exitCode);
@@ -511,7 +515,7 @@ function zfsas_ops_append_delete_queue_inbox($line)
 
 function zfsas_ops_list_jobs($types = null)
 {
-    zfsas_ops_purge_expired_jobs();
+    // Pruning is owned by the queue manager; readers must retain finalizer evidence.
 
     $files = glob(zfsas_ops_jobs_dir() . '/*.job');
     if (!is_array($files)) {
@@ -548,49 +552,6 @@ function zfsas_ops_list_jobs($types = null)
     });
 
     return $jobs;
-}
-
-function zfsas_ops_purge_expired_jobs()
-{
-    $now = time();
-    $files = glob(zfsas_ops_jobs_dir() . '/*.job');
-    if (!is_array($files)) {
-        return;
-    }
-
-    foreach ($files as $path) {
-        $job = zfsas_ops_parse_job_file($path);
-        if (!is_array($job)) {
-            continue;
-        }
-
-        $state = (string) ($job['STATE'] ?? '');
-        if (!in_array($state, ['complete', 'skipped'], true)) {
-            continue;
-        }
-
-        if ((string) ($job['JOB_ACTION'] ?? '') === 'pool_prep') {
-            $prepJobId = (string) ($job['JOB_ID'] ?? '');
-            if ($prepJobId !== '' && zfsas_ops_pool_prep_has_active_dependents($prepJobId, $files)) {
-                continue;
-            }
-            @unlink($path);
-            continue;
-        }
-
-        $purgeAfter = (int) ($job['PURGE_AFTER_EPOCH'] ?? 0);
-        if ($purgeAfter > 0 && $purgeAfter <= $now) {
-            @unlink($path);
-            continue;
-        }
-
-        if ($purgeAfter <= 0) {
-            $fileMtime = @filemtime($path);
-            if (is_int($fileMtime) && $fileMtime > 0 && ($now - $fileMtime) >= 5) {
-                @unlink($path);
-            }
-        }
-    }
 }
 
 function zfsas_ops_pool_prep_has_active_dependents($prepJobId, $files = null)
@@ -1167,7 +1128,7 @@ function zfsas_ops_start_queue_kicker(&$error = null, $arguments = [])
         return false;
     }
 
-    $command = 'nohup ' . escapeshellarg($script);
+    $command = 'nohup /bin/bash ' . escapeshellarg(__DIR__ . '/../scripts/detach-worker.sh') . ' ' . escapeshellarg($script);
     foreach ($arguments as $argument) {
         $command .= ' ' . escapeshellarg((string) $argument);
     }
@@ -1474,32 +1435,6 @@ function zfsas_ops_wait_for_process_exit($pid, $timeoutMs)
     return !zfsas_ops_process_alive($pid);
 }
 
-function zfsas_ops_mark_send_job_canceled($job, &$error = null)
-{
-    $error = null;
-    if (!is_array($job) || empty($job['__path'])) {
-        $error = 'Send job not found.';
-        return false;
-    }
-
-    $job['STATE'] = 'failed';
-    $job['PHASE'] = 'failed';
-    $job['RETRY_AT'] = '0';
-    $job['WORKER_PID'] = '';
-    $job['PROGRESS_PERCENT'] = '100';
-    $job['LAST_ERROR'] = 'Canceled by user.';
-    $job['LAST_MESSAGE'] = 'Canceled.';
-    $job['CANCELLED_BY_USER'] = '1';
-    $job['ATTEMPT_COUNT'] = (string) max(3, (int) ($job['ATTEMPT_COUNT'] ?? 0));
-
-    if (!zfsas_ops_write_job_file($job['__path'], $job)) {
-        $error = 'Unable to update the canceled send job.';
-        return false;
-    }
-
-    return true;
-}
-
 function zfsas_ops_delete_failed_send_log($jobId, &$error = null)
 {
     $error = null;
@@ -1565,10 +1500,20 @@ function zfsas_ops_snapshot_identity($snapshot)
 
 function zfsas_ops_manual_send_job_id($snapshot, $destination)
 {
-    return 'manual-send-' . substr(sha1(strtolower(trim((string) $snapshot) . '|' . trim((string) $destination))), 0, 16);
+    return 'manual-send-' . substr(sha1(trim((string) $snapshot) . '|' . trim((string) $destination)), 0, 16);
 }
 
 function zfsas_ops_enqueue_manual_send($dataset, $snapshot, $snapshotName, $destination, $createdEpoch, &$error = null)
+{
+    $gates = zfsas_ops_dataset_gates($dataset);
+    if ($gates === false) { $error = 'Dataset is in use by cleanup or another operation. Try again.'; return false; }
+    $lock = zfsas_ops_state_lock();
+    if (!$lock) { foreach ($gates as $gate) { fclose($gate); } $error = 'Unable to lock send queue.'; return false; }
+    try { return zfsas_ops_enqueue_manual_send_locked($dataset, $snapshot, $snapshotName, $destination, $createdEpoch, $error); }
+    finally { flock($lock, LOCK_UN); fclose($lock); foreach ($gates as $gate) { fclose($gate); } }
+}
+
+function zfsas_ops_enqueue_manual_send_locked($dataset, $snapshot, $snapshotName, $destination, $createdEpoch, &$error = null)
 {
     $error = null;
 
@@ -1591,10 +1536,12 @@ function zfsas_ops_enqueue_manual_send($dataset, $snapshot, $snapshotName, $dest
 
     $requestedEpoch = time();
     $requestedAt = gmdate('Y-m-d\TH:i:s\Z', $requestedEpoch);
-    $jobId = zfsas_ops_manual_send_job_id($snapshot, $destination) . '-' . $requestedEpoch;
+    $jobId = zfsas_ops_manual_send_job_id($snapshot, $destination) . '-' . $requestedEpoch . '-' . bin2hex(random_bytes(4));
     $path = zfsas_ops_job_path($jobId, $requestedEpoch);
     $payload = [
         'JOB_ID' => $jobId,
+        'REVISION' => '1',
+        'SEND_CONFIG_HASH' => hash('sha256', (string) @file_get_contents(zfsas_ops_plugin_config_dir() . '/zfs_send.conf')),
         'JOB_TYPE' => 'send',
         'JOB_MODE' => 'manual_snapshot',
         'STATE' => 'queued',
@@ -1620,7 +1567,7 @@ function zfsas_ops_enqueue_manual_send($dataset, $snapshot, $snapshotName, $dest
         'MEMBER_COUNT' => '0',
     ];
 
-    if (!zfsas_ops_write_job_file($path, $payload)) {
+    if (!zfsas_ops_write_job_file_unlocked($path, $payload)) {
         $error = 'Unable to create the queued send job.';
         return false;
     }
@@ -1644,12 +1591,12 @@ function zfsas_ops_enqueue_snapshot_delete($dataset, $snapshotRow, $forceCheckpo
         return false;
     }
 
-    if (isset(zfsas_ops_delete_snapshot_map()[$snapshot])) {
+    if (empty($snapshotRow['deleteJobId']) && isset(zfsas_ops_delete_snapshot_map()[$snapshot])) {
         return true;
     }
 
     $requestedEpoch = time();
-    $jobId = 'delete-' . substr(sha1(strtolower($snapshot)), 0, 16) . '-' . $requestedEpoch;
+    $jobId = $snapshotRow['deleteJobId'] ?? ('delete-' . substr(sha1($snapshot), 0, 16) . '-' . $requestedEpoch);
     $payload = [
         'JOB_ID' => $jobId,
         'REQUESTED_EPOCH' => (string) $requestedEpoch,
@@ -1676,7 +1623,7 @@ function zfsas_ops_enqueue_snapshot_delete($dataset, $snapshotRow, $forceCheckpo
     }
 
     $daemonError = null;
-    zfsas_ops_start_delete_queue_daemon($daemonError);
+    if (empty($snapshotRow['deferWorker'])) { zfsas_ops_start_delete_queue_daemon($daemonError); }
 
     return true;
 }

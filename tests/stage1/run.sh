@@ -232,7 +232,7 @@ update_pool_avail() {
   awk -F '\t' -v pool="$pool" -v delta="$delta" 'BEGIN { OFS = FS }
     {
       if ($1 == pool) {
-        $2 = $2 + delta
+        $2 = sprintf("%.0f", $2 + delta)
       }
       print
     }

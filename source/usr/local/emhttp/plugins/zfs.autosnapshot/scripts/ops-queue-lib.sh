@@ -416,7 +416,7 @@ delete_queue_emit_state_line() {
   # shellcheck disable=SC2178
   local -n job_ref="$assoc_name"
 
-  printf 'JOB\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+  printf 'JOB\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$(delete_queue_sanitize_field "${job_ref[JOB_ID]:-}")" \
     "$(delete_queue_sanitize_field "${job_ref[STATE]:-queued}")" \
     "$(delete_queue_sanitize_field "${job_ref[RETRY_AT]:-0}")" \
@@ -433,7 +433,8 @@ delete_queue_emit_state_line() {
     "$(delete_queue_sanitize_field "${job_ref[SEND_PROTECTED]:-0}")" \
     "$(delete_queue_sanitize_field "${job_ref[DELETE_SCOPE]:-snapshot}")" \
     "$(delete_queue_sanitize_field "${job_ref[SEND_SCHEDULE_JOB_ID]:-}")" \
-    "$(delete_queue_sanitize_field "${job_ref[WORKER_PID]:-}")"
+    "$(delete_queue_sanitize_field "${job_ref[WORKER_PID]:-}")" \
+    "$(delete_queue_sanitize_field "${job_ref[SEND_CONFIG_HASH]:-}")"
 }
 
 delete_queue_parse_state_line() {
@@ -445,10 +446,11 @@ delete_queue_parse_state_line() {
   # shellcheck disable=SC2178
   local -n job_ref="$assoc_name"
 
+  local config_hash
   job_ref=()
-  IFS=$'\t' read -r prefix job_id state retry_at requested_epoch queue_sort dataset snapshot snapshot_name snapshot_epoch \
+  IFS='|' read -r prefix job_id state retry_at requested_epoch queue_sort dataset snapshot snapshot_name snapshot_epoch \
     snapshot_guid snapshot_createtxg delete_pool estimated_reclaim send_protected delete_scope \
-    send_schedule_job_id worker_pid <<< "$line"
+    send_schedule_job_id worker_pid config_hash <<< "${line//$'\t'/|}"
   [[ "$prefix" == "JOB" && -n "$job_id" && -n "$snapshot" ]] || return 1
 
   job_ref[JOB_ID]="$job_id"
@@ -468,6 +470,7 @@ delete_queue_parse_state_line() {
   job_ref[DELETE_SCOPE]="${delete_scope:-snapshot}"
   job_ref[SEND_SCHEDULE_JOB_ID]="$send_schedule_job_id"
   job_ref[WORKER_PID]="$worker_pid"
+  job_ref[SEND_CONFIG_HASH]="$config_hash"
   return 0
 }
 
@@ -476,7 +479,7 @@ delete_queue_emit_enqueue_line() {
   # shellcheck disable=SC2178
   local -n job_ref="$assoc_name"
 
-  printf 'ENQUEUE\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+  printf 'ENQUEUE\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$(delete_queue_sanitize_field "${job_ref[JOB_ID]:-}")" \
     "$(delete_queue_sanitize_field "${job_ref[REQUESTED_EPOCH]:-0}")" \
     "$(delete_queue_sanitize_field "${job_ref[QUEUE_SORT]:-0}")" \
@@ -490,7 +493,8 @@ delete_queue_emit_enqueue_line() {
     "$(delete_queue_sanitize_field "${job_ref[ESTIMATED_RECLAIM_BYTES]:-0}")" \
     "$(delete_queue_sanitize_field "${job_ref[SEND_PROTECTED]:-0}")" \
     "$(delete_queue_sanitize_field "${job_ref[DELETE_SCOPE]:-snapshot}")" \
-    "$(delete_queue_sanitize_field "${job_ref[SEND_SCHEDULE_JOB_ID]:-}")"
+    "$(delete_queue_sanitize_field "${job_ref[SEND_SCHEDULE_JOB_ID]:-}")" \
+    "$(delete_queue_sanitize_field "${job_ref[SEND_CONFIG_HASH]:-}")"
 }
 
 delete_queue_parse_enqueue_line() {
@@ -501,9 +505,10 @@ delete_queue_parse_enqueue_line() {
   # shellcheck disable=SC2178
   local -n job_ref="$assoc_name"
 
+  local config_hash
   job_ref=()
-  IFS=$'\t' read -r prefix job_id requested_epoch queue_sort dataset snapshot snapshot_name snapshot_epoch snapshot_guid \
-    snapshot_createtxg delete_pool estimated_reclaim send_protected delete_scope send_schedule_job_id <<< "$line"
+  IFS='|' read -r prefix job_id requested_epoch queue_sort dataset snapshot snapshot_name snapshot_epoch snapshot_guid \
+    snapshot_createtxg delete_pool estimated_reclaim send_protected delete_scope send_schedule_job_id config_hash <<< "${line//$'\t'/|}"
   [[ "$prefix" == "ENQUEUE" && -n "$job_id" && -n "$snapshot" ]] || return 1
 
   job_ref[JOB_ID]="$job_id"
@@ -523,6 +528,7 @@ delete_queue_parse_enqueue_line() {
   job_ref[DELETE_SCOPE]="${delete_scope:-snapshot}"
   job_ref[SEND_SCHEDULE_JOB_ID]="$send_schedule_job_id"
   job_ref[WORKER_PID]=""
+  job_ref[SEND_CONFIG_HASH]="$config_hash"
   return 0
 }
 
@@ -568,7 +574,7 @@ start_delete_queue_daemon() {
   delete_queue_daemon_running && return 0
 
   mkdir -p "$DELETE_WORKER_RUNTIME_DIR" >/dev/null 2>&1 || true
-  nohup /usr/local/sbin/zfs_autosnapshot_delete_worker >> "$LOG_FILE" 2>&1 < /dev/null &
+  nohup /bin/bash /usr/local/emhttp/plugins/zfs.autosnapshot/scripts/detach-worker.sh /usr/local/sbin/zfs_autosnapshot_delete_worker >> "$LOG_FILE" 2>&1 < /dev/null &
 
   while (( waited < 50 )); do
     delete_queue_daemon_running && return 0
@@ -741,6 +747,7 @@ load_send_config() {
   SEND_SPIPED_KEY_PATH=""
   SEND_JOBS=""
 
+  LOADED_SEND_CONFIG_HASH="$(send_config_hash)"
   [[ -f "$SEND_CONFIG_FILE" ]] || return 0
 
   while IFS= read -r line || [[ -n "$line" ]]; do
@@ -760,7 +767,10 @@ load_send_config() {
   done < "$SEND_CONFIG_FILE"
 }
 
+send_config_hash() { { cat "$SEND_CONFIG_FILE" 2>/dev/null || true; } | sha256sum | cut -d' ' -f1; }
+
 prefix_configuration_safe() {
+  [[ ! -e "$CONFIG_DIR/maintenance" ]] || return 1
   local auto_prefix=autosnapshot- line raw
   if [[ -f "$CONFIG_DIR/zfs_autosnapshot.conf" ]]; then
     while IFS= read -r line; do
@@ -1097,8 +1107,10 @@ job_write_guarded() {
   shift 3
   local -n write_ref="$assoc_name"
   local -A disk_job=()
+  if [[ "${write_ref[JOB_TYPE]:-}" == send && -z "${write_ref[SEND_CONFIG_HASH]:-}" ]]; then write_ref[SEND_CONFIG_HASH]="${LOADED_SEND_CONFIG_HASH:-$(send_config_hash)}"; fi
   mkdir -p "$OPS_ROOT" || return 1
   exec {state_fd}>"$OPS_ROOT/send-state.lock" || return 1
+  chmod 0660 "$OPS_ROOT/send-state.lock"; ops_apply_owner "$OPS_ROOT/send-state.lock"
   flock "$state_fd" || { exec {state_fd}>&-; return 1; }
   if [[ "${write_ref[JOB_TYPE]:-}" != send ]] || ! send_job_cancelled "$assoc_name"; then
     job_load "$path" disk_job || true
@@ -1561,53 +1573,57 @@ job_lock_dir_for_id() {
   printf '%s/job-%s.lockdir' "$JOB_LOCKS_DIR" "$job_id"
 }
 
-acquire_job_claim() {
-  local job_id="$1"
-  local lock_dir pid_file
-  lock_dir="$(job_lock_dir_for_id "$job_id")"
-  pid_file="${lock_dir}/pid"
-
-  mkdir -p "$JOB_LOCKS_DIR" >/dev/null 2>&1 || return 1
-  if mkdir "$lock_dir" 2>/dev/null; then
-    printf '%s\n' "$$" > "$pid_file" 2>/dev/null || true
-    return 0
-  fi
-
-  job_claim_active "$job_id" && return 1
-  rm -rf "$lock_dir" >/dev/null 2>&1 || true
-  if mkdir "$lock_dir" 2>/dev/null; then
-    printf '%s\n' "$$" > "$pid_file" 2>/dev/null || true
-    return 0
-  fi
-  return 1
+# Claim publication and stale-owner replacement share a permanent flock inode.
+with_claim_lock() {
+  local claim_fd claim_rc=0
+  mkdir -p "$JOB_LOCKS_DIR" || return 1
+  exec {claim_fd}>"$JOB_LOCKS_DIR/claims.lock" || return 1
+  flock -x "$claim_fd" || { exec {claim_fd}>&-; return 1; }
+  "$@" || claim_rc=$?
+  exec {claim_fd}>&-
+  return "$claim_rc"
 }
 
-release_job_claim() {
-  local job_id="$1"
-  local lock_dir pid
-
-  lock_dir="$(job_lock_dir_for_id "$job_id")"
-  pid="$(sed -n '1p' "${lock_dir}/pid" 2>/dev/null || true)"
-  [[ -z "$pid" || "$pid" == "$$" ]] || return 0
-  rm -rf "$lock_dir" >/dev/null 2>&1 || true
+publish_job_claim() {
+  local lock_dir="$1"
+  mkdir -p "$lock_dir" || return 1
+  process_start_time "$$" > "$lock_dir/start"
+  printf '%s\n' "$$" > "$lock_dir/pid"
 }
 
-take_over_job_claim() {
-  local job_id="$1"
-  local expected_pid="${2:-}"
-  local lock_dir pid
-
-  lock_dir="$(job_lock_dir_for_id "$job_id")"
-  pid="$(sed -n '1p' "${lock_dir}/pid" 2>/dev/null || true)"
-  if [[ -n "$expected_pid" && "$pid" == "$expected_pid" ]]; then
-    printf '%s\n' "$$" > "${lock_dir}/pid" 2>/dev/null || true
-    return 0
-  fi
-  if [[ "$pid" == "$$" ]]; then
-    return 0
-  fi
-  acquire_job_claim "$job_id"
+acquire_job_claim_locked() {
+  local lock_dir
+  lock_dir="$(job_lock_dir_for_id "$1")"
+  job_claim_active "$1" && return 1
+  rm -rf "$lock_dir"
+  publish_job_claim "$lock_dir"
 }
+acquire_job_claim() { with_claim_lock acquire_job_claim_locked "$@"; }
+
+release_job_claim_locked() {
+  local lock_dir pid start
+  lock_dir="$(job_lock_dir_for_id "$1")"
+  pid="$(cat "$lock_dir/pid" 2>/dev/null || true)"
+  start="$(cat "$lock_dir/start" 2>/dev/null || true)"
+  [[ "$pid" == "$$" && "$start" == "$(process_start_time "$$")" ]] || return 0
+  rm -rf "$lock_dir"
+}
+release_job_claim() { with_claim_lock release_job_claim_locked "$@"; }
+
+take_over_job_claim_locked() {
+  local lock_dir pid start expected_pid="${2:-}"
+  lock_dir="$(job_lock_dir_for_id "$1")"
+  pid="$(cat "$lock_dir/pid" 2>/dev/null || true)"
+  start="$(cat "$lock_dir/start" 2>/dev/null || true)"
+  if [[ -n "$expected_pid" && "$pid" == "$expected_pid" && "$start" == "$(process_start_time "$expected_pid")" ]]; then
+    publish_job_claim "$lock_dir"
+  elif [[ "$pid" == "$$" && "$start" == "$(process_start_time "$$")" ]]; then
+    return 0
+  else
+    acquire_job_claim_locked "$1"
+  fi
+}
+take_over_job_claim() { with_claim_lock take_over_job_claim_locked "$@"; }
 
 claim_send_job_path_for_launch() {
   local path="$1"
@@ -1625,35 +1641,30 @@ claim_send_job_path_for_launch() {
 }
 
 job_claim_active() {
-  local job_id="$1"
-  local lock_dir pid_file pid now_epoch mtime_epoch
-
-  lock_dir="$(job_lock_dir_for_id "$job_id")"
+  local lock_dir pid start
+  lock_dir="$(job_lock_dir_for_id "$1")"
   [[ -d "$lock_dir" ]] || return 1
-  pid_file="${lock_dir}/pid"
-  pid="$(sed -n '1p' "$pid_file" 2>/dev/null || true)"
-  if [[ -n "$pid" ]]; then
-    if process_alive "$pid"; then
-      return 0
-    fi
-    rm -rf "$lock_dir" >/dev/null 2>&1 || true
-    return 1
+  pid="$(cat "$lock_dir/pid" 2>/dev/null || true)"
+  start="$(cat "$lock_dir/start" 2>/dev/null || true)"
+  # Readers never remove ownership. An orphaned pipeline still owns resources
+  # until crash recovery has stopped the complete process group.
+  [[ -n "$pid" ]] || return 0
+  if process_alive "$pid"; then
+    [[ -z "$start" || "$start" == "$(process_start_time "$pid")" ]]
+    return
   fi
+  [[ -n "$(send_group_members "$pid")" ]]
+}
 
-  now_epoch="$(date +%s)"
-  mtime_epoch="$(stat -c %Y "$lock_dir" 2>/dev/null || stat -f %m "$lock_dir" 2>/dev/null || echo "$now_epoch")"
-  [[ "$mtime_epoch" =~ ^[0-9]+$ ]] || mtime_epoch="$now_epoch"
-  if (( now_epoch - mtime_epoch <= 300 )); then
-    return 0
-  fi
-  rm -rf "$lock_dir" >/dev/null 2>&1 || true
-  return 1
+send_attempt_alive() {
+  process_alive "$1" || [[ -n "$(send_group_members "$1")" ]]
 }
 
 process_alive() {
   local pid="$1"
   [[ "$pid" =~ ^[0-9]+$ ]] || return 1
-  kill -0 "$pid" >/dev/null 2>&1
+  kill -0 "$pid" >/dev/null 2>&1 || return 1
+  [[ "$(ps -o stat= -p "$pid" 2>/dev/null)" != Z* ]]
 }
 
 send_space_reservation_file_for_job() {
@@ -1675,7 +1686,7 @@ cleanup_stale_send_space_reservations_locked() {
       continue
     }
     pid="$(job_get reservation PID)"
-    if ! process_alive "$pid"; then
+    if ! send_attempt_alive "$pid"; then
       rm -f "$file" >/dev/null 2>&1 || true
     fi
   done
@@ -1887,20 +1898,20 @@ send_space_buffer_bytes() {
   printf '%s' "$buffer"
 }
 
-cleanup_stale_send_transfer_slots() {
+cleanup_stale_send_transfer_slots_locked() {
   local dir pid_file pid
   mkdir -p "$SEND_TRANSFER_RUNTIME_DIR" >/dev/null 2>&1 || true
   for dir in "$SEND_TRANSFER_RUNTIME_DIR"/slot-*.lockdir; do
     [[ -d "$dir" ]] || continue
     pid_file="${dir}/pid"
     pid="$(sed -n '1p' "$pid_file" 2>/dev/null || true)"
-    if ! process_alive "$pid"; then
+    if [[ -n "$pid" ]] && ! send_attempt_alive "$pid"; then
       rm -rf "$dir" >/dev/null 2>&1 || true
     fi
   done
 }
 
-acquire_send_transfer_slot() {
+acquire_send_transfer_slot_locked() {
   local job_id="$1"
   local pid="$2"
   local result_var="$3"
@@ -1923,7 +1934,7 @@ acquire_send_transfer_slot() {
     fi
 
     existing_pid="$(sed -n '1p' "${lock_dir}/pid" 2>/dev/null || true)"
-    if ! process_alive "$existing_pid"; then
+    if [[ -n "$existing_pid" ]] && ! send_attempt_alive "$existing_pid"; then
       rm -rf "$lock_dir" >/dev/null 2>&1 || true
       if mkdir "$lock_dir" 2>/dev/null; then
         printf '%s\n' "$pid" > "${lock_dir}/pid" 2>/dev/null || true
@@ -1937,11 +1948,12 @@ acquire_send_transfer_slot() {
   return 1
 }
 
-release_send_transfer_slot() {
+release_send_transfer_slot_locked() {
   local lock_dir="$1"
   [[ -n "$lock_dir" ]] || return 0
   case "$lock_dir" in
     "$SEND_TRANSFER_RUNTIME_DIR"/slot-*.lockdir)
+      [[ "$(cat "$lock_dir/pid" 2>/dev/null)" == "$$" ]] || return 0
       rm -rf "$lock_dir" >/dev/null 2>&1 || true
       ;;
   esac
@@ -2018,7 +2030,7 @@ cleanup_stale_send_worker_locks() {
     pid_file="${lock_dir}/pid"
     pid="$(sed -n '1p' "$pid_file" 2>/dev/null || true)"
     if [[ -n "$pid" ]]; then
-      process_alive "$pid" || rm -rf "$lock_dir" >/dev/null 2>&1 || true
+      send_attempt_alive "$pid" || rm -rf "$lock_dir" >/dev/null 2>&1 || true
       continue
     fi
     mtime_epoch="$(stat -c %Y "$lock_dir" 2>/dev/null || stat -f %m "$lock_dir" 2>/dev/null || echo "$now_epoch")"
@@ -2039,36 +2051,11 @@ send_worker_lock_count_for_role_locked() {
 }
 
 acquire_send_worker_launch_lock() {
-  local waited=0 pid_file pid now_epoch mtime_epoch
-
-  mkdir -p "$RUNTIME_DIR" >/dev/null 2>&1 || return 1
-  pid_file="${SEND_WORKER_LAUNCH_LOCK_DIR}/pid"
-  while ! mkdir "$SEND_WORKER_LAUNCH_LOCK_DIR" 2>/dev/null; do
-    pid="$(sed -n '1p' "$pid_file" 2>/dev/null || true)"
-    if [[ -n "$pid" ]] && ! process_alive "$pid"; then
-      rm -rf "$SEND_WORKER_LAUNCH_LOCK_DIR" >/dev/null 2>&1 || true
-      continue
-    fi
-    if [[ -z "$pid" ]]; then
-      now_epoch="$(date +%s)"
-      mtime_epoch="$(stat -c %Y "$SEND_WORKER_LAUNCH_LOCK_DIR" 2>/dev/null || stat -f %m "$SEND_WORKER_LAUNCH_LOCK_DIR" 2>/dev/null || echo "$now_epoch")"
-      [[ "$mtime_epoch" =~ ^[0-9]+$ ]] || mtime_epoch="$now_epoch"
-      if (( now_epoch - mtime_epoch > 300 )); then
-        rm -rf "$SEND_WORKER_LAUNCH_LOCK_DIR" >/dev/null 2>&1 || true
-        continue
-      fi
-    fi
-    (( waited >= 50 )) && return 1
-    waited=$((waited + 1))
-    sleep 0.05
-  done
-  printf '%s\n' "$$" > "$pid_file" 2>/dev/null || true
-  return 0
+  mkdir -p "$RUNTIME_DIR" || return 1
+  exec {SEND_LAUNCH_FD}>"${SEND_WORKER_LAUNCH_LOCK_DIR}.flock" || return 1
+  flock -x -w 3 "$SEND_LAUNCH_FD" || { exec {SEND_LAUNCH_FD}>&-; return 1; }
 }
-
-release_send_worker_launch_lock() {
-  rm -rf "$SEND_WORKER_LAUNCH_LOCK_DIR" >/dev/null 2>&1 || true
-}
+release_send_worker_launch_lock() { exec {SEND_LAUNCH_FD}>&-; }
 
 acquire_send_worker_launch_slot() {
   local role="$1"
@@ -2133,36 +2120,11 @@ compact_shared_send_log_if_safe() {
 }
 
 acquire_queue_manager_lock() {
-  local pid_file pid now_epoch mtime_epoch
-
-  mkdir -p "$RUNTIME_DIR" >/dev/null 2>&1 || return 1
-  pid_file="${QUEUE_MANAGER_LOCK_DIR}/pid"
-  if mkdir "$QUEUE_MANAGER_LOCK_DIR" 2>/dev/null; then
-    printf '%s\n' "$$" > "$pid_file" 2>/dev/null || true
-    return 0
-  fi
-
-  pid="$(sed -n '1p' "$pid_file" 2>/dev/null || true)"
-  if [[ -n "$pid" ]] && process_alive "$pid"; then
-    return 1
-  fi
-
-  if [[ -z "$pid" ]]; then
-    now_epoch="$(date +%s)"
-    mtime_epoch="$(stat -c %Y "$QUEUE_MANAGER_LOCK_DIR" 2>/dev/null || stat -f %m "$QUEUE_MANAGER_LOCK_DIR" 2>/dev/null || echo "$now_epoch")"
-    [[ "$mtime_epoch" =~ ^[0-9]+$ ]] || mtime_epoch="$now_epoch"
-    if (( now_epoch - mtime_epoch <= 300 )); then
-      return 1
-    fi
-  fi
-
-  rm -rf "$QUEUE_MANAGER_LOCK_DIR" >/dev/null 2>&1 || true
-  if mkdir "$QUEUE_MANAGER_LOCK_DIR" 2>/dev/null; then
-    printf '%s\n' "$$" > "$pid_file" 2>/dev/null || true
-    return 0
-  fi
-
-  return 1
+  mkdir -p "$RUNTIME_DIR" || return 1
+  exec {QUEUE_MANAGER_FD}>"${QUEUE_MANAGER_LOCK_DIR}.flock" || return 1
+  flock -n "$QUEUE_MANAGER_FD" || { exec {QUEUE_MANAGER_FD}>&-; return 1; }
+  mkdir -p "$QUEUE_MANAGER_LOCK_DIR"
+  printf '%s\n' "$$" > "$QUEUE_MANAGER_LOCK_DIR/pid"
 }
 
 queue_manager_running() {
@@ -2175,7 +2137,9 @@ release_queue_manager_lock() {
   local pid
   pid="$(sed -n '1p' "${QUEUE_MANAGER_LOCK_DIR}/pid" 2>/dev/null || true)"
   [[ "$pid" == "$$" ]] || return 0
-  rm -rf "$QUEUE_MANAGER_LOCK_DIR" >/dev/null 2>&1 || true
+  rm -f "$QUEUE_MANAGER_LOCK_DIR/pid"
+  flock -u "$QUEUE_MANAGER_FD"
+  exec {QUEUE_MANAGER_FD}>&-
 }
 
 send_queue_has_active_work() {
@@ -3293,14 +3257,14 @@ run_pipeline_with_status() {
     [[ "$send_transport" == ssh ]] && token_reader=ssh_receive_resume_token
     if "$token_reader" "$destination" resume_token; then
       if ! resume_token_target_snapshot "$resume_token" resume_snapshot; then
-        log "Refusing SSH send for ${destination}: receiver has an unreadable receive_resume_token; inspect or explicitly abort the interrupted receive on the receiver."
+        log "Refusing ${send_transport} send for ${destination}: receiver has an unreadable receive_resume_token; inspect or explicitly abort the interrupted receive on the receiver."
         return 1
       fi
       if [[ "$resume_snapshot" != "$snapshot" ]]; then
-        log "Refusing SSH send for ${destination}: receiver resume token targets ${resume_snapshot}, but this job targets ${snapshot}. Resolve the saved receive before starting another stream."
+        log "Refusing ${send_transport} send for ${destination}: receiver resume token targets ${resume_snapshot}, but this job targets ${snapshot}. Resolve the saved receive before starting another stream."
         return 1
       fi
-      log "Resuming interrupted SSH receive for ${snapshot} -> ${destination}."
+      log "Resuming interrupted ${send_transport} receive for ${snapshot} -> ${destination}."
       if [[ -n "$rate_limiter_command" ]]; then
         zfs send -t "$resume_token" | eval "$rate_limiter_command" | eval "$receive_command"
         pipeline_status=("${PIPESTATUS[@]}")
@@ -3318,14 +3282,14 @@ run_pipeline_with_status() {
       (( rate_rc != 0 )) && pipeline_rc=$rate_rc
       (( receive_rc != 0 )) && pipeline_rc=$receive_rc
       if (( pipeline_rc != 0 )); then
-        log "Resumed SSH send pipeline failed: snapshot=${snapshot} destination=${destination} send_exit=${send_rc} rate_exit=${rate_rc} receive_exit=${receive_rc}"
+        log "Resumed ${send_transport} send pipeline failed: snapshot=${snapshot} destination=${destination} send_exit=${send_rc} rate_exit=${rate_rc} receive_exit=${receive_rc}"
         return 1
       fi
       return 0
     else
       resume_query_rc=$?
       if (( resume_query_rc != 1 )); then
-        log "Unable to query SSH receiver resume state for ${destination}; refusing to start a new receive."
+        log "Unable to query ${send_transport} receiver resume state for ${destination}; refusing to start a new receive."
         return 1
       fi
     fi
@@ -4815,7 +4779,7 @@ reconcile_stale_jobs() {
     fi
     [[ "$state" == "running" ]] || continue
     worker_pid="$(job_get job WORKER_PID)"
-    process_alive "$worker_pid" && continue
+    if process_alive "$worker_pid" && [[ -z "${job[WORKER_START]:-}" || "$(process_start_time "$worker_pid")" == "${job[WORKER_START]}" ]]; then continue; fi
     stop_send_process_group "$(job_get job WORKER_PGID)" "$(job_get job WORKER_START)" || continue
     send_job_cancelled job && continue
 
@@ -5052,9 +5016,11 @@ queue_snapshot_delete_job() {
   job[SNAPSHOT_GUID]="$guid"
   job[SNAPSHOT_CREATETXG]="$createtxg"
   job[DELETE_POOL]="$pool"
+  job[SEND_CONFIG_HASH]="${LOADED_SEND_CONFIG_HASH:-$(send_config_hash)}"
   job[ESTIMATED_RECLAIM_BYTES]="$estimated_reclaim"
   job[SEND_PROTECTED]="0"
   job[DELETE_SCOPE]="$delete_scope"
+  [[ "$delete_scope" != checkpoint ]] || job[DELETE_SCOPE]=snapshot
   job[RETRY_AT]="0"
 
   if [[ ( "$delete_scope" == "checkpoint" || "$delete_scope" == "destination_checkpoint" ) && -n "$send_schedule_job_id" ]]; then
@@ -5097,11 +5063,16 @@ acquire_dataset_gates() {
   local mode="$1"; shift
   local dataset key fd
   DATASET_GATE_FDS=()
-  mkdir -p "$OPS_ROOT/dataset-locks" || return 1
+  ops_ensure_dir "$OPS_ROOT/dataset-locks" || return 1
+  exec {fd}>"$OPS_ROOT/auto-cleanup.lock" || return 1
+  chmod 0660 "$OPS_ROOT/auto-cleanup.lock"; ops_apply_owner "$OPS_ROOT/auto-cleanup.lock"
+  if ! flock -n -s "$fd"; then exec {fd}>&-; return 1; fi
+  DATASET_GATE_FDS+=("$fd")
   while IFS= read -r dataset; do
     [[ -n "$dataset" ]] || continue
     key="$(printf '%s' "$dataset" | sha256sum | cut -d' ' -f1)"
     exec {fd}>"$OPS_ROOT/dataset-locks/$key.lock" || { release_dataset_gates; return 1; }
+    chmod 0660 "$OPS_ROOT/dataset-locks/$key.lock"; ops_apply_owner "$OPS_ROOT/dataset-locks/$key.lock"
     if ! flock -n "$mode" "$fd"; then exec {fd}>&-; release_dataset_gates; return 1; fi
     DATASET_GATE_FDS+=("$fd")
   done < <(for dataset in "$@"; do
@@ -5704,4 +5675,20 @@ approve_send_job_space_for_launch() {
   release_pool_prep_lock "$dest_pool"
   ensure_delete_worker_for_backlog
   return 1
+}
+
+cleanup_stale_send_transfer_slots() { with_transfer_slot_lock cleanup_stale_send_transfer_slots_locked "$@"; }
+
+acquire_send_transfer_slot() { with_transfer_slot_lock acquire_send_transfer_slot_locked "$@"; }
+
+release_send_transfer_slot() { with_transfer_slot_lock release_send_transfer_slot_locked "$@"; }
+
+with_transfer_slot_lock() {
+  local slot_fd slot_rc=0
+  mkdir -p "$SEND_TRANSFER_RUNTIME_DIR" || return 1
+  exec {slot_fd}>"$SEND_TRANSFER_RUNTIME_DIR/slots.lock" || return 1
+  flock -x "$slot_fd" || { exec {slot_fd}>&-; return 1; }
+  "$@" || slot_rc=$?
+  exec {slot_fd}>&-
+  return "$slot_rc"
 }

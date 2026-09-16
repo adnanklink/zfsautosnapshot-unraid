@@ -1,6 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
+mkdir -p /boot/config/plugins/zfs.autosnapshot
+: > /boot/config/plugins/zfs.autosnapshot/maintenance
+
 PLUGIN_NAME="zfs.autosnapshot"
 PLUGIN_DIR="/usr/local/emhttp/plugins/${PLUGIN_NAME}"
 BOOT_PLUGIN_DIR="/boot/config/plugins/${PLUGIN_NAME}"
@@ -23,7 +26,7 @@ SEND_LOCK_DIR="${SEND_RUNTIME_DIR}/zfs_autosnapshot_send.lockdir"
 SEND_CHILD_PID_FILE="${SEND_RUNTIME_DIR}/zfs_autosnapshot_send.child.pid"
 SEND_STOP_FILE="${SEND_RUNTIME_DIR}/zfs_autosnapshot_send.stop"
 SEND_RUN_MATCH='/usr/local/sbin/zfs_autosnapshot_send'
-ALLOW_ORPHAN_DESTROY_MATCHES=1
+ALLOW_ORPHAN_DESTROY_MATCHES=0
 OPS_RUNTIME_DIR="/var/run/zfs-autosnapshot-ops"
 OPS_STOP_FILE="${OPS_RUNTIME_DIR}/queue.stop"
 OPS_LOCK_FILE="${OPS_RUNTIME_DIR}/queue.lock"
@@ -139,42 +142,7 @@ request_graceful_stop() {
   sleep 2
 }
 
-stop_pid_tree() {
-  local root_pid="$1"
-  local waited=0
-  local pid
-  local -a pid_tree=()
-
-  while IFS= read -r pid; do
-    [[ -n "$pid" ]] || continue
-    pid_tree+=("$pid")
-  done < <(collect_pid_tree "$root_pid")
-
-  (( ${#pid_tree[@]} > 0 )) || return 0
-
-  echo "Stopping zfs_autosnapshot process tree rooted at ${root_pid}: ${pid_tree[*]}"
-  kill "${pid_tree[@]}" >/dev/null 2>&1 || true
-
-  while (( waited < 10 )); do
-    local remaining=0
-    for pid in "${pid_tree[@]}"; do
-      if kill -0 "$pid" >/dev/null 2>&1; then
-        remaining=1
-        break
-      fi
-    done
-    (( remaining == 0 )) && break
-    sleep 1
-    waited=$((waited + 1))
-  done
-
-  for pid in "${pid_tree[@]}"; do
-    if kill -0 "$pid" >/dev/null 2>&1; then
-      echo "Force stopping stuck process: $pid"
-      kill -9 "$pid" >/dev/null 2>&1 || true
-    fi
-  done
-}
+source /usr/local/emhttp/plugins/zfs.autosnapshot/scripts/worker-shutdown-lib.sh
 
 stop_running_jobs() {
   local pid
@@ -208,7 +176,7 @@ stop_running_jobs() {
     done <<<"$(printf '%s' "$seen_pids" | sed '/^[[:space:]]*$/d')"
   fi
 
-  rm -f "$LOCK_FILE" >/dev/null 2>&1 || true
+  # Permanent flock inodes survive upgrades and restarts.
   rm -f "$CHILD_PID_FILE" >/dev/null 2>&1 || true
   rm -f "$STOP_FILE" >/dev/null 2>&1 || true
   rmdir "$LOCK_DIR" >/dev/null 2>&1 || true
@@ -271,7 +239,7 @@ STOP_FILE="$SEND_STOP_FILE"
 RUN_MATCH="$SEND_RUN_MATCH"
 SNAPSHOT_PREFIX='zfs-send-'
 TARGET_CFG="$TARGET_SEND_CFG"
-ALLOW_ORPHAN_DESTROY_MATCHES=1
+ALLOW_ORPHAN_DESTROY_MATCHES=0
 stop_running_jobs
 
 RUNTIME_DIR="$SNAPSHOT_MANAGER_RUNTIME_DIR"
@@ -293,13 +261,13 @@ STOP_FILE="$OPS_STOP_FILE"
 SNAPSHOT_PREFIX='zfs-send-'
 TARGET_CFG="$TARGET_SEND_CFG"
 ALLOW_ORPHAN_DESTROY_MATCHES=0
-for RUN_MATCH in "$OPS_KICKER_RUN_MATCH" "$OPS_HANDLER_RUN_MATCH" "$OPS_SEND_WORKER_RUN_MATCH" "$OPS_DELETE_WORKER_RUN_MATCH"; do
+for RUN_MATCH in "$OPS_KICKER_RUN_MATCH" "$OPS_HANDLER_RUN_MATCH" "$OPS_SEND_WORKER_RUN_MATCH" "$OPS_DELETE_WORKER_RUN_MATCH" "/usr/local/emhttp/plugins/zfs.autosnapshot/php/snapshot-batch-worker.php"; do
   stop_running_jobs
 done
-rm -rf "$OPS_JOB_LOCKS_DIR" >/dev/null 2>&1 || true
-rm -rf "${OPS_RUNTIME_DIR}/queue-manager.lockdir" >/dev/null 2>&1 || true
-rm -rf "$LEGACY_OPS_QUEUE_DIR" >/dev/null 2>&1 || true
-rm -rf "$TMP_OPS_QUEUE_DIR" >/dev/null 2>&1 || true
+zfsas_stop_recorded_send_groups
+
+# Legacy records remain available for operator inspection.
+# Preserve queued identities, approvals, cancellation state and lock inodes.
 
 RUNTIME_DIR="$RECOVERY_RUNTIME_DIR"
 LOCK_FILE="$RECOVERY_LOCK_FILE"
@@ -354,4 +322,5 @@ if (( sync_exit != 0 )); then
   echo "WARNING: sync-cron.sh failed during install/upgrade (exit ${sync_exit})." >&2
 fi
 
+rm -f /boot/config/plugins/zfs.autosnapshot/maintenance
 exit 0

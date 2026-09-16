@@ -26,6 +26,7 @@ fi
 
 CONFIG_DIR="/boot/config/plugins/zfs.autosnapshot"
 CONFIG_FILE="${CONFIG_FILE:-$CONFIG_DIR/zfs_autosnapshot.conf}"
+[[ ! -e "${CONFIG_FILE%/*}/maintenance" ]] || exit 0
 PLUGIN_NAME="zfs.autosnapshot"
 RUNTIME_DIR="/var/run/zfs-autosnapshot"
 AUTOSNAPSHOT_ACTIVE_FILE="${RUNTIME_DIR}/zfs_autosnapshot.active"
@@ -370,6 +371,12 @@ send_operation_active_for_dataset() {
 }
 
 any_send_operation_active() {
+    [[ "${AUTOSNAPSHOT_CLEANUP_LOCKED:-0}" == 1 ]] || return 0
+    local pending
+    for pending in /tmp/zfs-autosnapshot-ops/jobs/*.job; do
+        [[ -f "$pending" ]] || continue
+        if grep -q '^JOB_TYPE="send"' "$pending" && grep -Eq '^STATE="(queued|running|retry_wait|canceling)"' "$pending"; then return 0; fi
+    done
 	[[ -d "$SEND_ACTIVITY_DIR" ]] || return 1
 	find "$SEND_ACTIVITY_DIR" -maxdepth 1 -type f -name '*.datasets' 2>/dev/null | grep -q .
 }
@@ -1539,7 +1546,7 @@ on_exit() {
 	local exit_code="$?"
 	set +e
 	clear_active_child_state
-	clear_autosnapshot_active_marker
+	if [[ "${AUTOSNAPSHOT_OWNS_LOCK:-0}" == 1 ]]; then clear_autosnapshot_active_marker; fi
 
 	if ((LOCK_FALLBACK_HELD)); then
 		rmdir "$LOCKDIR" 2>/dev/null || true
@@ -1574,6 +1581,14 @@ acquire_lock() {
 		LOCK_FALLBACK_HELD=1
 	fi
 
+    AUTOSNAPSHOT_OWNS_LOCK=1
+    mkdir -p /tmp/zfs-autosnapshot-ops
+    chown nobody:users /tmp/zfs-autosnapshot-ops 2>/dev/null || true
+    exec 199>/tmp/zfs-autosnapshot-ops/auto-cleanup.lock
+    chmod 0660 /tmp/zfs-autosnapshot-ops/auto-cleanup.lock
+    chown nobody:users /tmp/zfs-autosnapshot-ops/auto-cleanup.lock 2>/dev/null || true
+    AUTOSNAPSHOT_CLEANUP_LOCKED=0
+    if flock -n -x 199; then AUTOSNAPSHOT_CLEANUP_LOCKED=1; fi
 	rm -f "$STOP_REQUEST_FILE" "$ACTIVE_CHILD_PID_FILE" >/dev/null 2>&1 || true
 	set_autosnapshot_active_marker
 }

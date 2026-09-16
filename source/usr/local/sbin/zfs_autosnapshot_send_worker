@@ -541,6 +541,7 @@ run_pipeline_with_space_reservation() {
   local destination="$4"
   local send_progress="${5:-}"
   local rc required_bytes
+  [[ "${job[SEND_CONFIG_HASH]:-$(send_config_hash)}" == "$(send_config_hash)" ]] || return 1
 
   if [[ -z "${job[SEND_PLAN_SOURCE_GUID]:-}" ]]; then
     job[SEND_PLAN_SOURCE_GUID]="$(zfs_guid_for_transport "$snapshot")" || return 1
@@ -1320,6 +1321,10 @@ process_pool_prep_job() {
 
 process_send_job() {
   local mode action member_count index
+  if [[ -n "${job[SEND_CONFIG_HASH]:-}" && "${job[SEND_CONFIG_HASH]}" != "$(send_config_hash)" ]]; then
+    fail_current_job_final "Send configuration changed while this job was queued. Review settings and start a new run."
+    return 1
+  fi
   clear_send_cleanup_caches
   mode="$(job_get job JOB_MODE)"
   action="$(effective_job_action job)"

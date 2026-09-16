@@ -41,6 +41,7 @@ declare -A QUEUE_SEND_PROTECTED=()
 declare -A QUEUE_DELETE_SCOPE=()
 declare -A QUEUE_SEND_SCHEDULE_JOB_ID=()
 declare -A QUEUE_WORKER_PID=()
+declare -A QUEUE_SEND_CONFIG_HASH=()
 declare -A QUEUE_BY_SNAPSHOT=()
 declare -A QUEUE_BY_CHECKPOINT=()
 
@@ -151,6 +152,7 @@ queue_add_job() {
   QUEUE_SEND_PROTECTED["$job_id"]="${job_ref[SEND_PROTECTED]:-0}"
   QUEUE_DELETE_SCOPE["$job_id"]="${job_ref[DELETE_SCOPE]:-snapshot}"
   QUEUE_SEND_SCHEDULE_JOB_ID["$job_id"]="${job_ref[SEND_SCHEDULE_JOB_ID]:-}"
+  QUEUE_SEND_CONFIG_HASH["$job_id"]="${job_ref[SEND_CONFIG_HASH]:-}"
   QUEUE_WORKER_PID["$job_id"]="${job_ref[WORKER_PID]:-}"
   QUEUE_ACTIVE_COUNT=$((QUEUE_ACTIVE_COUNT + 1))
   queue_state_counter_increment "${QUEUE_STATE[$job_id]}"
@@ -226,7 +228,7 @@ queue_remove_job() {
   unset 'QUEUE_DATASET[$job_id]' 'QUEUE_SNAPSHOT[$job_id]' 'QUEUE_SNAPSHOT_NAME[$job_id]' 'QUEUE_SNAPSHOT_EPOCH[$job_id]'
   unset 'QUEUE_SNAPSHOT_GUID[$job_id]' 'QUEUE_SNAPSHOT_CREATETXG[$job_id]' 'QUEUE_DELETE_POOL[$job_id]'
   unset 'QUEUE_ESTIMATED_RECLAIM_BYTES[$job_id]' 'QUEUE_SEND_PROTECTED[$job_id]' 'QUEUE_DELETE_SCOPE[$job_id]'
-  unset 'QUEUE_SEND_SCHEDULE_JOB_ID[$job_id]' 'QUEUE_WORKER_PID[$job_id]'
+  unset 'QUEUE_SEND_CONFIG_HASH[$job_id]' 'QUEUE_SEND_SCHEDULE_JOB_ID[$job_id]' 'QUEUE_WORKER_PID[$job_id]'
   (( QUEUE_ACTIVE_COUNT > 0 )) && QUEUE_ACTIVE_COUNT=$((QUEUE_ACTIVE_COUNT - 1))
   queue_state_counter_decrement "$state"
 
@@ -264,6 +266,7 @@ queue_load_job_assoc() {
   job_ref[SEND_PROTECTED]="${QUEUE_SEND_PROTECTED[$job_id]}"
   job_ref[DELETE_SCOPE]="${QUEUE_DELETE_SCOPE[$job_id]}"
   job_ref[SEND_SCHEDULE_JOB_ID]="${QUEUE_SEND_SCHEDULE_JOB_ID[$job_id]}"
+  job_ref[SEND_CONFIG_HASH]="${QUEUE_SEND_CONFIG_HASH[$job_id]:-}"
   job_ref[WORKER_PID]="${QUEUE_WORKER_PID[$job_id]}"
   return 0
 }
@@ -292,6 +295,7 @@ queue_store_job_assoc() {
   QUEUE_SEND_PROTECTED["$job_id"]="${job_ref[SEND_PROTECTED]:-0}"
   QUEUE_DELETE_SCOPE["$job_id"]="${job_ref[DELETE_SCOPE]:-snapshot}"
   QUEUE_SEND_SCHEDULE_JOB_ID["$job_id"]="${job_ref[SEND_SCHEDULE_JOB_ID]:-}"
+  QUEUE_SEND_CONFIG_HASH["$job_id"]="${job_ref[SEND_CONFIG_HASH]:-}"
   QUEUE_WORKER_PID["$job_id"]="${job_ref[WORKER_PID]:-}"
   queue_record_state_transition "$previous_state" "${QUEUE_STATE[$job_id]}"
   daemon_mark_dirty
@@ -370,12 +374,14 @@ drain_inbox() {
     queue_add_job job || true
   done < "$processing_file"
 
+  flush_state_if_needed 1
   rm -f "$processing_file" >/dev/null 2>&1 || true
   queue_advance_head_index
 }
 
 write_state_snapshot() {
-  local tmp now head_job_id current_job_id current_state current_snapshot current_dataset
+  local tmp now head_job_id current_job_id current_state current_snapshot current_dataset job_id
+  local -A state_job=()
 
   now="$(date +%s)"
   tmp="${DELETE_QUEUE_STATE_FILE}.tmp.$$"
@@ -402,6 +408,11 @@ write_state_snapshot() {
     printf 'CURRENT_JOB_STATE=%s\n' "$current_state"
     printf 'CURRENT_DATASET=%s\n' "$current_dataset"
     printf 'CURRENT_SNAPSHOT=%s\n' "$current_snapshot"
+    for job_id in "${QUEUE_IDS[@]}"; do
+      [[ -n "$job_id" ]] || continue
+      queue_load_job_assoc "$job_id" state_job || continue
+      delete_queue_emit_state_line state_job
+    done
   } > "$tmp"
 
   if queue_has_items; then
@@ -465,8 +476,20 @@ wait_for_unraid_array_to_be_actionable_for_delete_queue() {
   done
 }
 
+publish_delete_result() {
+  local state="$1" message="$2" result_dir="$OPS_STATUS_DIR/delete-results" tmp
+  mkdir -p "$result_dir" || return 1
+  tmp="$(mktemp "$result_dir/.result.XXXXXX")" || return 1
+  printf '%s\t%s\n' "$state" "$(delete_queue_sanitize_field "$message")" > "$tmp"
+  chmod 0640 "$tmp"; ops_apply_owner "$tmp"
+  mv "$tmp" "$result_dir/$CURRENT_JOB_ID.result"
+  # Inventory is short-lived, but action results should appear on the next poll.
+  rm -f "$OPS_ROOT/inventory/$(printf '%s' "${QUEUE_DATASET[$CURRENT_JOB_ID]:-}" | sha256sum | cut -d' ' -f1).json"
+}
+
 complete_delete_job() {
   local message="$1"
+  publish_delete_result completed "$message" || return 1
   queue_remove_job "$CURRENT_JOB_ID"
   DELETE_SUCCESS_COUNT=$((DELETE_SUCCESS_COUNT + 1))
   DELETE_LAST_SUCCESS_MESSAGE="$message"
@@ -475,12 +498,14 @@ complete_delete_job() {
 
 skip_delete_job() {
   local message="$1"
+  publish_delete_result skipped "$message" || return 1
   log "$message"
   queue_remove_job "$CURRENT_JOB_ID"
 }
 
 fail_delete_job() {
   local message="$1"
+  publish_delete_result failed "$message" || return 1
   log "$message"
   queue_remove_job "$CURRENT_JOB_ID"
 }
@@ -528,7 +553,10 @@ destroy_single_snapshot_with_retries() {
   local attempt=1
   local output=""
 
+  local -A retry_job=()
+  queue_load_job_assoc "$CURRENT_JOB_ID" retry_job || return 1
   while (( attempt <= max_attempts )); do
+    [[ -n "${retry_job[SNAPSHOT_GUID]:-}" && "$(zfs_guid_for_transport "$snapshot" local)" == "${retry_job[SNAPSHOT_GUID]}" ]] || return 1
     if output="$(zfs destroy "$snapshot" 2>&1)"; then
       return 0
     fi
@@ -625,6 +653,18 @@ process_delete_job() {
   local -A checked_job=()
   local snapshot transport=local schedule_id expected actual command props userrefs clones
   queue_load_job_assoc "$CURRENT_JOB_ID" checked_job || return 1
+  if [[ -f "$OPS_STATUS_DIR/delete-results/$CURRENT_JOB_ID.result" ]]; then
+    queue_remove_job "$CURRENT_JOB_ID"
+    return 0
+  fi
+  load_send_config
+  parse_send_jobs_config
+  if [[ "$CURRENT_JOB_ID" != sm-* ]]; then
+    if ! prefix_configuration_safe || [[ -z "${checked_job[SEND_CONFIG_HASH]:-}" || "${checked_job[SEND_CONFIG_HASH]}" != "$LOADED_SEND_CONFIG_HASH" ]]; then
+      skip_delete_job "Cleanup configuration changed or prefixes conflict; plan cleanup again."
+      return 0
+    fi
+  fi
   snapshot="${checked_job[SNAPSHOT]:-}"
   schedule_id="${checked_job[SEND_SCHEDULE_JOB_ID]:-}"
   if [[ "${checked_job[DELETE_SCOPE]:-}" == destination_checkpoint && -n "$schedule_id" ]]; then
@@ -646,8 +686,13 @@ process_delete_job() {
     skip_delete_job "Skipped ${snapshot}: missing or changed snapshot identity."
     return 0
   fi
+  if [[ "$transport" == ssh && ( -z "${checked_job[SEND_CONFIG_HASH]:-}" || "${checked_job[SEND_CONFIG_HASH]}" != "$(send_config_hash)" ) ]]; then
+    release_dataset_gates
+    skip_delete_job "Remote cleanup configuration changed; preview or plan again."
+    return 0
+  fi
   if [[ "$transport" == ssh ]]; then
-    build_ssh_zfs_command "zfs get -H -p -o value userrefs,clones -- $(shell_quote_word "$snapshot")" command || return 1
+    build_ssh_zfs_command "zfs get -H -p -o value userrefs,clones -- $(shell_quote_word "$snapshot")" command || { release_dataset_gates; fail_delete_job "Unable to build remote metadata query."; return 0; }
     props="$(eval "$command" 2>/dev/null)" || props=""
   else
     props="$(zfs get -H -p -o value userrefs,clones -- "$snapshot" 2>/dev/null)" || props=""
@@ -657,6 +702,14 @@ process_delete_job() {
     release_dataset_gates
     skip_delete_job "Skipped ${snapshot}: held, cloned, or incomplete metadata."
     return 0
+  fi
+  if [[ "$CURRENT_JOB_ID" == sm-* ]]; then
+    local review_error
+    if ! review_error="$(php /usr/local/emhttp/plugins/zfs.autosnapshot/php/snapshot-delete-check.php "$CURRENT_JOB_ID" "$snapshot" "$expected" 2>&1)"; then
+      release_dataset_gates
+      skip_delete_job "$review_error"
+      return 0
+    fi
   fi
   process_delete_job_locked
   release_dataset_gates
@@ -740,19 +793,29 @@ cleanup() {
   fi
 
   flush_state_if_needed 1 || true
+  local exit_fd
+  exec {exit_fd}>"$DELETE_QUEUE_INBOX_LOCK_FILE"
+  flock "$exit_fd"
   rm -f "$DELETE_QUEUE_PID_FILE" >/dev/null 2>&1 || true
   rm -rf "$WORKER_LOCK_DIR" >/dev/null 2>&1 || true
+  flock -u 9
+  exec 9>&-
+  exec {exit_fd}>&-
+  if [[ -s "$DELETE_QUEUE_INBOX_FILE" ]]; then start_delete_queue_daemon || true; fi
   exit "$exit_code"
 }
 
 main() {
   local job_id now_epoch
 
+  [[ ! -e "$CONFIG_DIR/maintenance" ]] || exit 0
   ensure_runtime_layout || exit 1
   load_send_config
   parse_send_jobs_config
 
-  mkdir "$WORKER_LOCK_DIR" 2>/dev/null || exit 0
+  exec 9>"$DELETE_WORKER_RUNTIME_DIR/owner.lock"
+  flock -n 9 || exit 0
+  mkdir -p "$WORKER_LOCK_DIR"
   trap cleanup EXIT
   trap 'PERSIST_QUEUE_ON_EXIT=1; exit 0' INT TERM
   printf '%s\n' "$$" > "$DELETE_QUEUE_PID_FILE"
@@ -763,6 +826,11 @@ main() {
   zfsas_log_send_runtime_stamp "delete_worker"
   log "Delete daemon $$ starting"
 
+  for processing_file in "$DELETE_QUEUE_INBOX_FILE".processing.*; do
+    [[ -f "$processing_file" ]] || continue
+    while IFS= read -r line; do delete_queue_append_inbox_line "$line" || true; done < "$processing_file"
+    rm -f "$processing_file"
+  done
   load_boot_persisted_state
   load_legacy_runtime_state
   drain_inbox
