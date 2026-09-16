@@ -760,6 +760,18 @@ load_send_config() {
   done < "$SEND_CONFIG_FILE"
 }
 
+prefix_configuration_safe() {
+  local auto_prefix=autosnapshot- line raw
+  if [[ -f "$CONFIG_DIR/zfs_autosnapshot.conf" ]]; then
+    while IFS= read -r line; do
+      if [[ "$line" =~ ^[[:space:]]*PREFIX[[:space:]]*=(.*)$ ]]; then
+        raw="${BASH_REMATCH[1]}"; auto_prefix="$(parse_config_value "$raw")"
+      fi
+    done < "$CONFIG_DIR/zfs_autosnapshot.conf"
+  fi
+  [[ -n "$auto_prefix" && -n "$SEND_SNAPSHOT_PREFIX" && "$auto_prefix" != "$SEND_SNAPSHOT_PREFIX"* && "$SEND_SNAPSHOT_PREFIX" != "$auto_prefix"* ]]
+}
+
 require_numeric_in_range() {
   local value="$2"
   local min="$3"

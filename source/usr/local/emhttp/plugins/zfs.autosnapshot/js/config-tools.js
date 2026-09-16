@@ -1,0 +1,41 @@
+(function () {
+  'use strict';
+  document.querySelectorAll('[data-config-tools]').forEach(function (panel) {
+    if (panel.dataset.ready) return;
+    panel.dataset.ready = '1';
+    var form = panel.closest('form');
+    var options = JSON.parse(panel.dataset.configTools);
+    var prefix = form.elements[options.prefixField];
+    var status = panel.querySelector('[data-dirty]');
+    var feedback = panel.querySelector('[data-prefix-feedback]');
+    function values() { return JSON.stringify(Array.from(new FormData(form).entries()).filter(function (p) { return p[0] !== 'csrf_token'; })); }
+    var baseline = values();
+    function update() {
+      status.textContent = values() === baseline ? 'All changes saved.' : 'Unsaved changes — choose Save to apply.';
+      var value = prefix.value.trim(), other = options.otherPrefix;
+      var conflict = !value || !other || value.indexOf(other) === 0 || other.indexOf(value) === 0;
+      prefix.setCustomValidity(conflict ? 'Prefixes must differ and neither may begin with the other.' : '');
+      feedback.textContent = 'Other configured prefix: ' + other + '. ' + (conflict ? 'Conflict: neither prefix may be the beginning of the other. Automatic cleanup and replication are blocked until resolved.' : 'Prefixes are separate.');
+      feedback.style.color = conflict ? '#b42318' : '';
+    }
+    form.addEventListener('input', update);
+    form.addEventListener('change', update);
+    new MutationObserver(function (changes) { if (changes.some(function (change) { return !panel.contains(change.target); })) update(); }).observe(form, {childList: true, subtree: true});
+    panel.querySelector('[data-restore-tuning]').addEventListener('click', function () {
+      Object.keys(options.defaults).forEach(function (name) {
+        var input = form.elements[name];
+        if (input) { input.value = options.defaults[name]; input.dispatchEvent(new Event('change', {bubbles: true})); }
+      });
+      update();
+    });
+    form.addEventListener('zfsas:saved', function (event) {
+      if (!event.detail.saved) return;
+      form.elements.config_revision.value = event.detail.revision;
+      baseline = values(); update();
+    });
+    window.addEventListener('beforeunload', function (event) {
+      if (values() !== baseline) { event.preventDefault(); event.returnValue = ''; }
+    });
+    update();
+  });
+}());

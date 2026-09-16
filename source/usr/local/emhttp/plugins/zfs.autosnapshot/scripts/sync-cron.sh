@@ -9,6 +9,12 @@ CRON_FILE="/etc/cron.d/zfs_autosnapshot"
 RUN_CMD="/usr/local/sbin/zfs_autosnapshot"
 QUEUE_KICKER_CMD="/usr/local/sbin/zfs_autosnapshot_queue_kicker"
 
+if [[ "${ZFSAS_CONFIG_LOCK_HELD:-0}" != 1 ]]; then
+  mkdir -p "$CONFIG_DIR"
+  exec 8>"$CONFIG_DIR/config.lock"
+  flock 8
+fi
+
 SCHEDULE_MODE="disabled"
 SCHEDULE_EVERY_MINUTES="15"
 SCHEDULE_EVERY_HOURS="1"

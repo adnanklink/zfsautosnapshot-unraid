@@ -88,6 +88,7 @@ main() {
 
   ensure_runtime_layout || exit 1
   load_send_config
+  prefix_configuration_safe || { log "Prefix conflict: automatic replication and cleanup are blocked until settings are corrected."; exit 1; }
   require_numeric_in_range "SEND_MAX_PARALLEL" "$SEND_MAX_PARALLEL" 1 8 || SEND_MAX_PARALLEL="$DEFAULT_SEND_MAX_PARALLEL"
   require_numeric_in_range "SEND_PREP_EXTRA_WORKERS" "$SEND_PREP_EXTRA_WORKERS" 0 64 || SEND_PREP_EXTRA_WORKERS="$DEFAULT_SEND_PREP_EXTRA_WORKERS"
   parse_send_jobs_config

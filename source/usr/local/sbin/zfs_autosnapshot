@@ -977,11 +977,31 @@ snapshot_numeric_property() {
 	fi
 }
 
+known_replication_checkpoint() {
+  local basename="${1##*@}" prefix line
+  local config_dir="${CONFIG_FILE%/*}"
+  if [[ -f "$config_dir/send-prefix-history" ]]; then
+    while IFS= read -r prefix; do
+      [[ -n "$prefix" && "$basename" == "$prefix"* ]] && return 0
+    done < "$config_dir/send-prefix-history"
+  fi
+  prefix=zfs-send-
+  if [[ -f "$config_dir/zfs_send.conf" ]]; then
+    while IFS= read -r line; do
+      if [[ "$line" =~ ^[[:space:]]*SEND_SNAPSHOT_PREFIX[[:space:]]*=(.*)$ ]]; then
+        prefix="$(parse_config_value "${BASH_REMATCH[1]}")"
+      fi
+    done < "$config_dir/zfs_send.conf"
+  fi
+  [[ -n "$prefix" && "$basename" == "$prefix"* ]]
+}
+
 snapshot_protection_reason() {
 	local snap="$1"
 	local userrefs_raw="${2:-0}"
 	local userrefs
 
+	if known_replication_checkpoint "$snap"; then echo "replication checkpoint"; return 0; fi
 	userrefs="$(snapshot_numeric_property "$userrefs_raw" 0)"
 
 	if ((userrefs > 0)); then
@@ -1716,6 +1736,18 @@ fi
 
 if [[ ! "$PREFIX" =~ ^[A-Za-z0-9._:-]+$ ]]; then
 	fail_config "Snapshot prefix contains unsupported characters." "Use only letters, numbers, dot, underscore, colon, or dash in the prefix."
+fi
+
+send_prefix=zfs-send-
+if [[ -f "${CONFIG_FILE%/*}/zfs_send.conf" ]]; then
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^[[:space:]]*SEND_SNAPSHOT_PREFIX[[:space:]]*=(.*)$ ]]; then
+      send_prefix="$(parse_config_value "${BASH_REMATCH[1]}")"
+    fi
+  done < "${CONFIG_FILE%/*}/zfs_send.conf"
+fi
+if [[ -z "$send_prefix" || "$PREFIX" == "$send_prefix"* || "$send_prefix" == "$PREFIX"* ]]; then
+  fail_config "Auto Snapshot and ZFS Send prefixes overlap." "Resolve the prefix conflict in settings before running automatic cleanup."
 fi
 
 if [[ "$DRY_RUN" != "0" && "$DRY_RUN" != "1" ]]; then

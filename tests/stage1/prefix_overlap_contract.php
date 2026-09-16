@@ -43,6 +43,8 @@ $post = [
     'send_keep_weekly_until_days' => '183',
 ];
 
+file_put_contents($tempDir . '/zfs_autosnapshot.conf', 'PREFIX="zfs-"' . PHP_EOL);
+$post['config_revision'] = zfsas_config_revision($tempDir);
 $result = zfsas_send_handle_save_request($post, $tempDir, $configFile, $syncScript, $config, '/Settings/ZFSAutoSnapshotSend', 'zfs-');
 assert_false($result['saved'], 'send settings save should be refused when send prefix overlaps current auto prefix');
 assert_true(!file_exists($configFile), 'refused send settings save must not write zfs_send.conf');

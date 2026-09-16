@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . "/config-service.php";
 
 require_once __DIR__ . '/response-helpers.php';
 
@@ -817,6 +818,9 @@ function zfsas_send_handle_save_request($post, $configDir, $configFile, $syncScr
     $saved = false;
     $returnTarget = zfsas_normalize_return_url($post['return_to'] ?? '', $defaultReturnUrl);
 
+    $config = zfsas_send_parse_config_file($configFile, zfsas_send_defaults());
+    $autoSnapshotPrefix = zfsas_read_auto_snapshot_prefix($configDir);
+    $saveResult = ['saved' => false, 'schedulerApplied' => false, 'revision' => zfsas_config_revision($configDir)];
     $submitted = $config;
     $submitted['SEND_SNAPSHOT_PREFIX'] = zfsas_send_trim($post['send_snapshot_prefix'] ?? $submitted['SEND_SNAPSHOT_PREFIX']);
     $submitted['SEND_MAX_PARALLEL'] = zfsas_send_normalize_parallel_limit($post['send_max_parallel'] ?? $submitted['SEND_MAX_PARALLEL']);
@@ -926,22 +930,10 @@ function zfsas_send_handle_save_request($post, $configDir, $configFile, $syncScr
             @mkdir($configDir, 0775, true);
         }
 
-        $written = zfsas_send_write_config_atomically($configFile, zfsas_send_render_config($config));
-        if ($written === false) {
-            $errors[] = "Unable to write config file: {$configFile}";
-        } else {
-            @chmod($configFile, 0644);
-            $syncOutput = [];
-            $syncExit = 0;
-            @exec(escapeshellarg($syncScript) . ' 2>&1', $syncOutput, $syncExit);
-
-            if ($syncExit !== 0) {
-                $errors[] = 'Settings saved, but failed to apply scheduler: ' . implode(' | ', $syncOutput);
-            } else {
-                $notices[] = 'ZFS send settings saved and schedule applied.';
-                $saved = true;
-            }
-        }
+        $saveResult = zfsas_config_save('send', $configDir, $config, $post['config_revision'] ?? null, 'zfsas_send_render_config', $syncScript);
+        $errors = array_merge($errors, $saveResult['errors']);
+        $notices = array_merge($notices, $saveResult['notices']);
+        $saved = $saveResult['saved'];
     }
 
     return [
@@ -950,6 +942,8 @@ function zfsas_send_handle_save_request($post, $configDir, $configFile, $syncScr
         'errors' => array_values($errors),
         'notices' => array_values($notices),
         'saved' => $saved,
+        'schedulerApplied' => $saveResult['schedulerApplied'],
+        'revision' => $saveResult['revision'],
         'returnTarget' => $returnTarget,
     ];
 }

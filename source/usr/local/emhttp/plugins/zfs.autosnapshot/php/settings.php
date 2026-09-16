@@ -24,24 +24,7 @@ require_once __DIR__ . '/send-helpers.php';
 
 $csrfToken = zfsas_get_csrf_token();
 
-$defaults = [
-    'DATASETS' => '',
-    'PREFIX' => 'autosnapshot-',
-    'DRY_RUN' => '0',
-    'KEEP_ALL_FOR_DAYS' => '14',
-    'KEEP_DAILY_UNTIL_DAYS' => '30',
-    'KEEP_WEEKLY_UNTIL_DAYS' => '183',
-    'SCHEDULE_MODE' => 'disabled',
-    'SCHEDULE_EVERY_MINUTES' => '15',
-    'SCHEDULE_EVERY_HOURS' => '1',
-    'SCHEDULE_DAILY_HOUR' => '3',
-    'SCHEDULE_DAILY_MINUTE' => '0',
-    'SCHEDULE_WEEKLY_DAY' => '0',
-    'SCHEDULE_WEEKLY_HOUR' => '3',
-    'SCHEDULE_WEEKLY_MINUTE' => '0',
-    'CUSTOM_CRON_SCHEDULE' => '',
-    'CRON_SCHEDULE' => '',
-];
+$defaults = zfsas_auto_defaults();
 
 $weekdayNames = [
     '0' => 'Sunday',
@@ -897,38 +880,9 @@ if ($isPostRequest) {
             @mkdir($configDir, 0775, true);
         }
 
-        $written = @file_put_contents($configFile, renderConfig($config));
-        if ($written === false) {
-            $errors[] = "Unable to write config file: {$configFile}";
-        } else {
-            @chmod($configFile, 0644);
-
-            $syncOutput = [];
-            $syncExit = 0;
-            @exec(escapeshellarg($syncScript) . ' 2>&1', $syncOutput, $syncExit);
-
-            if ($syncExit !== 0) {
-                $errors[] = 'Settings saved, but failed to apply scheduler: ' . implode(' | ', $syncOutput);
-            } else {
-                if (!$isAjaxSaveRequest) {
-                    $postSaveWarnings = [];
-                    $configuredDatasetMap = parseDatasetsCsv($config['DATASETS'], $postSaveWarnings);
-                    $datasetRows = buildDatasetRows($availableDatasets, $configuredDatasetMap, $sendDestinationDatasets);
-                    $datasetPools = buildDatasetPools($datasetRows);
-
-                    $returnTarget = zfsas_normalize_return_url($_POST['return_to'] ?? '', $defaultSettingsReturnUrl);
-                    $redirectUrl = pluginSettingsPageUrl($returnTarget, [
-                        'saved' => '1',
-                    ]);
-
-                    if ($redirectUrl !== '') {
-                        zfsas_send_redirect_page($redirectUrl);
-                    }
-                }
-
-                $notices[] = 'Settings saved and schedule applied.';
-            }
-        }
+        $saveResult = zfsas_config_save('auto', $configDir, $config, $_POST['config_revision'] ?? null, 'renderConfig', $syncScript);
+        $errors = array_merge($errors, $saveResult['errors']);
+        $notices = array_merge($notices, $saveResult['notices']);
     }
 
     if ($isAjaxSaveRequest) {
@@ -943,6 +897,9 @@ if ($isPostRequest) {
             'ok' => empty($ajaxErrors),
             'errors' => array_values($ajaxErrors),
             'notices' => array_values($ajaxNotices),
+            'saved' => $saveResult['saved'] ?? false,
+            'schedulerApplied' => $saveResult['schedulerApplied'] ?? false,
+            'revision' => $saveResult['revision'] ?? zfsas_config_revision($configDir),
             'resolvedCron' => $ajaxResolvedCron,
             'prefix' => (string) ($config['PREFIX'] ?? ''),
         ], empty($ajaxErrors) ? 200 : 400);
@@ -1694,6 +1651,7 @@ $renderStandalonePage = !empty($GLOBALS['zfsas_render_standalone_page']);
   <?php endif; ?>
 
   <form method="post" action="<?php echo h($saveApiUrl); ?>" data-ajax-action="<?php echo h($saveApiUrl); ?>" id="zfsas_settings_form">
+    <?php echo zfsas_config_tools_markup('auto', $configDir); ?>
     <input type="hidden" name="return_to" value="<?php echo h($defaultSettingsReturnUrl); ?>">
     <?php if ($csrfToken !== '') : ?>
     <input type="hidden" name="csrf_token" value="<?php echo h($csrfToken); ?>">
@@ -2032,6 +1990,7 @@ $renderStandalonePage = !empty($GLOBALS['zfsas_render_standalone_page']);
       </div>
     </div>
   </form>
+<script src="/plugins/zfs.autosnapshot/js/config-tools.js"></script>
 </div>
 
 <script>
@@ -3592,6 +3551,8 @@ $renderStandalonePage = !empty($GLOBALS['zfsas_render_standalone_page']);
       return;
     }
 
+    if (saveForm && !saveForm.reportValidity()) { return; }
+
     if (saveBusy) {
       return;
     }
@@ -3613,8 +3574,9 @@ $renderStandalonePage = !empty($GLOBALS['zfsas_render_standalone_page']);
         saveForm,
         saveForm.getAttribute('data-ajax-action') || requestTargetUrl(saveForm),
         function (data) {
+          saveForm.dispatchEvent(new CustomEvent('zfsas:saved', {detail: data}));
           var notices = Array.isArray(data.notices) ? data.notices : [];
-          renderSaveFeedback(data.errors || [], []);
+          renderSaveFeedback(data.errors || [], notices);
           if (!Array.isArray(data.errors) || data.errors.length === 0) {
             showSaveButtonSavedState();
           } else {

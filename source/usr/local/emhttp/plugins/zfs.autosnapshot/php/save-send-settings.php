@@ -134,6 +134,9 @@ if ($expectsJson) {
         'ok' => empty($saveResult['errors']),
         'errors' => array_values($saveResult['errors']),
         'notices' => array_values($saveResult['notices']),
+        'saved' => $saveResult['saved'],
+        'schedulerApplied' => $saveResult['schedulerApplied'],
+        'revision' => $saveResult['revision'],
         'jobCount' => count($saveResult['formJobs']),
     ], empty($saveResult['errors']) ? 200 : 400);
 }

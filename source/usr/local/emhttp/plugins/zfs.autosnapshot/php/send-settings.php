@@ -88,6 +88,9 @@ if ($isPostRequest) {
                 'ok' => empty($errors),
                 'errors' => array_values($errors),
                 'notices' => array_values($notices),
+                'saved' => $saveResult['saved'],
+                'schedulerApplied' => $saveResult['schedulerApplied'],
+                'revision' => $saveResult['revision'],
                 'jobCount' => count($formJobs),
             ], empty($errors) ? 200 : 400);
         }
@@ -488,6 +491,7 @@ if ($isPostRequest) {
   <?php endif; ?>
 
   <form method="post" action="<?php echo zfsas_send_h($saveApiUrl); ?>" data-ajax-action="<?php echo zfsas_send_h($saveApiUrl); ?>" id="zfsas_send_form">
+    <?php echo zfsas_config_tools_markup('send', $configDir); ?>
     <input type="hidden" name="return_to" value="<?php echo zfsas_send_h($defaultReturnUrl); ?>">
     <?php if ($csrfToken !== '') : ?>
     <input type="hidden" name="csrf_token" value="<?php echo zfsas_send_h($csrfToken); ?>">
@@ -708,6 +712,7 @@ if ($isPostRequest) {
       <noscript><button type="submit" class="btn btn-primary">Save ZFS Send Settings</button></noscript>
     </div>
   </form>
+<script src="/plugins/zfs.autosnapshot/js/config-tools.js"></script>
 
   <div class="zfsas-send-card">
     <div class="zfsas-send-queue-header">
@@ -1524,6 +1529,7 @@ if ($isPostRequest) {
       return;
     }
 
+    if (!saveForm.reportValidity()) { return; }
     setSaveButtonState(true);
     renderFeedback([]);
 
@@ -1531,7 +1537,8 @@ if ($isPostRequest) {
       saveForm,
       saveApiUrl,
       function (data) {
-        renderFeedback(data.errors || []);
+        saveForm.dispatchEvent(new CustomEvent('zfsas:saved', {detail: data}));
+        renderFeedback((data.errors || []).concat(data.schedulerApplied === false ? (data.notices || []) : []));
         if (!Array.isArray(data.errors) || data.errors.length === 0) {
           showSaveButtonSavedState();
         } else {
