@@ -6,7 +6,7 @@ The plugin also includes ZFS Send replication, a Dataset Migrator, Snapshot Mana
 
 ## Branch status: `fix/job-coordination`
 
-This is the development branch of [adnanklink/zfsautosnapshot-unraid](https://github.com/adnanklink/zfsautosnapshot-unraid/tree/fix/job-coordination). It includes the completed `fix/send-cancellation` work and ongoing job-coordination changes. **The source is ahead of the packaged release; full coordinator integration is not finished.**
+This is the development branch of [adnanklink/zfsautosnapshot-unraid](https://github.com/adnanklink/zfsautosnapshot-unraid/tree/fix/job-coordination). It includes the completed `fix/send-cancellation` work and ongoing job-coordination changes. **Development package `2026.09.16.01` includes this branch’s changes; full coordinator integration is not finished.**
 
 Implemented on this branch:
 
@@ -55,9 +55,9 @@ The branch installation URL is:
 https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/fix/job-coordination/dist/zfs.autosnapshot.plg
 ```
 
-**Do not use this URL to install the new changes yet.** The checked-in manifest and package still describe the older `2026.08.24.01` release and reference `bstone108` upstream. A source push does not rebuild those files. The branch URL becomes usable for these changes only after a fresh package and manifest are built and published as described below.
+The published development package is **`2026.09.16.01`**. Its manifest and package URLs point to this fork and branch. It replaces the older `2026.08.24.01` upstream installation without requiring an uninstall. Future source pushes do not automatically rebuild the package.
 
-Once that branch package is published:
+To install or upgrade to this development package:
 
 1. In Unraid, open **Plugins → Install Plugin**.
 2. Paste the branch URL above and select **Install**.
@@ -75,7 +75,7 @@ git clone --branch fix/job-coordination --single-branch https://github.com/adnan
 cd zfsautosnapshot-unraid
 
 # Example development version; choose a new, unused version for each publication.
-./scripts/build-release.sh 2026.09.16.01-dev \
+./scripts/build-release.sh 2026.09.16.02 \
   https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/fix/job-coordination/dist
 ```
 

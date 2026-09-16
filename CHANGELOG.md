@@ -3,7 +3,19 @@
 This file is written for everyday users in plain English.
 It answers one question: "What changed for me?"
 
-## Unreleased
+## Development releases
+
+### 2026.09.16.01 (2026-09-16)
+
+- Development release from the fix/job-coordination branch; replication coordination is still being migrated and this is not a completed stable release.
+- Moved routine queues, cursors, batch history and migration progress into RAM. Runtime history is lost on reboot; explicit pauses and essential migration recovery checkpoints persist.
+- Added a PHP coordinator for Auto Snapshot, bounded Snapshot Manager attempts and deletion-worker launches, with verified process shutdown and persistent Auto Snapshot Cancel/Resume.
+- Added Save-anchored intervals, explicit legacy schedule conversion, and Send daily/weekly time controls and previews.
+- Allowed prerequisite cleanup around exact send references and later occurrences after exhausted send failures; preserved destination, GUID, hold and resume safety checks.
+- Added reviewed bulk snapshot actions, fixed selections, failed-only retries and shared migration resource locks.
+
+Includes the earlier reliability work:
+
 
 - Added per-dataset snapshot filtering, pagination, range selection, fixed “all matching” selection, reviewed bulk actions, progress/error accounting and failed-only retry.
 - Added expiring, exact-identity zero-change and retention cleanup previews with live protection checks.
