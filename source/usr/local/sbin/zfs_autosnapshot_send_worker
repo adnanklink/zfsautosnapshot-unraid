@@ -57,6 +57,7 @@ cleanup() {
   fi
   release_current_space_reservation
   clear_active_send_datasets
+  release_dataset_gates
   rm -rf "$WORKER_LOCK_DIR" >/dev/null 2>&1 || true
   exit "$exit_code"
 }
@@ -541,6 +542,14 @@ run_pipeline_with_space_reservation() {
   local send_progress="${5:-}"
   local rc required_bytes
 
+  if [[ -z "${job[SEND_PLAN_SOURCE_GUID]:-}" ]]; then
+    job[SEND_PLAN_SOURCE_GUID]="$(zfs_guid_for_transport "$snapshot")" || return 1
+    job[SEND_PLAN_DEST_GUID]="$(zfs_guid_for_transport "$destination" "$(current_send_transport)" || printf absent)"
+  fi
+  validate_send_identities "$base_snapshot" "$snapshot" "$destination" "$(current_send_transport)" || {
+    fail_current_job_final "Source snapshot, destination dataset, or incremental base identity changed."
+    return 1
+  }
   cache_current_send_plan "$description" "$base_snapshot" "$snapshot" "$destination"
   estimate_destination_space_for_current_send "$destination" "$base_snapshot" "$snapshot" || return 1
   if preflight_only_worker; then
@@ -765,7 +774,7 @@ build_resume_members_for_current_job() {
       destination_dataset="${dest_root}/${relative}"
     fi
 
-    if dataset_has_snapshot_basename "$destination_dataset" "$basename"; then
+    if snapshots_have_same_guid "${source_dataset}@${basename}" "${destination_dataset}@${basename}" "$(current_send_transport)"; then
       continue
     fi
 
@@ -862,6 +871,7 @@ queue_child_send_jobs() {
     queued_job[SNAPSHOT_PREFIX_BASE]="$snapshot_prefix_base"
     queued_job[SNAPSHOT_PREFIX]="$prefix"
     queued_job[SOURCE_SNAPSHOT]="$snapshot"
+    queued_job[SOURCE_SNAPSHOT_GUID]="$(zfs_guid_for_transport "$snapshot")" || return 1
     queued_job[SOURCE_SNAPSHOT_NAME]="$snapshot_basename"
     queued_job[PREVIOUS_SNAPSHOT_NAME]="$previous_basename"
     queued_job[SEND_TRANSPORT]="$send_transport"
@@ -984,6 +994,10 @@ send_member_snapshot() {
     return 2
   }
 
+  if [[ -n "${job[SOURCE_SNAPSHOT_GUID]:-}" && "$(zfs_guid_for_transport "$snapshot" || true)" != "${job[SOURCE_SNAPSHOT_GUID]}" ]]; then
+    fail_current_job_final "Queued source snapshot identity changed."
+    return 1
+  fi
   if ! snapshot_exists "$snapshot"; then
     log "Source snapshot is not ready for ${snapshot}; deferring send member."
     defer_current_job "source snapshot is not ready for scheduled send; waiting for ZFS import/mount" 15
@@ -996,6 +1010,7 @@ send_member_snapshot() {
   fi
 
   if destination_snapshot_exists_for_transport "${destination}@${basename}"; then
+    snapshots_have_same_guid "$snapshot" "${destination}@${basename}" "$send_transport" || { fail_current_job_final "Destination snapshot name exists with a different GUID."; return 1; }
     log "Destination already has ${destination}@${basename}; skipping receive for this member."
     return 0
   fi
@@ -1014,7 +1029,7 @@ send_member_snapshot() {
     set_job_progress "snapshot_created" "$progress" "Waiting for send slot."
     run_pipeline_with_space_reservation "$description" "$base_snapshot" "$snapshot" "$destination" "$progress" || return $?
     set_job_progress "verifying" "$((progress + 15))" "Verifying receive."
-    destination_snapshot_exists_for_transport "${destination}@${basename}"
+    snapshots_have_same_guid "$snapshot" "${destination}@${basename}" "$send_transport"
     return $?
   fi
 
@@ -1033,22 +1048,7 @@ send_member_snapshot() {
       run_pipeline_with_space_reservation "$description" "${source_dataset}@${latest_common}" "$snapshot" "$destination" "$progress" || return $?
     else
       if (( destination_exists == 1 )) && destination_has_any_snapshots_for_transport "$destination"; then
-        if [[ "$send_transport" == "ssh" ]]; then
-          failure_message="No common send checkpoint remains between '${source_dataset}' and remote '${destination}'. Automatic remote destination purge/reseed is not enabled; re-seed or clean up the remote destination manually."
-          log "$failure_message"
-          fail_current_job_final "$failure_message"
-          return 1
-        fi
-        failure_message="No common send checkpoint remains between '${source_dataset}' and '${destination}'. The destination dataset was purged so the next retry can reseed this backup from scratch. Review the preserved send log for diagnostics."
-        log "$failure_message"
-        if purge_destination_for_reseed "$destination"; then
-          job[LAST_ERROR]="$failure_message"
-          job[LAST_MESSAGE]="$failure_message"
-          preserve_failed_send_log_for_job job || true
-          fail_current_job "$failure_message"
-          return 1
-        fi
-        fail_current_job_final "No common send checkpoint remains between '${source_dataset}' and '${destination}', and automatic destination purge for reseed failed."
+        fail_current_job_final "No GUID-matched common checkpoint remains for '${destination}'. Review the destination and explicitly reseed if needed."
         return 1
       fi
       description="Full send ${snapshot} -> ${destination}"
@@ -1077,7 +1077,7 @@ send_member_snapshot() {
   fi
 
   set_job_progress "verifying" "$((progress + 15))" "Verifying receive."
-  destination_snapshot_exists_for_transport "${destination}@${basename}"
+  snapshots_have_same_guid "$snapshot" "${destination}@${basename}" "$send_transport"
 }
 
 cleanup_source_checkpoints_for_verified_member() {
@@ -1143,20 +1143,13 @@ cleanup_source_checkpoints_for_verified_member() {
     while IFS=$'\t' read -r snap_name snap_epoch; do
       [[ -n "$snap_name" ]] || continue
       [[ "${snap_name##*@}" == "$snap_base" ]] || continue
-      log "Deleting source send checkpoint: $snap_name"
-      zfs destroy "$snap_name"
+      snapshot_delete_conflicts_with_send_jobs "$snap_name" && continue
+      [[ "$(snapshot_userrefs_count "$snap_name")" == 0 ]] || continue
+      snapshot_has_clones "$snap_name" && continue
+      log "Queueing source checkpoint cleanup: $snap_name"
+      queue_snapshot_delete_job "$source_dataset" "$snap_name" "$snap_epoch" "Superseded source checkpoint." "$schedule_job_id" "snapshot" || true
     done < <(zfs list -H -p -t snapshot -o name,creation -d 1 "$source_dataset" 2>/dev/null || true)
   done
-}
-
-purge_destination_for_reseed() {
-  local destination="$1"
-
-  is_valid_dataset_name "$destination" || return 1
-  dataset_exists "$destination" || return 0
-
-  log "Purging destination dataset for automatic reseed: ${destination}"
-  zfs destroy -r "$destination"
 }
 
 run_child_jobs_have_failed() {
@@ -1554,6 +1547,13 @@ main() {
     job[WORKER_PID]="$$"
     persist_job
 
+    if ! acquire_dataset_gates -s "$(job_get job SOURCE_ROOT)" "$(job_get job DESTINATION_ROOT)"; then
+      defer_current_job "Dataset is busy with another operation." 3
+      release_job_claim "$CURRENT_JOB_ID"
+      CURRENT_JOB_ID=""; CURRENT_JOB_PATH=""
+      (( single_job == 1 )) && break
+      continue
+    fi
     if process_send_job; then
       result=0
     else
@@ -1563,6 +1563,7 @@ main() {
       fi
     fi
 
+    release_dataset_gates
     release_current_prep_pool_lock
     release_current_space_reservation
     release_current_send_transfer_slot

@@ -588,11 +588,7 @@ process_send_checkpoint_delete() {
   prefix="$(job_prefix_for_schedule "$schedule_job_id")"
 
   if [[ "$delete_scope" == "checkpoint" ]]; then
-    log "Deleting scheduled-send checkpoint ${basename} across its source and destination trees."
-    dataset_exists "$source_root" && delete_checkpoint_basename_across_tree "$source_root" "$basename" "$prefix" "source"
-    dataset_exists "$dest_root" && delete_checkpoint_basename_across_tree "$dest_root" "$basename" "$prefix" "destination"
-    complete_delete_job "Deleted scheduled-send checkpoint ${basename} across its source and destination trees."
-    log "Deleted scheduled-send checkpoint ${basename} across its source and destination trees."
+    fail_delete_job "Legacy tree deletion was rejected; select individual snapshots again."
     return 0
   fi
 
@@ -626,6 +622,47 @@ process_standard_delete() {
 }
 
 process_delete_job() {
+  local -A checked_job=()
+  local snapshot transport=local schedule_id expected actual command props userrefs clones
+  queue_load_job_assoc "$CURRENT_JOB_ID" checked_job || return 1
+  snapshot="${checked_job[SNAPSHOT]:-}"
+  schedule_id="${checked_job[SEND_SCHEDULE_JOB_ID]:-}"
+  if [[ "${checked_job[DELETE_SCOPE]:-}" == destination_checkpoint && -n "$schedule_id" ]]; then
+    transport="${SCHEDULE_TRANSPORT[$schedule_id]:-local}"
+  fi
+  if ! acquire_dataset_gates -x "${snapshot%@*}"; then
+    retry_delete_job "Dataset is in use; deletion delayed."
+    return 0
+  fi
+  if snapshot_delete_conflicts_with_send_jobs "$snapshot"; then
+    release_dataset_gates
+    retry_delete_job "Snapshot dataset is referenced by a pending transfer."
+    return 0
+  fi
+  expected="${checked_job[SNAPSHOT_GUID]:-}"
+  actual="$(zfs_guid_for_transport "$snapshot" "$transport" || true)"
+  if [[ -z "$expected" || -z "$actual" || "$actual" != "$expected" ]]; then
+    release_dataset_gates
+    skip_delete_job "Skipped ${snapshot}: missing or changed snapshot identity."
+    return 0
+  fi
+  if [[ "$transport" == ssh ]]; then
+    build_ssh_zfs_command "zfs get -H -p -o value userrefs,clones -- $(shell_quote_word "$snapshot")" command || return 1
+    props="$(eval "$command" 2>/dev/null)" || props=""
+  else
+    props="$(zfs get -H -p -o value userrefs,clones -- "$snapshot" 2>/dev/null)" || props=""
+  fi
+  userrefs="${props%%$'\n'*}"; clones="${props#*$'\n'}"
+  if [[ "$userrefs" != 0 || "$clones" != '-' ]]; then
+    release_dataset_gates
+    skip_delete_job "Skipped ${snapshot}: held, cloned, or incomplete metadata."
+    return 0
+  fi
+  process_delete_job_locked
+  release_dataset_gates
+}
+
+process_delete_job_locked() {
   local snapshot
   local -A job=()
 
@@ -715,9 +752,9 @@ main() {
   load_send_config
   parse_send_jobs_config
 
+  mkdir "$WORKER_LOCK_DIR" 2>/dev/null || exit 0
   trap cleanup EXIT
   trap 'PERSIST_QUEUE_ON_EXIT=1; exit 0' INT TERM
-  mkdir "$WORKER_LOCK_DIR" 2>/dev/null || exit 0
   printf '%s\n' "$$" > "$DELETE_QUEUE_PID_FILE"
   chmod 0640 "$DELETE_QUEUE_PID_FILE" >/dev/null 2>&1 || true
   ops_apply_owner "$DELETE_QUEUE_PID_FILE"

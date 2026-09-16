@@ -1663,7 +1663,7 @@ function zfsas_ops_enqueue_snapshot_delete($dataset, $snapshotRow, $forceCheckpo
         'DELETE_POOL' => strtok($dataset, '/'),
         'ESTIMATED_RECLAIM_BYTES' => (string) ((int) ($snapshotRow['writtenBytes'] ?? $snapshotRow['usedBytes'] ?? 0)),
         'SEND_PROTECTED' => !empty($snapshotRow['sendProtected']) ? '1' : '0',
-        'DELETE_SCOPE' => ($forceCheckpointDelete && !empty($snapshotRow['sendProtected'])) ? 'checkpoint' : 'snapshot',
+        'DELETE_SCOPE' => 'snapshot',
     ];
 
     if (!empty($snapshotRow['sendScheduleJobId'])) {

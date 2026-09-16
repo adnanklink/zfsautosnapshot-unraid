@@ -3009,7 +3009,7 @@ build_ssh_receive_command() {
   is_valid_dataset_name "$destination" || return 1
   # -s preserves partial receive state and exposes receive_resume_token after
   # an interrupted stream, allowing zfs send -t to resume rather than resend.
-  remote_receive="zfs receive -s -uF -- $(shell_quote_word "$destination")"
+  remote_receive="zfs receive -s -u -- $(shell_quote_word "$destination")"
   build_ssh_zfs_command "$remote_receive" "$result_var"
 }
 
@@ -3028,7 +3028,7 @@ build_spiped_receive_command() {
   is_valid_spiped_key_path "$key_path" || return 1
 
   listen_addr="${listen_host}:${listen_port}"
-  built_command="spiped -d -s '$(shell_quote_word "$listen_addr")' -k $(shell_quote_word "$key_path") | zfs receive -uF -- $(shell_quote_word "$destination")"
+  built_command="spiped -d -s '$(shell_quote_word "$listen_addr")' -k $(shell_quote_word "$key_path") | zfs receive -s -u -- $(shell_quote_word "$destination")"
   printf -v "$result_var" '%s' "$built_command"
 }
 
@@ -3172,6 +3172,55 @@ ssh_dataset_tree_inventory() {
   eval "$command" 2>/dev/null || true
 }
 
+zfs_guid_for_transport() {
+  local name="$1" transport="${2:-local}" command value
+  if [[ "$transport" == ssh ]]; then
+    build_ssh_zfs_command "zfs get -H -p -o value guid -- $(shell_quote_word "$name")" command || return 1
+    value="$(eval "$command" 2>/dev/null)" || return 1
+  else
+    value="$(zfs get -H -p -o value guid -- "$name" 2>/dev/null)" || return 1
+  fi
+  [[ "$value" =~ ^[0-9]+$ && "$value" != 0 ]] || return 1
+  printf '%s' "$value"
+}
+
+snapshots_have_same_guid() {
+  local source="$1" destination="$2" transport="${3:-local}" source_guid dest_guid
+  source_guid="$(zfs_guid_for_transport "$source" local)" || return 1
+  dest_guid="$(zfs_guid_for_transport "$destination" "$transport")" || return 1
+  [[ "$source_guid" == "$dest_guid" ]]
+}
+
+local_receive_resume_token() {
+  local dataset="$1" result_var="$2" output
+  printf -v "$result_var" ''
+  if ! output="$(zfs list -H -o name -- "$dataset" 2>&1)"; then
+    [[ "$output" == *"dataset does not exist"* ]] && return 1
+    return 2
+  fi
+  output="$(zfs get -H -o value receive_resume_token -- "$dataset" 2>/dev/null)" || return 2
+  [[ "$output" == '-' ]] && return 1
+  [[ -n "$output" && "$output" != *$'\n'* ]] || return 2
+  printf -v "$result_var" '%s' "$output"
+}
+
+validate_send_identities() {
+  local base="$1" snapshot="$2" destination="$3" transport="$4" actual
+  # Recheck the planned source and dataset identities immediately before execution.
+  actual="$(zfs_guid_for_transport "$snapshot")" || return 1
+  [[ -z "${job[SEND_PLAN_SOURCE_GUID]:-}" || "$actual" == "${job[SEND_PLAN_SOURCE_GUID]}" ]] || return 1
+  if [[ -n "$base" ]]; then
+    snapshots_have_same_guid "$base" "${destination}@${base##*@}" "$transport" || {
+      log "Refusing incremental receive: source and destination base GUIDs differ."
+      return 1
+    }
+  fi
+  if [[ -n "${job[SEND_PLAN_DEST_GUID]:-}" && "${job[SEND_PLAN_DEST_GUID]}" != absent ]]; then
+    actual="$(zfs_guid_for_transport "$destination" "$transport")" || return 1
+    [[ "$actual" == "${job[SEND_PLAN_DEST_GUID]}" ]] || return 1
+  fi
+}
+
 run_pipeline_with_status() {
   local description="$1"
   local base_snapshot="$2"
@@ -3218,12 +3267,19 @@ run_pipeline_with_status() {
     log "Refusing send pipeline for ${description}: SEND_RATE_LIMIT must be 0 or a positive mbuffer rate such as 20M, and mbuffer must be installed when enabled."
     return 1
   fi
-  if [[ "$send_transport" == "ssh" ]]; then
-    if ! build_ssh_receive_command "$destination" receive_command; then
+  if [[ "$send_transport" != spiped ]]; then
+    validate_send_identities "$base_snapshot" "$snapshot" "$destination" "$send_transport" || return 1
+  fi
+  if [[ "$send_transport" == "local" || "$send_transport" == "ssh" ]]; then
+    if [[ "$send_transport" == local ]]; then
+      receive_command="zfs receive -s -u -- $(shell_quote_word "$destination")"
+    elif ! build_ssh_receive_command "$destination" receive_command; then
       log "Unsupported ZFS send transport '$send_transport' requested for $description; SSH receiver settings are incomplete or invalid."
       return 1
     fi
-    if ssh_receive_resume_token "$destination" resume_token; then
+    local token_reader=local_receive_resume_token
+    [[ "$send_transport" == ssh ]] && token_reader=ssh_receive_resume_token
+    if "$token_reader" "$destination" resume_token; then
       if ! resume_token_target_snapshot "$resume_token" resume_snapshot; then
         log "Refusing SSH send for ${destination}: receiver has an unreadable receive_resume_token; inspect or explicitly abort the interrupted receive on the receiver."
         return 1
@@ -3271,9 +3327,13 @@ run_pipeline_with_status() {
     return 1
   fi
   if [[ "$send_transport" == "local" ]]; then
-    receive_command="zfs receive -uF -- $(shell_quote_word "$destination")"
+    receive_command="zfs receive -s -u -- $(shell_quote_word "$destination")"
   fi
 
+  if [[ -z "$base_snapshot" ]] && zfs_guid_for_transport "$destination" "$send_transport" >/dev/null; then
+    log "Refusing full receive into existing dataset ${destination}; an explicit reseed is required."
+    return 1
+  fi
   log "$description (transport=$send_transport)"
   if [[ "$progress_total_bytes" =~ ^[0-9]+$ ]] && (( progress_total_bytes > 0 )) && dd_status_progress_supported; then
     progress_supported=1
@@ -3722,7 +3782,7 @@ find_latest_common_basename_for_member() {
   while IFS=$'\t' read -r snap_name snap_epoch; do
     [[ -n "$snap_name" && -n "$snap_epoch" ]] || continue
     snap_base="${snap_name##*@}"
-    if [[ -n "${dest_basenames[$snap_base]:-}" ]]; then
+    if [[ -n "${dest_basenames[$snap_base]:-}" ]] && snapshots_have_same_guid "$snap_name" "${dest_dataset}@${snap_base}" "${transport:-local}"; then
       printf -v "$result_name_var" '%s' "$snap_base"
     fi
   done <<< "$source_inventory"
@@ -3747,7 +3807,7 @@ find_latest_common_snapshot_for_target() {
   while IFS=$'\t' read -r snap_name snap_epoch; do
     [[ -n "$snap_name" ]] || continue
     snap_base="${snap_name##*@}"
-    if [[ -n "${dest_map[$snap_base]:-}" ]]; then
+    if [[ -n "${dest_map[$snap_base]:-}" ]] && snapshots_have_same_guid "$snap_name" "${dest_dataset}@${snap_base}" "${transport:-local}"; then
       latest_common="$snap_base"
     fi
     if [[ "$snap_base" == "$target_basename" ]]; then
@@ -3788,7 +3848,7 @@ find_latest_common_basename_for_member_transport() {
   while IFS=$'\t' read -r snap_name snap_epoch; do
     [[ -n "$snap_name" && -n "$snap_epoch" ]] || continue
     snap_base="${snap_name##*@}"
-    if [[ -n "${dest_basenames[$snap_base]:-}" ]]; then
+    if [[ -n "${dest_basenames[$snap_base]:-}" ]] && snapshots_have_same_guid "$snap_name" "${dest_dataset}@${snap_base}" "${transport:-local}"; then
       printf -v "$result_name_var" '%s' "$snap_base"
     fi
   done <<< "$source_inventory"
@@ -3821,7 +3881,7 @@ find_latest_common_snapshot_for_target_transport() {
   while IFS=$'\t' read -r snap_name snap_epoch; do
     [[ -n "$snap_name" ]] || continue
     snap_base="${snap_name##*@}"
-    if [[ -n "${dest_map[$snap_base]:-}" ]]; then
+    if [[ -n "${dest_map[$snap_base]:-}" ]] && snapshots_have_same_guid "$snap_name" "${dest_dataset}@${snap_base}" "${transport:-local}"; then
       latest_common="$snap_base"
     fi
     if [[ "$snap_base" == "$target_basename" ]]; then
@@ -4915,7 +4975,7 @@ queue_snapshot_delete_job() {
         return 0
       fi
       send_schedule_job_id="$parsed_schedule_job_id"
-      delete_scope="checkpoint"
+      delete_scope="snapshot"
     fi
   fi
 
@@ -4945,7 +5005,7 @@ queue_snapshot_delete_job() {
 
   if [[ "$delete_scope" == "destination_checkpoint" && "$send_transport" == "ssh" ]]; then
     snapshot_epoch="$queue_sort_epoch"
-    guid=""
+    guid="$(zfs_guid_for_transport "$snapshot" ssh)" || return 1
     createtxg=""
   else
     zfs_get_snapshot_props_cached "$snapshot" props || return 1
@@ -5003,15 +5063,46 @@ queue_snapshot_delete_job() {
 }
 
 snapshot_delete_conflicts_with_send_jobs() {
-  local snapshot="$1"
-  local basename="${snapshot##*@}"
-  local schedule_job_id
-  schedule_job_id="$(parse_send_checkpoint_schedule_id "$basename" 2>/dev/null || true)"
-  [[ -n "$schedule_job_id" ]] || return 1
+  local snapshot="$1" dataset="${1%@*}" file state source destination
+  local -A pending_send=()
+  while IFS= read -r file; do
+    job_load "$file" pending_send || continue
+    [[ "${pending_send[JOB_TYPE]:-}" == send ]] || continue
+    state="${pending_send[STATE]:-}"
+    case "$state" in queued|running|retry_wait|canceling) ;; *) continue ;; esac
+    source="${pending_send[SOURCE_ROOT]:-${pending_send[DATASET]:-}}"
+    destination="${pending_send[DESTINATION_ROOT]:-}"
+    # Preflight may not have chosen a base yet: protect both complete trees.
+    if [[ -n "$source" && ( "$dataset" == "$source" || "$dataset" == "$source/"* ) ]]; then return 0; fi
+    if [[ -n "$destination" && ( "$dataset" == "$destination" || "$dataset" == "$destination/"* ) ]]; then return 0; fi
+  done < <(list_job_files)
+  return 1
+}
 
-  local -A protected=()
-  scheduled_job_protected_basenames "$schedule_job_id" protected
-  [[ -n "${protected[$basename]:-}" ]]
+# Identical lock naming is used by the PHP batch worker. Ancestor locks also
+# serialize recursive sends with rollback and deletion of child snapshots.
+acquire_dataset_gates() {
+  local mode="$1"; shift
+  local dataset key fd
+  DATASET_GATE_FDS=()
+  mkdir -p "$OPS_ROOT/dataset-locks" || return 1
+  while IFS= read -r dataset; do
+    [[ -n "$dataset" ]] || continue
+    key="$(printf '%s' "$dataset" | sha256sum | cut -d' ' -f1)"
+    exec {fd}>"$OPS_ROOT/dataset-locks/$key.lock" || { release_dataset_gates; return 1; }
+    if ! flock -n "$mode" "$fd"; then exec {fd}>&-; release_dataset_gates; return 1; fi
+    DATASET_GATE_FDS+=("$fd")
+  done < <(for dataset in "$@"; do
+    [[ -n "$dataset" ]] || continue
+    while [[ "$dataset" == */* ]]; do printf '%s\n' "$dataset"; dataset="${dataset%/*}"; done
+    printf '%s\n' "$dataset"
+  done | sort -u)
+}
+
+release_dataset_gates() {
+  local fd
+  for fd in "${DATASET_GATE_FDS[@]:-}"; do [[ -n "$fd" ]] && exec {fd}>&-; done
+  DATASET_GATE_FDS=()
 }
 
 latest_checkpoint_basename_for_schedule() {

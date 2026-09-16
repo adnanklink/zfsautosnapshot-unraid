@@ -44,7 +44,7 @@ assert_contains "$command" "UpdateHostKeys=no" "SSH receive command must not rew
 assert_contains "$command" "-p 2222" "SSH receive command must include configured port"
 assert_contains "$command" "replicator@backup.example.test" "SSH receive command must target configured user and host"
 assert_contains "$command" "zfs\\ receive" "SSH receive command must carry remote zfs receive command"
-assert_contains "$command" "zfs\\ receive\\ -s\\ -uF" "SSH receive command must preserve partial receives for resumable transfers"
+assert_contains "$command" "zfs\\ receive\\ -s\\ -u" "SSH receive command must preserve partial receives for resumable transfers"
 assert_contains "$command" "backup/root" "SSH receive command must include destination dataset"
 assert_not_contains "$command" " -i " "SSH receive command must not include an empty identity-file argument"
 
@@ -209,6 +209,8 @@ zfs() {
   fi
   return 1
 }
+
+zfs_guid_for_transport() { [[ "$1" == *@* ]] || return 1; printf 222; }
 
 SCHEDULE_SOURCE_ROOT[feedfacecafe]="source/data"
 SCHEDULE_DEST_ROOT[feedfacecafe]="backup/data"
@@ -408,7 +410,7 @@ case "$remote_command" in
     printf '%s\n' "backup/data"
     exit 0
     ;;
-  *"zfs receive -s -uF -- backup/data"*)
+  *"zfs receive -s -u -- backup/data"*)
     cat >/dev/null
     exit 0
     ;;

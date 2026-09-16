@@ -66,7 +66,7 @@ def main() -> int:
     )
     assert_contains(
         ops_lib,
-        "zfs receive -uF --",
+        "zfs receive -s -u --",
         "SSH receive helper must pass remote destination to zfs receive after -- for safer dataset handling",
     )
     assert_contains(
