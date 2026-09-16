@@ -3,6 +3,15 @@
 This file is written for everyday users in plain English.
 It answers one question: "What changed for me?"
 
+## Unreleased
+
+- Added per-dataset snapshot filtering, pagination, range selection, fixed “all matching” selection, reviewed bulk actions, progress/error accounting and failed-only retry.
+- Added expiring, exact-identity zero-change and retention cleanup previews with live protection checks.
+- Made cancellation persist before stopping the full replication pipeline and pause the schedule until Resume; stale workers cannot revive canceled jobs.
+- Removed destructive replication reseeding and forced receive rollback; verify source, destination, base and resume identities.
+- Enforced authoritative prefix validation and stale-save protection across both settings pages; added tuning resets, dirty-form feedback and asynchronous inventory loading.
+- Fixed queue publication, inherited worker locks, stale ownership, finalizer evidence, migration-start races and upgrade shutdown handling.
+
 ## Public Releases
 
 ### 2026.08.24.01 (2026-08-24)

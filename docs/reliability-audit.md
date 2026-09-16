@@ -1,0 +1,58 @@
+# Replication and Snapshot Manager reliability audit
+
+Branch: `fix/send-cancellation`. This document covers source changes, not deployment.
+
+## Findings and disposition
+
+| Finding | Evidence in original paths | Disposition and verification |
+| --- | --- | --- |
+| Cancellation could race stale writes and late fan-out | PHP cancellation and Bash job writers did not share a durable decision fence | Persistent run tombstone and schedule pause precede signals; shared lifecycle lock and revision comparisons reject stale publications. Cancellation regression and real ZFS cancellation pass. |
+| A worker leader could exit while pipeline children survived | PID-only liveness checks released ownership | Isolated process groups and start-time verification; stop all surviving group members before recovery or resource release. Ownership test kills a real leader and verifies child shutdown and reservation retention. |
+| Finalization could lose child-success evidence | Timed pruning and PHP status-reader pruning | Only manager prunes; retain child records until finalizer completes; require every expected deterministic child ID to be explicitly complete. Missing, skipped and running child regressions pass. |
+| Destructive destination fallback | Recursive destination destruction and forced receive rollback | Removed automatic reseed and `receive -F`; GUID checks for source, destination and common base; matching resume target required. Real unrelated destination contents survive rejected full and incremental receives. |
+| Queued work could use changed connection settings | Daemon loaded connection configuration once | Fingerprint send configuration in queued send/delete jobs; reload and compare at execution. Changed/legacy unbound automatic cleanup is skipped for replanning. Manual batches also bind to both configuration revisions. |
+| Send/delete/rollback and automatic cleanup could overlap | Independent workers and active-marker timing | Shared/exclusive dataset ancestor locks and shared automatic-cleanup gate; automatic cleanup holds exclusive gate or skips cleanup; pending transfers protect their trees. Rollback uses no recursive flag and rejects newer snapshots. |
+| Delete selection expanded into checkpoint trees | Legacy checkpoint scope in ordinary delete | Ordinary deletion enqueues only selected names/GUIDs. Legacy tree jobs fail closed. Integration verifies an unselected adjacent snapshot remains. |
+| Delete publication versus exit lost work | Inbox append and daemon teardown used independent ownership | Permanent daemon flock, publication of drained state before removing processing input, replay of stranded inputs, and exit/inbox locking. Integration includes enqueue after idle exit. |
+| Detached workers inherited locks | New batch-to-delete integration repeatedly reported dataset busy after the batch worker exited | Added descriptor-clearing detached launcher; release batch dataset locks before daemon launch. Real daemon integration and inherited-flock regression pass. |
+| Immediate retry saw a completed failure as pending | Result journal published before throttled queue snapshot | Terminal result journal overrides stale pending rows; reconcile manifests when calculating pending actions. Extended endpoint test covers immediate failed-delete retry. |
+| Migration launch destroyed another worker's state | PHP reset runtime before worker ownership; lock loser could write status | Worker owns flock before resets/log maintenance; rejected workers leave status/folders/containers/log intact. Status startup response checks dataset and PID. Lock-loser and existing recovery simulation pass. |
+| Prefix validation could omit counterpart | Send endpoint omitted Auto Snapshot prefix | Shared save service reads both authoritative configs under one lock. Equality, both overlap directions, safe stems, existing conflict repair, missing revision and simultaneous saves tested through actual endpoints. |
+| Settings page could bind stale values to a newer revision | Config values and revision read separately | Shared-lock page snapshot binds both configs and revision. Atomic writes, serialized cron application, distinct saved/scheduler result, and prefix history preserve checkpoint protection. |
+| Bulk UI could add new snapshots or accept stale responses | Full-list refresh and selection keyed only to display | Fixed name/GUID identities, generation/dataset guards, captured matching selection, server pagination, bounded visibility-aware polling. Chromium and 10,000-row fixtures pass. |
+| Cleanup preview could act on changed snapshots | No approved identity manifest | Pure preview; five-minute expiry; configured revision, exact GUID and eligibility checked at execution and shared delete boundary. Holds/clones/anchors/checkpoints/pending actions/incomplete metadata exclude candidates. |
+| Batch review accidentally ignored other batches' pending work | Clearing all pending flags in worker revalidation | Ignore only the current token and deterministic delete job ID; retain other pending exclusions. |
+| Upgrade cleared queue state and lock inodes without confirmed shutdown | `post-install.sh` removed runtime queue and job locks; stop tree did not verify KILL completion | Preserve queue records and permanent locks; start-time-bound shutdown, complete-group recovery, PHP worker recognition and maintenance gate. Source-only proposal documented separately; no installation run on development host. |
+| Old stream URLs held PHP workers | Long/infinite stream loops | Browser uses bounded polling; compatibility stream URLs emit one event and close. Embedded Snapshot Manager pauses when its containing tab is hidden. |
+
+## Validation
+
+- Full existing `tests/stage1/run.sh`: passed, including low-space policies, migration recovery simulation, endpoint contracts, transport commands, and latest-common checkpoint protection.
+- `tests/reliability/run.sh`: passed; cancellation, ownership/finalization/orphan recovery, destination identity, actual settings endpoints, 10,000-row inventory/cleanup fixtures, and selection state.
+- `tests/reliability/browser.cjs`: passed in Chromium; 10,000 snapshots, disabled Shift ranges, cross-page selection, fixed matching selection, 500-item upload chunks, filters, and delayed dataset responses.
+- `tests/reliability/config_browser.cjs`: passed on actual PHP-rendered settings pages; asynchronous discovery, prefix conflicts, reset defaults and preserved settings, dirty indicators.
+- `tests/reliability/batch_endpoints.php`: actual PHP endpoints, PHP batch workers and Bash shared delete daemon with fake ZFS. Covers 601-item manifests, explicit-list limit, review without mutations, duplicate submissions, partial failure, failed-only retries, GUID changes, expiry, held cleanup, exact selected deletion and daemon restart.
+- `tests/reliability/zfs_integration.sh`: passed using OpenZFS CLI 2.1.11 and kernel module 2.2.2. Two unique 512 MiB file-backed pools; full and incremental sends; unrelated destination preservation; real throttled pipeline canceled through PHP service; durable pause/tombstone; wrong resume target rejected; explicit Resume and byte comparison. Pools destroyed and a read-only check found no remaining test pools.
+- PHP lint, Bash parsing and ShellCheck error-level checks passed across packaged source. Browser tests also parse and execute the new JavaScript.
+- Package verification uses a temporary `.txz` and compares its file inventory with `source`; no generated release artifacts are committed.
+
+The low-space fixture originally printed updated large byte counts in scientific notation under Debian awk. Its integer output is now explicit. Transport fixtures supply snapshot GUIDs to exercise the added identity checks.
+
+## Reproduction
+
+Use a disposable PHP 8.3/Debian container with Bash, Python, Node 20+, Chromium, Playwright Core, ShellCheck and procps. Mount the repository read-only at `/work` and use that working directory. Endpoint tests write production-style paths **inside the container**, so never run those fixtures on an installed Unraid host.
+
+Run stage-one, `tests/reliability/run.sh`, and the two `.cjs` browser suites. Run `batch_endpoints.php` in a separate container with the plugin source additionally mounted read-only at `/usr/local/emhttp/plugins/zfs.autosnapshot` and sbin source at `/usr/local/sbin`; set `DELETE_QUEUE_IDLE_TIMEOUT_SECONDS=1`.
+
+The optional real-ZFS script additionally requires `/dev/zfs`, mount capability and `ZFSAS_DISPOSABLE_POOL_TEST=1`. File vdevs must be under a dedicated host-visible temporary directory mounted at the same absolute path; pass that directory as `ZFSAS_POOL_FIXTURE_ROOT`. The script creates uniquely named `zfsas_test_*` pools and checks their recorded GUIDs before destroying them. Do not grant it access to a production pool fixture.
+
+## Limits and operational notes
+
+- The real-pool test exercises local transfer/cancel/resume. SSH command construction, pinned host keys, token handling and remote metadata are covered by mocks, not a real remote Unraid receiver. spiped remains disabled for replication.
+- Dataset ancestor locking includes the pool ancestor. This deliberately favors safety and can serialize unrelated mutations within a pool. Sends retain shared locks.
+- Runtime inventories and batch manifests live under `/tmp`. They survive plugin upgrades but not host reboot. Persistent cancellation and schedule pause live under `/boot`. A batch delete recovered without its approval manifest fails closed; create a fresh review after reboot.
+- Historical send prefixes are conservatively protected. Resolving a prefix conflict does not rename old snapshots or release that protection automatically.
+- Plugin locks coordinate plugin actions. External ZFS commands do not honor those locks; GUID and metadata checks run immediately before actions, but ZFS does not offer an atomic “destroy only if GUID equals” command.
+- Cleanup defaults remain per dataset. Pool-wide low-space cleanup is intentionally not offered by the preview UI. Written-byte totals are never presented as guaranteed reclaimable space.
+- Legacy `.op` requests are retained and never automatically executed by the replacement worker. Re-select those actions to create a current reviewed manifest.
+- Upgrade shutdown verification was tested with disposable processes. Actual plugin installation, service restart and deployment are outside these source changes.

@@ -2,7 +2,7 @@
 
 ZFS Auto Snapshot is an Unraid plugin for managing ZFS snapshots from the WebGUI. You choose the datasets, set the retention rules, and decide whether it runs on a schedule or only when you press Run Now.
 
-The plugin also includes ZFS Send replication, a Dataset Migrator, Snapshot Manager preview tools, and a diagnostics download for support.
+The plugin also includes ZFS Send replication, a Dataset Migrator, Snapshot Manager bulk and cleanup tools, and a diagnostics download for support.
 
 ## What it does
 
@@ -141,11 +141,33 @@ Stop any watchdogs or outside tools that might restart containers before you use
 
 ## Snapshot Manager
 
-Snapshot Manager is still a preview feature. It shows dataset-level snapshot summaries and can load a dataset's snapshots when you choose to manage it. It has manual actions such as take snapshot, delete selected snapshots, hold, and release.
+Snapshot Manager works on one dataset at a time, with server-side search, filtering and pages of 50, 100 or 250 snapshots (100 by default). It supports large inventories, including 10,000-snapshot datasets. Filter by name, prefix/origin, dates, age, Used/Written bytes, holds, replication protection and pending actions. Dataset search works alongside the pool filter.
 
-Recovery/Repair Tools have been removed from the plugin. They were unfinished and should not be used from this testing build.
+Used and Written measure different properties. Used is space exclusively referenced by that snapshot; Written is referenced space written since its predecessor. A zero value does not mean the snapshot contains no files. Written totals are not a reclaimable-space estimate.
 
-Treat Snapshot Manager as a diagnostic or preview tool for now. Verify results manually before relying on it.
+Shift-click selects or deselects a range on the current page, skipping disabled rows. Selection survives sorting, paging and status refreshes. Changing the dataset or filters clears selection with an explanation. **Select all matching** captures existing snapshot identities; later snapshots do not join it.
+
+Bulk Delete, **Add plugin hold** and **Release plugin hold** open an exact-snapshot review before submission. External holds are displayed separately and cannot be released by the plugin. Send and Rollback act on one snapshot. Rollback refuses to remove newer, unselected snapshots. Ordinary Delete never expands to source/destination trees.
+
+Large selections upload automatically in requests of at most 500 identities and execute in chunks of at most 50. The review and status panel shows eligible, excluded, queued, completed, skipped and failed items, including individual errors. Duplicate submission of an approved batch does not repeat work. Retry creates a fresh review containing failed items only.
+
+**Preview cleanup** offers zero-change cleanup (retaining zero-written anchors and the newest snapshot) and the dataset's configured keep-all/daily/weekly retention policy. Auto Snapshot-managed snapshots are the default scope; retention requires a configured managed dataset. Holds, clones, replication checkpoints/bases, active transfers, pending deletion and incomplete metadata exclude snapshots. Preview makes no changes, expires after five minutes, and binds approval to exact names and GUIDs. Configuration or identity changes require a new preview or cause items to be skipped. Pool-wide low-space cleanup remains a separate automatic action.
+
+Recovery/Repair Tools remain removed. Legacy Snapshot Manager queue files are not replayed by the new batch worker; select and review those actions again.
+
+## Safe cancellation and settings
+
+Cancel saves the cancellation decision before signaling the entire current replication run. It persistently pauses that schedule until **Resume**. Canceled jobs cannot be retried or recreated by stale workers. A real crash can recover after surviving processes from the old attempt have stopped. Schedule completion requires explicit success from every expected child.
+
+Replication refuses destructive reseeding and forced receive rollback. Existing destinations require a verified common base or a matching resumable receive. Destination/base GUIDs and resume targets are checked before transfer. Resolve conflicts explicitly; the plugin will not destroy destination data to make a send succeed.
+
+Auto Snapshot and ZFS Send prefixes must differ, and neither may start with the other: `snap-` conflicts with `snap-send-`; `snap-auto-` and `snap-send-` are allowed. Both pages show the other configured prefix. Existing conflicts block affected automatic cleanup and replication until fixed. Previously used send prefixes remain protected; changing a prefix does not rename or delete snapshots.
+
+**Restore tuning defaults** populates the form; choose Save to apply. Auto Snapshot resets retention to 14/30/183 days and disables the schedule with its default timing, preserving dataset choices, thresholds, prefix and Dry Run. ZFS Send resets retention to 14/30/183, parallelism to 1, rate limit to 0 and preparation concurrency to 16, preserving job definitions/frequencies, prefixes, connections and schedule pauses. Unsaved changes are indicated and trigger a navigation warning. Saves are atomic and reject stale page revisions. A scheduler failure is reported separately when configuration was saved successfully.
+
+During an upgrade or removal, a maintenance marker blocks new work while workers stop. Shutdown is verified before ownership is released. Queue records and permanent lock files survive upgrades. A failed upgrade retains `/boot/config/plugins/zfs.autosnapshot/maintenance`; rerun installation after resolving the reported shutdown error.
+
+Validation evidence and remaining operational limits are in [the reliability audit](docs/reliability-audit.md).
 
 ## Logs and diagnostics
 
