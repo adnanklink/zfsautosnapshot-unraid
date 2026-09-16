@@ -3701,6 +3701,68 @@ function scheduled_send_job_zfs_actionable() {
   return 0
 }
 
+# A frozen preparation manifest prevents positional child IDs from acquiring new
+# meaning after a crash or a recursive dataset-tree change. All evidence is RAM.
+send_member_manifest_digest() {
+  local -n manifest="$1"
+  local count="${manifest[MEMBER_COUNT]:-}" index key
+  [[ "$count" =~ ^(0|[1-9][0-9]*)$ && ${#count} -le 6 ]] || return 1
+  [[ "${manifest[MEMBER_MANIFEST_VERSION]:-}" == 1 ]] || return 1
+  {
+    for key in JOB_ID SEND_CONFIG_HASH SEND_TRANSPORT SOURCE_ROOT DESTINATION_ROOT SOURCE_SNAPSHOT_NAME RESUME_ONLY MEMBER_COUNT; do
+      printf '%s\0%s\0' "$key" "${manifest[$key]:-}"
+    done
+    for ((index=0; index<count; index++)); do
+      for key in SOURCE DESTINATION SNAPSHOT SNAPSHOT_GUID DATASET_GUID; do
+        printf '%s\0' "${manifest[MEMBER_${index}_${key}]:-}"
+      done
+    done
+  } | sha256sum | cut -d ' ' -f1
+}
+
+send_member_manifest_valid() {
+  local -n manifest_check="$1"
+  local digest
+  [[ "${manifest_check[MEMBER_MANIFEST_HASH]:-}" =~ ^[a-f0-9]{64}$ ]] || return 1
+  digest="$(send_member_manifest_digest "$1")" || return 1
+  [[ "$digest" == "${manifest_check[MEMBER_MANIFEST_HASH]}" ]]
+}
+
+send_child_identity_digest() {
+  local -n identity_job="$1"
+  local key
+  [[ "${identity_job[MEMBER_MANIFEST_HASH]:-}" =~ ^[a-f0-9]{64}$ ]] || return 1
+  [[ "${identity_job[SOURCE_SNAPSHOT_GUID]:-}" =~ ^[0-9]+$ && "${identity_job[SOURCE_DATASET_GUID]:-}" =~ ^[0-9]+$ ]] || return 1
+  {
+    for key in JOB_ID JOB_TYPE JOB_MODE JOB_ACTION PARENT_RUN_ID MEMBER_INDEX MEMBER_MANIFEST_HASH SOURCE_ROOT DESTINATION_ROOT SOURCE_SNAPSHOT SOURCE_SNAPSHOT_GUID SOURCE_DATASET_GUID MEMBER_COUNT MEMBER_0_SOURCE MEMBER_0_DESTINATION MEMBER_0_SNAPSHOT SEND_TRANSPORT SEND_CONFIG_HASH; do
+      printf '%s\0%s\0' "$key" "${identity_job[$key]:-}"
+    done
+  } | sha256sum | cut -d ' ' -f1
+}
+
+send_fanout_record_matches() {
+  local expected_name="$1" actual_name="$2" expected_digest actual_digest index count key
+  local -n expected_record="$expected_name" actual_record="$actual_name"
+  for key in JOB_ID JOB_TYPE JOB_MODE JOB_ACTION PARENT_RUN_ID MEMBER_MANIFEST_HASH SEND_CONFIG_HASH SCHEDULE_JOB_ID WINDOW_KEY SOURCE_ROOT DESTINATION_ROOT SOURCE_SNAPSHOT_NAME SEND_TRANSPORT; do
+    [[ "${expected_record[$key]:-}" == "${actual_record[$key]:-}" ]] || return 1
+  done
+  [[ "${expected_record[MEMBER_MANIFEST_HASH]:-}" =~ ^[a-f0-9]{64}$ ]] || return 1
+  if [[ "${expected_record[JOB_ACTION]:-}" == send_member ]]; then
+    expected_digest="$(send_child_identity_digest "$expected_name")" || return 1
+    actual_digest="$(send_child_identity_digest "$actual_name")" || return 1
+    [[ "$expected_digest" == "$actual_digest" ]]
+  elif [[ "${expected_record[JOB_ACTION]:-}" == finalize ]]; then
+    count="${expected_record[EXPECTED_CHILD_COUNT]:-}"
+    [[ "$count" =~ ^(0|[1-9][0-9]*)$ && ${#count} -le 6 && "$count" == "${actual_record[EXPECTED_CHILD_COUNT]:-}" ]] || return 1
+    for ((index=0; index<count; index++)); do
+      key="EXPECTED_CHILD_${index}_IDENTITY"
+      [[ "${expected_record[$key]:-}" =~ ^[a-f0-9]{64}$ && "${expected_record[$key]}" == "${actual_record[$key]:-}" ]] || return 1
+    done
+  else
+    return 1
+  fi
+}
+
 build_members_for_job() {
   local assoc_name="$1"
   local basename="$2"
@@ -5111,6 +5173,14 @@ snapshot_delete_conflicts_with_send_jobs() {
     for key in SOURCE_SNAPSHOT SEND_PLAN_SNAPSHOT SEND_PLAN_BASE_SNAPSHOT SEND_PLAN_DEST_BASE_SNAPSHOT SEND_PLAN_DEST_SNAPSHOT SEND_RESUME_BASE_SNAPSHOT SEND_RESUME_DEST_BASE_SNAPSHOT; do
       [[ -n "${pending_send[$key]:-}" && "$snapshot" == "${pending_send[$key]}" ]] && return 0
     done
+    # A partially published fan-out still owns every selected source snapshot,
+    # including members whose child job file does not exist yet.
+    if [[ -n "${pending_send[MEMBER_MANIFEST_HASH]:-}" ]]; then
+      for key in "${!pending_send[@]}"; do
+        [[ "$key" =~ ^MEMBER_[0-9]+_SNAPSHOT$ ]] || continue
+        [[ "$snapshot" == "${pending_send[$key]}" ]] && return 0
+      done
+    fi
     # An unplanned queued job has no right to pin an entire dataset. Active
     # workers still exclude their whole trees until verified process shutdown.
     case "$state" in running|canceling) ;; *) continue ;; esac

@@ -24,6 +24,10 @@ release_job_claim stale
 # Child evidence survives pruning until explicit finalizer success.
 declare -A child=([JOB_ID]=send-child-run-0 [JOB_TYPE]=send [JOB_ACTION]=send_member [STATE]=complete [PARENT_RUN_ID]=run [PURGE_AFTER_EPOCH]=1)
 declare -A final=([JOB_ID]=finalize-run [JOB_TYPE]=send [JOB_ACTION]=finalize [STATE]=queued [PARENT_RUN_ID]=run [EXPECTED_CHILD_COUNT]=1)
+child[MEMBER_MANIFEST_HASH]="$(printf manifest | sha256sum | cut -d ' ' -f1)"
+child[SOURCE_SNAPSHOT_GUID]=123; child[SOURCE_DATASET_GUID]=456; child[SEND_CONFIG_HASH]="$(send_config_hash)"
+final[MEMBER_MANIFEST_HASH]="${child[MEMBER_MANIFEST_HASH]}"
+final[EXPECTED_CHILD_0_IDENTITY]="$(send_child_identity_digest child)"
 job_write "$OPS_JOBS_DIR/child.job" child; job_write "$OPS_JOBS_DIR/final.job" final
 prune_old_jobs
 [[ -f "$OPS_JOBS_DIR/child.job" ]]

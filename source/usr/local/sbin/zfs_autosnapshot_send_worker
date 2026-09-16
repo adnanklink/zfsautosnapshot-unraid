@@ -688,6 +688,7 @@ ensure_send_job_file() {
   local assoc_name="$1"
   local requested_epoch="$2"
   local path job_id
+  local -A existing_fanout=()
   # shellcheck disable=SC2178
   local -n send_job_ref="$assoc_name"
 
@@ -695,24 +696,57 @@ ensure_send_job_file() {
   [[ -n "$job_id" ]] || return 1
 
   path="${OPS_JOBS_DIR}/$(printf '%010d-%s.job' "$requested_epoch" "$job_id")"
+  if [[ ! -f "$path" ]]; then
+    load_existing_send_job_id_cache
+    path="${SEND_JOB_ID_PATH_CACHE[$job_id]:-$path}"
+  fi
   if [[ -f "$path" ]]; then
+    job_load "$path" existing_fanout || return 1
+    send_fanout_record_matches "$assoc_name" existing_fanout || {
+      fail_current_job_final "Existing child/finalizer identity does not match the frozen transfer manifest. Review a new run."
+      return 1
+    }
     return 0
   fi
-
-  load_existing_send_job_id_cache
-  if [[ -n "${SEND_JOB_ID_PATH_CACHE[$job_id]:-}" ]]; then
-    return 0
-  fi
-
-  [[ -f "$path" ]] && return 0
   write_send_job_file "$path" "$assoc_name" || return 1
   SEND_JOB_ID_PATH_CACHE["$job_id"]="$path"
   return 0
 }
 
+freeze_current_send_manifest() {
+  local count index source snapshot guid
+  if [[ -n "${job[MEMBER_MANIFEST_HASH]:-}" ]]; then
+    send_member_manifest_valid job
+    return
+  fi
+  count="${job[MEMBER_COUNT]:-}"
+  [[ "$count" =~ ^(0|[1-9][0-9]*)$ && ${#count} -le 6 ]] || return 1
+  for ((index=0; index<count; index++)); do
+    source="${job[MEMBER_${index}_SOURCE]:-}"
+    snapshot="${job[MEMBER_${index}_SNAPSHOT]:-}"
+    is_valid_dataset_name "$source" && is_valid_dataset_name "${job[MEMBER_${index}_DESTINATION]:-}" || return 1
+    is_valid_snapshot_name "$snapshot" && [[ "${snapshot%@*}" == "$source" ]] || return 1
+    guid="$(zfs_guid_for_transport "$snapshot")" || return 1
+    [[ "$guid" =~ ^[0-9]+$ ]] || return 1
+    job[MEMBER_${index}_SNAPSHOT_GUID]="$guid"
+    guid="$(zfs_guid_for_transport "$source")" || return 1
+    [[ "$guid" =~ ^[0-9]+$ ]] || return 1
+    job[MEMBER_${index}_DATASET_GUID]="$guid"
+  done
+  job[SEND_CONFIG_HASH]="${job[SEND_CONFIG_HASH]:-${LOADED_SEND_CONFIG_HASH:-$(send_config_hash)}}"
+  job[MEMBER_MANIFEST_VERSION]=1
+  job[MEMBER_MANIFEST_HASH]="$(send_member_manifest_digest job)" || return 1
+  # The complete membership and identities are committed before any child can run.
+  persist_job
+}
+
 prepare_scheduled_job_snapshot() {
   local basename source_root destination_root include_children create_cmd previous_basename="" snapshot_error readiness_message send_transport
 
+  if [[ -n "${job[MEMBER_MANIFEST_HASH]:-}" ]]; then
+    send_member_manifest_valid job || { fail_current_job_final "Transfer manifest changed; review a new run."; return 1; }
+    return 0
+  fi
   source_root="$(job_get job SOURCE_ROOT)"
   destination_root="$(job_get job DESTINATION_ROOT)"
   include_children="$(job_get job INCLUDE_CHILDREN 0)"
@@ -796,6 +830,10 @@ build_resume_members_for_current_job() {
   local member_index=0
   local needs_resume=0
 
+  if [[ -n "${job[MEMBER_MANIFEST_HASH]:-}" ]]; then
+    send_member_manifest_valid job || { fail_current_job_final "Transfer manifest changed; review a new run."; return 1; }
+    return 0
+  fi
   source_root="$(job_get job SOURCE_ROOT)"
   dest_root="$(job_get job DESTINATION_ROOT)"
   include_children="$(job_get job INCLUDE_CHILDREN 0)"
@@ -844,7 +882,9 @@ queue_child_send_jobs() {
   # shellcheck disable=SC2034
   local -A queued_job=()
   local resume_only=0
+  local -a child_identities=()
 
+  freeze_current_send_manifest || { fail_current_job_final "Cannot freeze transfer identities; review a new run."; return 1; }
   fanout_started="$(date +%s)"
   member_count="$(job_get job MEMBER_COUNT 0)"
   [[ "$member_count" =~ ^[0-9]+$ ]] || member_count=0
@@ -910,7 +950,10 @@ queue_child_send_jobs() {
     queued_job[SNAPSHOT_PREFIX_BASE]="$snapshot_prefix_base"
     queued_job[SNAPSHOT_PREFIX]="$prefix"
     queued_job[SOURCE_SNAPSHOT]="$snapshot"
-    queued_job[SOURCE_SNAPSHOT_GUID]="$(zfs_guid_for_transport "$snapshot")" || return 1
+    queued_job[SOURCE_SNAPSHOT_GUID]="${job[MEMBER_${index}_SNAPSHOT_GUID]}"
+    queued_job[SOURCE_DATASET_GUID]="${job[MEMBER_${index}_DATASET_GUID]}"
+    queued_job[MEMBER_MANIFEST_HASH]="${job[MEMBER_MANIFEST_HASH]}"
+    queued_job[SEND_CONFIG_HASH]="${job[SEND_CONFIG_HASH]:-}"
     queued_job[SOURCE_SNAPSHOT_NAME]="$snapshot_basename"
     queued_job[PREVIOUS_SNAPSHOT_NAME]="$previous_basename"
     queued_job[SEND_TRANSPORT]="$send_transport"
@@ -929,6 +972,7 @@ queue_child_send_jobs() {
     queued_job[MEMBER_0_DESTINATION]="$destination_dataset"
     queued_job[MEMBER_0_SNAPSHOT]="$snapshot"
     queued_job[COMPLETES_SCHEDULE_WINDOW]="0"
+    child_identities[index]="$(send_child_identity_digest queued_job)" || return 1
     ensure_send_job_file queued_job "$requested_epoch" || return 1
   done
 
@@ -939,6 +983,11 @@ queue_child_send_jobs() {
   queued_job[JOB_MODE]="scheduled"
   queued_job[JOB_ACTION]="finalize"
   queued_job[EXPECTED_CHILD_COUNT]="$member_count"
+  queued_job[MEMBER_MANIFEST_HASH]="${job[MEMBER_MANIFEST_HASH]}"
+  queued_job[SEND_CONFIG_HASH]="${job[SEND_CONFIG_HASH]:-}"
+  for ((index=0; index<member_count; index++)); do
+    queued_job[EXPECTED_CHILD_${index}_IDENTITY]="${child_identities[index]}"
+  done
   queued_job[STATE]="queued"
   queued_job[PHASE]="queued"
   queued_job[REQUESTED_EPOCH]="$requested_epoch"
@@ -1033,6 +1082,10 @@ send_member_snapshot() {
     return 2
   }
 
+  if [[ -n "${job[SOURCE_DATASET_GUID]:-}" && "$(zfs_guid_for_transport "$source_dataset" || true)" != "${job[SOURCE_DATASET_GUID]}" ]]; then
+    fail_current_job_final "Queued source dataset identity changed."
+    return 1
+  fi
   if [[ -n "${job[SOURCE_SNAPSHOT_GUID]:-}" && "$(zfs_guid_for_transport "$snapshot" || true)" != "${job[SOURCE_SNAPSHOT_GUID]}" ]]; then
     fail_current_job_final "Queued source snapshot identity changed."
     return 1
@@ -1283,11 +1336,11 @@ process_cleanup_member_job() {
 }
 
 process_finalize_job() {
-  local parent_run_id expected index path state
+  local parent_run_id expected index path state identity
   local -A child=()
   parent_run_id="$(job_get job PARENT_RUN_ID)"
   expected="$(job_get job EXPECTED_CHILD_COUNT)"
-  if [[ ! "$expected" =~ ^[0-9]+$ ]]; then
+  if [[ ! "$expected" =~ ^(0|[1-9][0-9]*)$ || ${#expected} -gt 6 || ! "${job[MEMBER_MANIFEST_HASH]:-}" =~ ^[a-f0-9]{64}$ ]]; then
     fail_current_job_final "Missing expected child manifest; window not completed."
     return 1
   fi
@@ -1295,6 +1348,12 @@ process_finalize_job() {
     path=""
     if ! find_job_by_id "send-child-${parent_run_id}-${index}" path || ! job_load "$path" child; then
       fail_current_job_final "Expected child ${index} is missing; window not completed."
+      return 1
+    fi
+    identity="$(send_child_identity_digest child)" || identity=""
+    if [[ -z "$identity" || "$identity" != "${job[EXPECTED_CHILD_${index}_IDENTITY]:-}"
+      || "${child[MEMBER_MANIFEST_HASH]:-}" != "${job[MEMBER_MANIFEST_HASH]}" ]]; then
+      fail_current_job_final "Child ${index} identity differs from the expected transfer; window not completed."
       return 1
     fi
     state="$(job_get child STATE)"

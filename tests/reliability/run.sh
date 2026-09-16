@@ -5,6 +5,7 @@ cd "$(dirname "$0")/../.."
 [[ -f /.dockerenv ]] || { echo 'Run this suite in the disposable test container.' >&2; exit 1; }
 bash tests/reliability/cancellation.sh
 bash tests/reliability/ownership.sh
+bash tests/reliability/send_manifest.sh
 bash tests/reliability/destination.sh
 bash tests/reliability/dependencies.sh
 bash tests/reliability/send_occurrences.sh
