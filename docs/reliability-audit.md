@@ -68,3 +68,10 @@ replication queue handler. Run `coordinator_auto.php` separately in a disposable
 container because it installs a fake execution worker at a production path.
 `coordinator_flash.php` requires a read-only `/boot` fixture with an Auto Snapshot
 dataset configured and scheduling disabled; it does not write configuration.
+
+Auto Snapshot now replans untouched scheduled work at admission after a coherent
+configuration read. Changed manual approval and previously attempted work fail
+validation without launching a worker; schedule conversion cannot bypass the new
+first-run time. `coordinator_replan.php` runs in the reliability suite. Run
+`coordinator_replan_daemon.php` separately in a disposable container, like
+`coordinator_auto.php`. Replanning after partial execution remains unimplemented.

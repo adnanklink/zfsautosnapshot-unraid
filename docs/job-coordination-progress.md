@@ -161,7 +161,7 @@ existing worker. Batch cancellation is not exposed through the Auto Snapshot
 Cancel API. Complete send integration must preserve existing GUID, hold, clone,
 resume-target, destination and pipeline protections.
 
-Automatic re-planning after a configuration revision change,
+Re-planning replication and already-attempted automatic work after a configuration revision change,
 ZFS-proven reboot completion suppression, complete dependency/recovery status
 fields, and comprehensive idle-scan, timezone-change and all-path flash-write
 instrumentation also remain. The shared calculator alone does not complete these
@@ -172,3 +172,33 @@ Manual interrupted transfers require explicit Retry; batches require a fresh
 review and previous per-item results may be unavailable. Persistent pauses and
 migration safety checkpoints survive. Exactly-once execution across a reboot is
 not promised.
+
+## Follow-up: Auto Snapshot configuration admission (source only)
+
+Untouched queued automatic runs now adopt an atomically read configuration pair
+before launch. The RAM journal records the replacement revision and original
+revision while preserving the run ID, command receipt and accepted occurrence.
+Admission uses the shared nonblocking configuration lock, so an in-progress save
+cannot supply mixed settings or stall cancellation. Configuration capture is
+published by atomic rename and repairs partial captures left by an interrupted
+older publication.
+
+Manual requests never acquire new approval implicitly. Runs with any previous
+attempt, legacy records without the captured schedule specification, disabled or
+converted schedules, and empty dataset selections fail configuration admission
+without starting a worker or consuming a transient retry. In particular, a new
+Save anchor does not cause an old queued occurrence to run immediately. Workers
+already running retain their captured settings and existing revision checks
+before each mutation. Safe replanning after partial execution still requires
+per-item completion evidence and remains outstanding.
+
+`coordinator_replan.php` covers stable identity/acceptance, restart, capture repair,
+manual approval, recovered attempts, rejected siblings and schedule changes.
+`coordinator_replan_daemon.php` exercises the production daemon with a harmless
+worker: execution once with new settings, rejection of stale manual authority,
+and responsive status during a configuration lock. Run the latter in its own
+disposable container because it writes production-style fixture paths.
+The full stage-one and reliability suites, existing Auto Snapshot daemon test,
+read-only-boot coordinator fixture, PHP lint, changed-shell checks and temporary
+package inventory verification pass. These changes are not in the published
+`2026.09.16.01` package; release artifacts are unchanged.

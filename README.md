@@ -6,12 +6,13 @@ The plugin also includes ZFS Send replication, a Dataset Migrator, Snapshot Mana
 
 ## Branch status: `fix/job-coordination`
 
-This is the development branch of [adnanklink/zfsautosnapshot-unraid](https://github.com/adnanklink/zfsautosnapshot-unraid/tree/fix/job-coordination). It includes the completed `fix/send-cancellation` work and ongoing job-coordination changes. **Development package `2026.09.16.01` includes this branch’s changes; full coordinator integration is not finished.**
+This is the development branch of [adnanklink/zfsautosnapshot-unraid](https://github.com/adnanklink/zfsautosnapshot-unraid/tree/fix/job-coordination). It includes the completed `fix/send-cancellation` work and ongoing job-coordination changes. **The published development package is `2026.09.16.01`; full coordinator integration is not finished.** The source also includes newer Auto Snapshot configuration-admission changes that are not yet packaged.
 
 Implemented on this branch:
 
 - Runtime queues, completion cursors, batch manifests, migration progress and coordinator records live in RAM. Flash is reserved for configuration, explicit Cancel/Resume decisions, and essential migration recovery checkpoints.
 - A PHP coordinator with a local Unix socket owns Auto Snapshot runs, bounded Snapshot Manager attempts and shared deletion-worker launches. It records attempt ownership before granting execution and verifies that old process groups have stopped before recovery.
+- Queued automatic snapshots can adopt updated settings before their first attempt, preserving the run ID and schedule occurrence. Changed manual requests require fresh approval; converted schedules retain their new first-run timing. This improvement is source-only until the next package build.
 - Auto Snapshot cancellation persistently pauses its schedule until Resume. Status distinguishes a saved cancellation from completed worker shutdown.
 - New interval schedules start one interval after Save; Run Now does not move the cadence. Existing schedules preserve their actual alignment until explicitly converted. Send now has daily start-time and weekly day/time controls with shared schedule previews.
 - Waiting sends protect exact planned snapshots and bases so prerequisite cleanup can free space. Exhausted send failures remain visible while later scheduled occurrences can run.
@@ -24,7 +25,7 @@ Runtime history is lost on reboot. Interrupted manual sends require explicit Ret
 
 - Move replication creation, preparation, fan-out, retries and finalization from the Bash queue handler into the coordinator.
 - Move deletion's internal task transitions under coordinator authority and complete batch cancellation integration.
-- Complete automatic replanning after configuration changes and reboot recovery based only on proven ZFS metadata.
+- Extend automatic replanning to work that has already started and to replication, with per-item completion evidence; complete reboot recovery based only on proven ZFS metadata.
 - Extend dependency/recovery status and verify all execution paths for zero routine flash writes, bounded idle work, and clock/timezone changes.
 
 Stage-one and reliability suites, actual PHP endpoints, Chromium tests, PHP/ShellCheck checks, and temporary package verification have passed. Scoped read-only-flash syscall tests found no attempted boot-flash writes. Disposable real-ZFS tests cover full/incremental transfer, cancellation/resume, prerequisite cleanup under a quota shortage, and preservation of bases and unrelated snapshots. These checks do not certify the unfinished integration.
