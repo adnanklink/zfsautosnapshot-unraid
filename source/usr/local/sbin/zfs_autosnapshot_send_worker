@@ -185,6 +185,44 @@ cache_current_send_plan() {
   local snapshot="$3"
   local destination="$4"
 
+  # Publication happens under dataset gates, before cleanup can destroy a base.
+  job[SEND_PLAN_SOURCE_DATASET_GUID]="$(zfs_guid_for_transport "${snapshot%@*}")" || return 1
+  job[SEND_PLAN_BASE_GUID]=""
+  job[SEND_PLAN_DEST_BASE_SNAPSHOT]=""
+  if [[ -n "$base_snapshot" ]]; then
+    job[SEND_PLAN_BASE_GUID]="$(zfs_guid_for_transport "$base_snapshot")" || return 1
+    job[SEND_PLAN_DEST_BASE_SNAPSHOT]="${destination}@${base_snapshot##*@}"
+  fi
+  local token_reader=local_receive_resume_token token="" token_rc=0 inspection line from_guid="" to_snapshot="" ref_name ref_guid
+  [[ "$(current_send_transport)" == ssh ]] && token_reader=ssh_receive_resume_token
+  job[SEND_RESUME_BASE_SNAPSHOT]=""
+  job[SEND_RESUME_DEST_BASE_SNAPSHOT]=""
+  job[SEND_RESUME_BASE_GUID]=""
+  if "$token_reader" "$destination" token; then
+    inspection="$(zfs send -nvt "$token" 2>&1)" || return 1
+    while IFS= read -r line; do
+      if [[ "$line" =~ ^[[:space:]]*fromguid[[:space:]]*=[[:space:]]*(0x[0-9a-fA-F]+|[0-9]+)[[:space:]]*$ ]]; then
+        from_guid="$(printf '%u' "${BASH_REMATCH[1]}")" || return 1
+      elif [[ "$line" =~ ^[[:space:]]*toname[[:space:]]*=[[:space:]]*(.+)$ ]]; then
+        to_snapshot="$(trim "${BASH_REMATCH[1]}")"
+      fi
+    done <<< "$inspection"
+    [[ "$to_snapshot" == "$snapshot" && "$from_guid" =~ ^[0-9]+$ ]] || return 1
+    if [[ "$from_guid" != 0 ]]; then
+      while IFS=$'\t' read -r ref_name ref_guid; do
+        [[ "$ref_guid" == "$from_guid" ]] || continue
+        job[SEND_RESUME_BASE_SNAPSHOT]="$ref_name"
+        job[SEND_RESUME_DEST_BASE_SNAPSHOT]="${destination}@${ref_name##*@}"
+        job[SEND_RESUME_BASE_GUID]="$ref_guid"
+        break
+      done < <(zfs list -H -p -t snapshot -o name,guid -d 1 "${snapshot%@*}")
+      [[ -n "${job[SEND_RESUME_BASE_SNAPSHOT]}" ]] || return 1
+    fi
+  else
+    token_rc=$?
+    (( token_rc == 1 )) || return 1
+  fi
+  job[SEND_PLAN_DEST_SNAPSHOT]="${destination}@${snapshot##*@}"
   job[SEND_PLAN_DESCRIPTION]="$description"
   job[SEND_PLAN_BASE_SNAPSHOT]="$base_snapshot"
   job[SEND_PLAN_SNAPSHOT]="$snapshot"
@@ -551,7 +589,7 @@ run_pipeline_with_space_reservation() {
     fail_current_job_final "Source snapshot, destination dataset, or incremental base identity changed."
     return 1
   }
-  cache_current_send_plan "$description" "$base_snapshot" "$snapshot" "$destination"
+  cache_current_send_plan "$description" "$base_snapshot" "$snapshot" "$destination" || return 1
   estimate_destination_space_for_current_send "$destination" "$base_snapshot" "$snapshot" || return 1
   if preflight_only_worker; then
     defer_current_job "Waiting in send queue for queue manager dispatch." 0
@@ -1271,7 +1309,8 @@ process_finalize_job() {
 
 process_pool_prep_job() {
   local dest_pool schedule_ids schedule_job_id dest_root capacity_dataset readiness_message send_transport
-  local retention_started retention_elapsed space_started space_elapsed
+  local retention_started retention_elapsed space_started space_elapsed dependent_path
+  local -A dependent=()
   # shellcheck disable=SC2034
   local -A planned_reclaim=()
 
@@ -1288,6 +1327,18 @@ process_pool_prep_job() {
     defer_current_job "Destination pool is not ready; waiting for ZFS import/mount or remote receiver readiness." 15
     return 2
   }
+
+  # Cleanup must not run ahead of the exact reference plans it is meant to
+  # unblock. Preflight itself does not wait for this preparation task.
+  while IFS= read -r dependent_path; do
+    job_load "$dependent_path" dependent || continue
+    [[ "${dependent[PREP_JOB_ID]:-}" == "$CURRENT_JOB_ID" ]] || continue
+    case "${dependent[STATE]:-}" in queued|running|retry_wait|canceling) ;; *) continue ;; esac
+    if [[ "${dependent[JOB_ACTION]:-}" == prepare ]] || send_job_needs_preflight dependent; then
+      defer_current_job "Waiting for dependent send reference plans before cleanup." 3
+      return 2
+    fi
+  done < <(list_job_files)
 
   if ! acquire_pool_prep_lock "$dest_pool"; then
     defer_current_job "Waiting for pool prep lock." 5

@@ -48,3 +48,23 @@ Cleanup dependency registration, the PHP socket coordinator and worker ownership
 integration, versioned scheduling, new API/UI controls, comprehensive fault and
 clock tests, and complete flash-write instrumentation remain to be implemented.
 The existing queue manager still owns scheduling/dispatch in this revision.
+
+## Cleanup dependency repair
+
+Queued/waiting sends now protect exact selected snapshots, planned source and
+receiver bases, target checkpoints, and resume-token bases. Active attempts retain
+whole-tree exclusion until shutdown. Plans capture source dataset and base GUIDs
+and revalidate them before transfer. Pool preparation waits for dependent preflight
+plans before queueing cleanup. Unplanned work must choose and validate its base
+when planned; it cannot pin every snapshot in a dataset while waiting.
+
+Space approval uses measured availability. If planning finds no deletion work,
+no pending freeing and no outstanding transfer reservations, the job fails with
+required/available byte counts and an explicit free-space/Retry instruction.
+Dependency waits leave attempt counts unchanged.
+
+`tests/reliability/dependencies.sh` exercises shared destinations, independent
+bases, resume references, unrelated deletion admission, active exclusion, and the
+production space-admission function's terminal and waiting paths. Stage-one and
+reliability suites pass after these changes. Both Chromium suites passed using
+Node 22. The PHP coordinator integration remains outstanding.

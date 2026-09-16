@@ -3187,11 +3187,23 @@ validate_send_identities() {
   # Recheck the planned source and dataset identities immediately before execution.
   actual="$(zfs_guid_for_transport "$snapshot")" || return 1
   [[ -z "${job[SEND_PLAN_SOURCE_GUID]:-}" || "$actual" == "${job[SEND_PLAN_SOURCE_GUID]}" ]] || return 1
+  if [[ -n "${job[SEND_PLAN_SOURCE_DATASET_GUID]:-}" ]]; then
+    actual="$(zfs_guid_for_transport "${snapshot%@*}")" || return 1
+    [[ "$actual" == "${job[SEND_PLAN_SOURCE_DATASET_GUID]}" ]] || return 1
+  fi
   if [[ -n "$base" ]]; then
+    if [[ -n "${job[SEND_PLAN_BASE_GUID]:-}" ]]; then
+      actual="$(zfs_guid_for_transport "$base")" || return 1
+      [[ "$actual" == "${job[SEND_PLAN_BASE_GUID]}" ]] || return 1
+    fi
     snapshots_have_same_guid "$base" "${destination}@${base##*@}" "$transport" || {
       log "Refusing incremental receive: source and destination base GUIDs differ."
       return 1
     }
+  fi
+  if [[ -n "${job[SEND_RESUME_BASE_GUID]:-}" ]]; then
+    actual="$(zfs_guid_for_transport "${job[SEND_RESUME_BASE_SNAPSHOT]}")" || return 1
+    [[ "$actual" == "${job[SEND_RESUME_BASE_GUID]}" ]] || return 1
   fi
   if [[ -n "${job[SEND_PLAN_DEST_GUID]:-}" && "${job[SEND_PLAN_DEST_GUID]}" != absent ]]; then
     actual="$(zfs_guid_for_transport "$destination" "$transport")" || return 1
@@ -5043,16 +5055,24 @@ queue_snapshot_delete_job() {
 }
 
 snapshot_delete_conflicts_with_send_jobs() {
-  local snapshot="$1" dataset="${1%@*}" file state source destination
+  local snapshot="$1" dataset="${1%@*}" file state source destination key
   local -A pending_send=()
   while IFS= read -r file; do
     job_load "$file" pending_send || continue
     [[ "${pending_send[JOB_TYPE]:-}" == send ]] || continue
     state="${pending_send[STATE]:-}"
     case "$state" in queued|running|retry_wait|canceling) ;; *) continue ;; esac
+    # Selected source identities are protected from submission. Planning publishes
+    # exact base and receiver references while holding the shared dataset gates.
+    # Waiting jobs retain these records, but no mutation/transfer locks.
+    for key in SOURCE_SNAPSHOT SEND_PLAN_SNAPSHOT SEND_PLAN_BASE_SNAPSHOT SEND_PLAN_DEST_BASE_SNAPSHOT SEND_PLAN_DEST_SNAPSHOT SEND_RESUME_BASE_SNAPSHOT SEND_RESUME_DEST_BASE_SNAPSHOT; do
+      [[ -n "${pending_send[$key]:-}" && "$snapshot" == "${pending_send[$key]}" ]] && return 0
+    done
+    # An unplanned queued job has no right to pin an entire dataset. Active
+    # workers still exclude their whole trees until verified process shutdown.
+    case "$state" in running|canceling) ;; *) continue ;; esac
     source="${pending_send[SOURCE_ROOT]:-${pending_send[DATASET]:-}}"
     destination="${pending_send[DESTINATION_ROOT]:-}"
-    # Preflight may not have chosen a base yet: protect both complete trees.
     if [[ -n "$source" && ( "$dataset" == "$source" || "$dataset" == "$source/"* ) ]]; then return 0; fi
     if [[ -n "$destination" && ( "$dataset" == "$destination" || "$dataset" == "$destination/"* ) ]]; then return 0; fi
   done < <(list_job_files)
@@ -5675,7 +5695,23 @@ approve_send_job_space_for_launch() {
   queue_pool_retention_cleanup "$dest_pool" "$capacity_dataset" planned_reclaim || true
   queue_pool_free_space_cleanup_for_target "$dest_pool" "$capacity_dataset" "$cleanup_target" planned_reclaim || true
   release_pool_prep_lock "$dest_pool"
-  ensure_delete_worker_for_backlog
+  if pool_has_active_delete_jobs "$dest_pool"; then
+    ensure_delete_worker_for_backlog
+    defer_send_launch_approval "$job_path" launch_job "Waiting for queued destination cleanup to free space." 3
+  elif compgen -G "$SEND_SPACE_RESERVATION_DIR/*.reservation" >/dev/null; then
+    defer_send_launch_approval "$job_path" launch_job "Waiting for active transfer space reservations to be released." 3
+  elif (( freeing_bytes > 0 )); then
+    defer_send_launch_approval "$job_path" launch_job "Waiting for ZFS freeing before measuring destination space again." 3
+  else
+    launch_job[STATE]="failed"
+    launch_job[PHASE]="insufficient_space"
+    launch_job[RETRY_AT]="0"
+    launch_job[WORKER_PID]=""
+    launch_job[LAST_ERROR]="Insufficient destination space: need ${needed_bytes} bytes, measured ${available_bytes} available. No eligible cleanup remains. Free space or change the destination, then Retry."
+    launch_job[LAST_MESSAGE]="${launch_job[LAST_ERROR]}"
+    preserve_failed_send_log_for_job launch_job || true
+    job_write "$job_path" launch_job || return 1
+  fi
   return 1
 }
 

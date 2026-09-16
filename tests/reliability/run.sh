@@ -6,6 +6,7 @@ cd "$(dirname "$0")/../.."
 bash tests/reliability/cancellation.sh
 bash tests/reliability/ownership.sh
 bash tests/reliability/destination.sh
+bash tests/reliability/dependencies.sh
 php tests/reliability/settings_endpoints.php
 php tests/reliability/snapshots.php
 node tests/reliability/selection.cjs
