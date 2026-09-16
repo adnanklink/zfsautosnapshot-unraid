@@ -4343,7 +4343,7 @@ schedule_job_blocked() {
     [[ "$(job_get job SCHEDULE_JOB_ID)" == "$schedule_job_id" ]] || continue
     send_job_cancelled job && continue
     state="$(job_get job STATE)"
-    if [[ "$state" == "queued" || "$state" == "running" || "$state" == "retry_wait" || "$state" == "failed" ]]; then
+    if [[ "$state" == "queued" || "$state" == "running" || "$state" == "retry_wait" || "$state" == "canceling" ]]; then
       return 0
     fi
   done < <(list_job_files)
@@ -4354,9 +4354,14 @@ schedule_job_blocked() {
 schedule_window_exists() {
   local schedule_job_id="$1"
   local window_key="$2"
-  local file
+  local file accepted=0
   local -A job=()
 
+  [[ "$schedule_job_id" =~ ^[a-f0-9]{12}$ && "$window_key" =~ ^[0-9]+$ ]] || return 1
+  if [[ -f "$OPS_STATUS_DIR/schedule-accepted/$schedule_job_id" ]]; then
+    read -r accepted < "$OPS_STATUS_DIR/schedule-accepted/$schedule_job_id" || true
+    [[ "$accepted" =~ ^[0-9]+$ ]] && (( accepted >= window_key )) && return 0
+  fi
   while IFS= read -r file; do
     job_load "$file" job || continue
     [[ "$(job_get job JOB_TYPE)" == "send" ]] || continue
@@ -4368,7 +4373,25 @@ schedule_window_exists() {
   return 1
 }
 
-enqueue_scheduled_send_jobs_due() {
+# Acceptance is independent of success and retained until RAM is lost. Clearing
+# failed display records must not recreate an exhausted scheduled occurrence.
+record_accepted_schedule_window() {
+  local schedule_job_id="$1" window_key="$2" tmp
+  [[ "$schedule_job_id" =~ ^[a-f0-9]{12}$ && "$window_key" =~ ^[0-9]+$ ]] || return 1
+  ops_ensure_dir "$OPS_STATUS_DIR/schedule-accepted" || return 1
+  tmp="$(mktemp "$OPS_STATUS_DIR/schedule-accepted/.pending.XXXXXX")" || return 1
+  printf '%s\n' "$window_key" > "$tmp"
+  mv "$tmp" "$OPS_STATUS_DIR/schedule-accepted/$schedule_job_id"
+}
+
+enqueue_scheduled_send_jobs_due() (
+  local schedule_fd
+  exec {schedule_fd}>"$OPS_ROOT/schedule-admission.lock" || return 1
+  flock -x "$schedule_fd" || return 1
+  enqueue_scheduled_send_jobs_due_locked "$@"
+)
+
+enqueue_scheduled_send_jobs_due_locked() {
   local now_epoch="$1"
   local job_id frequency current_window last_completed_window requested_at requested_epoch
   local resume_basename previous_basename dest_pool run_group_id prep_job_id pool readiness_message send_transport pool_key
@@ -4450,10 +4473,10 @@ enqueue_scheduled_send_jobs_due() {
     prep_job_id="$(pool_prep_job_id_for_group "$pool" "$run_group_id" "$send_transport")"
     if [[ "${due_is_resume[$job_id]:-0}" == "1" ]]; then
       enqueue_resume_prepare_job "$job_id" "${due_window[$job_id]}" "$requested_epoch" "$requested_at" \
-        "${due_resume_basename[$job_id]}" "${due_previous_basename[$job_id]:-}" "$prep_job_id" "$pool" "$run_group_id" || true
+        "${due_resume_basename[$job_id]}" "${due_previous_basename[$job_id]:-}" "$prep_job_id" "$pool" "$run_group_id" && record_accepted_schedule_window "$job_id" "${due_window[$job_id]}" || true
     else
       enqueue_scheduled_prepare_job "$job_id" "${due_window[$job_id]}" "$requested_epoch" "$requested_at" \
-        "$prep_job_id" "$pool" "$run_group_id" "1" "Queued by schedule." || true
+        "$prep_job_id" "$pool" "$run_group_id" "1" "Queued by schedule." && record_accepted_schedule_window "$job_id" "${due_window[$job_id]}" || true
     fi
   done
 

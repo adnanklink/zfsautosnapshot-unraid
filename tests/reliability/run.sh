@@ -7,6 +7,7 @@ bash tests/reliability/cancellation.sh
 bash tests/reliability/ownership.sh
 bash tests/reliability/destination.sh
 bash tests/reliability/dependencies.sh
+bash tests/reliability/send_occurrences.sh
 php tests/reliability/settings_endpoints.php
 php tests/reliability/snapshots.php
 php tests/reliability/coordinator_state.php

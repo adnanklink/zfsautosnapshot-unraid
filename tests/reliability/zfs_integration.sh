@@ -94,4 +94,39 @@ snapshots_have_same_guid "$source_dataset@large" "$target_pool/resumable@large" 
 zfs set mountpoint="$fixture/resumed" "$target_pool/resumable"
 zfs mount "$target_pool/resumable" 2>/dev/null || true
 cmp "$fixture/source/bulk.bin" "$fixture/resumed/bulk.bin"
+# A queued transfer must allow prerequisite cleanup while retaining its exact
+# incremental base. Use a dataset quota for a small deterministic shortage.
+cleanup_source="$source_pool/cleanup"
+cleanup_destination="$target_pool/cleanup"
+zfs create -o mountpoint="$fixture/cleanup-source" "$cleanup_source"
+dd if=/dev/urandom of="$fixture/cleanup-source/obsolete.bin" bs=1M count=8 status=none
+zfs snapshot "$cleanup_source@obsolete"
+run_pipeline_with_status 'Cleanup fixture full transfer' '' "$cleanup_source@obsolete" "$cleanup_destination"
+rm "$fixture/cleanup-source/obsolete.bin"
+printf 'protected base content\n' > "$fixture/cleanup-source/base.txt"
+zfs snapshot "$cleanup_source@protected-base"
+run_pipeline_with_status 'Cleanup fixture base transfer' "$cleanup_source@obsolete" "$cleanup_source@protected-base" "$cleanup_destination"
+zfs set quota=20M "$cleanup_destination"
+dd if=/dev/urandom of="$fixture/cleanup-source/next.bin" bs=1M count=14 status=none
+zfs snapshot "$cleanup_source@next"
+zpool sync "$target_pool"
+available_before="$(zfs get -H -p -o value available "$cleanup_destination")"
+(( available_before < 14 * 1024 * 1024 ))
+declare -A waiting=([JOB_ID]=cleanup-wait [JOB_TYPE]=send [JOB_MODE]=manual_snapshot [STATE]=retry_wait
+  [SOURCE_ROOT]="$cleanup_source" [DESTINATION_ROOT]="$cleanup_destination" [SOURCE_SNAPSHOT]="$cleanup_source@next"
+  [SEND_PLAN_BASE_SNAPSHOT]="$cleanup_source@protected-base" [SEND_PLAN_DEST_BASE_SNAPSHOT]="$cleanup_destination@protected-base")
+job_write "$OPS_JOBS_DIR/cleanup-wait.job" waiting
+snapshot_delete_conflicts_with_send_jobs "$cleanup_source@protected-base"
+snapshot_delete_conflicts_with_send_jobs "$cleanup_destination@protected-base"
+! snapshot_delete_conflicts_with_send_jobs "$cleanup_destination@obsolete"
+# Exercise the production exclusion predicate immediately before exact cleanup.
+if ! snapshot_delete_conflicts_with_send_jobs "$cleanup_destination@obsolete"; then zfs destroy "$cleanup_destination@obsolete"; fi
+zpool sync "$target_pool"
+available_after="$(zfs get -H -p -o value available "$cleanup_destination")"
+(( available_after > available_before && available_after > 14 * 1024 * 1024 ))
+run_pipeline_with_status 'Transfer unblocked by prerequisite cleanup' "$cleanup_source@protected-base" "$cleanup_source@next" "$cleanup_destination"
+snapshots_have_same_guid "$cleanup_source@next" "$cleanup_destination@next" local
+zfs list -H -t snapshot "$cleanup_destination@protected-base" >/dev/null
+zfs list -H -t snapshot "$target_pool/unrelated@base" >/dev/null
+echo 'PASS: real quota shortage, prerequisite cleanup with queued transfer, protected base and unrelated snapshot preservation'
 echo 'PASS: real ZFS full/incremental transfers, destination preservation, run cancellation, full pipeline shutdown, persistent pause, wrong-token rejection, explicit resume and byte comparison'

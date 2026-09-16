@@ -1249,7 +1249,7 @@ function zfsas_ops_scheduled_job_blocked($scheduleJobId)
         if ((string) ($job['SCHEDULE_JOB_ID'] ?? '') !== (string) $scheduleJobId) {
             continue;
         }
-        if (in_array((string) ($job['STATE'] ?? ''), ['queued', 'running', 'retry_wait', 'failed'], true)) {
+        if (in_array((string) ($job['STATE'] ?? ''), ['queued', 'running', 'retry_wait', 'canceling'], true)) {
             return true;
         }
     }
