@@ -916,13 +916,20 @@ $csrfToken = zfsas_get_csrf_token();
     el.textContent = lines.join('\n');
   }
 
+  var statusBusy = false;
+  var statusGeneration = 0;
   function refreshStatus() {
+    if (statusBusy || document.hidden) { return; }
+    statusBusy = true;
+    var generation = statusGeneration;
     var dataset = selectedDatasetValue();
     currentDataset = dataset;
     renderPageStatus('Refreshing dataset migrator status...', false);
     requestJson(
       statusUrl + '?dataset=' + encodeURIComponent(dataset) + '&_=' + Date.now(),
       function (payload) {
+        statusBusy = false;
+        if (generation !== statusGeneration || dataset !== selectedDatasetValue()) { refreshStatus(); return; }
         var status = payload.status || {};
         var hasSelectedDataset = (currentDataset || payload.selectedDataset || selectedDatasetValue()) !== '';
         populateDatasetSelect(payload.datasets || [], currentDataset || payload.selectedDataset || status.DATASET || '');
@@ -954,6 +961,8 @@ $csrfToken = zfsas_get_csrf_token();
         }
       },
       function (error) {
+        statusBusy = false;
+        if (generation !== statusGeneration || dataset !== selectedDatasetValue()) { refreshStatus(); return; }
         renderPageStatus('Dataset migrator refresh failed: ' + error.message, true);
       }
     );
@@ -970,6 +979,7 @@ $csrfToken = zfsas_get_csrf_token();
   var datasetSelect = byId('migrate_dataset');
   if (datasetSelect) {
     datasetSelect.addEventListener('change', function () {
+      statusGeneration++;
       currentDataset = datasetSelect.value || '';
       refreshStatus();
     });

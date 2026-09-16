@@ -471,7 +471,7 @@ function zfsas_migrate_wait_for_start($dataset, $pid, &$error = null)
         $statusDataset = zfsas_migrate_trim($status['DATASET'] ?? '');
         $statusState = zfsas_migrate_trim($status['STATE'] ?? '');
 
-        if ($statusDataset === $dataset && $statusState !== '') {
+        if ($statusDataset === $dataset && $statusState !== '' && (int) ($status['PID'] ?? 0) === $pid) {
             return true;
         }
 
@@ -488,7 +488,7 @@ function zfsas_migrate_wait_for_start($dataset, $pid, &$error = null)
     }
 
     $status = zfsas_migrate_current_status();
-    if (zfsas_migrate_trim($status['DATASET'] ?? '') === $dataset && zfsas_migrate_trim($status['STATE'] ?? '') !== '') {
+    if (zfsas_migrate_trim($status['DATASET'] ?? '') === $dataset && zfsas_migrate_trim($status['STATE'] ?? '') !== '' && (int) ($status['PID'] ?? 0) === $pid) {
         return true;
     }
 
@@ -598,6 +598,7 @@ function zfsas_migrate_status_log_tail($lineCount = 40)
 
 function zfsas_migrate_start($dataset, &$error = null)
 {
+    if (is_file('/boot/config/plugins/zfs.autosnapshot/maintenance')) { $error = 'Plugin maintenance is in progress.'; return false; }
     $error = null;
 
     if (!zfsas_migrate_ensure_storage()) {
@@ -634,7 +635,7 @@ function zfsas_migrate_start($dataset, &$error = null)
         return false;
     }
 
-    zfsas_migrate_reset_runtime_files();
+    // Runtime files are reset only by the worker after it owns migrator.lock.
 
     $command = 'nohup ' . escapeshellarg($worker)
         . ' --dataset ' . escapeshellarg($dataset)
