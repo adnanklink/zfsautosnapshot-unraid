@@ -103,7 +103,19 @@ $handler = static function (array $request) use ($journal, $executor, $submitAut
     if ($action === 'status' || $action === 'watchdog') {
         $runs = array_values($journal->state['runs']);
         usort($runs, static fn($a, $b) => $b['createdAt'] <=> $a['createdAt']);
-        foreach ($runs as &$run) { $run['kinds'] = array_values(array_unique(array_map(static fn($id) => $journal->state['tasks'][$id]['kind'], $run['tasks']))); } unset($run);
+        foreach ($runs as &$run) {
+            $run['kinds'] = []; $run['taskStatus'] = []; $run['blockedReasons'] = []; $run['nextRetry'] = null; $run['recoveryRequired'] = false;
+            foreach ($run['tasks'] as $id) {
+                $task = $journal->state['tasks'][$id];
+                $run['kinds'][] = $task['kind'];
+                $run['taskStatus'][] = array_intersect_key($task, array_flip(['id','kind','dataset','state','attemptCount','retryAt','blocked','dependencies','references','result']));
+                if ($task['blocked'] !== '') { $run['blockedReasons'][] = $task['blocked']; }
+                if ($task['retryAt'] !== null) { $run['nextRetry'] = min($run['nextRetry'] ?? PHP_INT_MAX, $task['retryAt']); }
+                $run['recoveryRequired'] = $run['recoveryRequired'] || $task['blocked'] === 'recovery_required';
+            }
+            $run['kinds'] = array_values(array_unique($run['kinds']));
+            $run['blockedReasons'] = array_values(array_unique($run['blockedReasons']));
+        } unset($run);
         return ['runs' => array_slice($runs, 0, 120), 'sequence' => $journal->state['sequence'],
             'autoPaused' => is_file(zfsas_ops_control_path('paused', 'auto')),
             'schedule' => ZfsasSchedule::preview(ZfsasSchedule::autoConfig($config['auto']), time(), ZfsasSchedule::hostTimezone())];

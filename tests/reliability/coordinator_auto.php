@@ -22,6 +22,8 @@ try {
     $receipt = request('auto', ['commandId' => 'manual-auto-fixture']);
     if ($receipt !== request('auto', ['commandId' => 'manual-auto-fixture'])) { throw new RuntimeException('Manual duplicate lost identity'); }
     until(fn() => is_file('/tmp/auto-captured-content'));
+    $visible = request('status')['runs'][0];
+    if (!isset($visible['taskStatus'][0]['dependencies']) || !array_key_exists('nextRetry', $visible) || !array_key_exists('recoveryRequired', $visible)) { throw new RuntimeException('Status omitted coordination details'); }
     if (!str_starts_with(file_get_contents('/tmp/auto-captured-path'), '/tmp/zfs-autosnapshot-coordinator/config/')) { throw new RuntimeException('Worker did not receive captured RAM config'); }
     if (file_get_contents('/tmp/auto-captured-content') !== file_get_contents($dir . '/zfs_autosnapshot.conf')) { throw new RuntimeException('Captured configuration changed'); }
     // A save may hold its RAM lock while scheduler application is slow.

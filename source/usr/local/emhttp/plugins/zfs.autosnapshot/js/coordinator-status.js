@@ -24,7 +24,7 @@
       current = (data.runs || []).find(run => (run.kinds || []).includes('auto') && !['complete', 'failed', 'canceled'].includes(run.state)) || null;
       cancel.disabled = !current || current.state === 'canceling';
       resume.disabled = !data.autoPaused || (current && current.state === 'canceling');
-      text.textContent = current ? (current.state === 'canceling' ? 'Cancellation saved; verifying worker shutdown.' : 'Run ' + current.id + ': ' + current.state)
+      text.textContent = current ? (current.state === 'canceling' ? 'Cancellation saved; verifying worker shutdown.' : 'Run ' + current.id + ': ' + current.state + (current.blockedReasons?.length ? ' — waiting: ' + current.blockedReasons.join(', ') : '') + (current.nextRetry ? ' — next attempt ' + new Date(current.nextRetry * 1000).toLocaleString() : ''))
         : data.autoPaused ? 'Schedule paused until Resume.' : data.available ? 'No active Auto Snapshot run.' : (data.message || 'Coordinator is unavailable.');
     } catch (error) { if (mine === generation && error.name !== 'AbortError') text.textContent = error.message; }
     finally { clearTimeout(timeout); if (!document.hidden && mine === generation) timer = setTimeout(refresh, current ? 2000 : 10000); }
