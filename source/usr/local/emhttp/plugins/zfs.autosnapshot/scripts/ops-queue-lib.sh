@@ -570,25 +570,10 @@ delete_queue_daemon_running() {
 }
 
 start_delete_queue_daemon() {
-  local waited=0
-
-  delete_queue_daemon_running && return 0
-
-  if [[ -x /usr/local/sbin/zfs_autosnapshot_coordinator ]]; then
-    /usr/local/sbin/zfs_autosnapshot_coordinator delete >/dev/null || return 1
-    return 0
-  fi
-
-  mkdir -p "$DELETE_WORKER_RUNTIME_DIR" >/dev/null 2>&1 || true
-  nohup /bin/bash /usr/local/emhttp/plugins/zfs.autosnapshot/scripts/detach-worker.sh /usr/local/sbin/zfs_autosnapshot_delete_worker >> "$LOG_FILE" 2>&1 < /dev/null &
-
-  while (( waited < 50 )); do
-    delete_queue_daemon_running && return 0
-    sleep 0.1
-    waited=$((waited + 1))
-  done
-
-  return 1
+  # Always submit, even when a daemon is exiting. The coordinator coalesces the
+  # request and checks for remaining RAM work after verified shutdown.
+  [[ -x /usr/local/sbin/zfs_autosnapshot_coordinator ]] || return 1
+  /usr/local/sbin/zfs_autosnapshot_coordinator delete >/dev/null
 }
 
 ensure_delete_worker_for_backlog() {

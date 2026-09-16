@@ -44,10 +44,9 @@ spawn_pool_prep_worker() {
 }
 
 spawn_delete_worker() {
-  (
-    [[ -z "${QUEUE_MANAGER_FD:-}" ]] || exec {QUEUE_MANAGER_FD}>&-
-    exec env nohup /bin/bash /usr/local/emhttp/plugins/zfs.autosnapshot/scripts/detach-worker.sh /usr/local/sbin/zfs_autosnapshot_delete_worker >> "$LOG_FILE" 2>&1 < /dev/null
-  ) &
+  # The coordinator owns deletion's process group, including launches requested
+  # by replication cleanup. Do not detach an untracked executor here.
+  start_delete_queue_daemon || log "Deletion admission failed; queued cleanup remains pending."
 }
 
 handler_cleanup() {

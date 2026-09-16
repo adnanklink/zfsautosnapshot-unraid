@@ -4,6 +4,7 @@ require_once __DIR__ . '/coordinator-socket.php';
 require_once __DIR__ . '/coordinator-executor.php';
 require_once __DIR__ . '/coordinator-retention.php';
 require_once __DIR__ . '/coordinator-auto-admission.php';
+require_once __DIR__ . '/coordinator-delete.php';
 require_once __DIR__ . '/schedule-spec.php';
 require_once __DIR__ . '/snapshot-manager-helpers.php';
 
@@ -56,7 +57,7 @@ $command = static function (array $task) use ($root, $configDir, $journal): ?arr
     return zfsas_coordinator_auto_command($journal, $task, $pair, $root);
 };
 $outcome = static function ($task, $code) use ($configDir): array {
-    if ($task['kind'] === 'delete') { return ['outcome' => $code === 0 ? 'success' : 'transient_failure', 'exitCode' => $code]; }
+    if ($task['kind'] === 'delete') { return zfsas_coordinator_delete_outcome($code); }
     if ($task['kind'] === 'batch') {
         $path = zfsas_sm_batch_path($task['parameters']['token']);
         $lock = @fopen($path . '.lock', 'c');
@@ -69,8 +70,9 @@ $outcome = static function ($task, $code) use ($configDir): array {
             if (!$batch || empty($batch['approvedAt'])) {
                 return ['outcome' => 'validation_failure', 'message' => 'Batch authority is unavailable; review a new selection.'];
             }
+            $previous = $batch;
             zfsas_sm_batch_reconcile($batch);
-            zfsas_sm_batch_store($batch);
+            if ($batch !== $previous) { zfsas_sm_batch_store($batch); }
             if ($batch['state'] === 'complete') {
                 $failed = array_filter($batch['items'], static fn($item) => $item['state'] === 'failed');
                 return ['outcome' => $failed ? 'validation_failure' : 'success',
