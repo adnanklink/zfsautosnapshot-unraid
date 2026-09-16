@@ -6,13 +6,13 @@ The plugin also includes ZFS Send replication, a Dataset Migrator, Snapshot Mana
 
 ## Branch status: `fix/job-coordination`
 
-This is the development branch of [adnanklink/zfsautosnapshot-unraid](https://github.com/adnanklink/zfsautosnapshot-unraid/tree/fix/job-coordination). It includes the completed `fix/send-cancellation` work and ongoing job-coordination changes. **The published development package is `2026.09.16.01`; full coordinator integration is not finished.** The source also includes newer Auto Snapshot configuration admission, replication recovery, and deletion coordination changes that are not yet packaged.
+This is the development branch of [adnanklink/zfsautosnapshot-unraid](https://github.com/adnanklink/zfsautosnapshot-unraid/tree/fix/job-coordination). It includes the completed `fix/send-cancellation` work and ongoing job-coordination changes. **The published development package is `2026.09.16.02`; full coordinator integration is not finished.** It includes Auto Snapshot configuration admission, replication recovery, and deletion coordination improvements.
 
 Implemented on this branch:
 
 - Runtime queues, completion cursors, batch manifests, migration progress and coordinator records live in RAM. Flash is reserved for configuration, explicit Cancel/Resume decisions, and essential migration recovery checkpoints.
 - A PHP coordinator with a local Unix socket owns Auto Snapshot runs, bounded Snapshot Manager attempts and shared deletion-worker launches. It records attempt ownership before granting execution and verifies that old process groups have stopped before recovery.
-- Queued automatic snapshots can adopt updated settings before their first attempt, preserving the run ID and schedule occurrence. Changed manual requests require fresh approval; converted schedules retain their new first-run timing. This improvement is source-only until the next package build.
+- Queued automatic snapshots can adopt updated settings before their first attempt, preserving the run ID and schedule occurrence. Changed manual requests require fresh approval; converted schedules retain their new first-run timing.
 - Auto Snapshot cancellation persistently pauses its schedule until Resume. Status distinguishes a saved cancellation from completed worker shutdown.
 - New interval schedules start one interval after Save; Run Now does not move the cadence. Existing schedules preserve their actual alignment until explicitly converted. Send now has daily start-time and weekly day/time controls with shared schedule previews.
 - Waiting sends protect exact planned snapshots and bases so prerequisite cleanup can free space. Exhausted send failures remain visible while later scheduled occurrences can run.
@@ -58,9 +58,11 @@ The branch installation URL is:
 https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/fix/job-coordination/dist/zfs.autosnapshot.plg
 ```
 
-The published development package is **`2026.09.16.01`**. Its manifest and package URLs point to this fork and branch. It replaces the older `2026.08.24.01` upstream installation without requiring an uninstall. Future source pushes do not automatically rebuild the package.
+The published development package is **`2026.09.16.02`**. Its manifest and package URLs point to this fork and branch. It updates development version `2026.09.16.01` and replaces the older `2026.08.24.01` upstream installation without requiring an uninstall. Future source pushes do not automatically rebuild the package.
 
-To install or upgrade to this development package:
+Clients already installed from this branch URL can use **Plugins → Check for Updates → Update**. Clients installed from upstream must use the branch URL below once to switch their update source. Let active snapshot, replication, and migration jobs finish before updating.
+
+To install or upgrade to this development package using its URL:
 
 1. In Unraid, open **Plugins → Install Plugin**.
 2. Paste the branch URL above and select **Install**.
@@ -78,7 +80,7 @@ git clone --branch fix/job-coordination --single-branch https://github.com/adnan
 cd zfsautosnapshot-unraid
 
 # Example development version; choose a new, unused version for each publication.
-./scripts/build-release.sh 2026.09.16.02 \
+./scripts/build-release.sh 2026.09.16.03 \
   https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/fix/job-coordination/dist
 ```
 

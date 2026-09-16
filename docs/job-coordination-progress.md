@@ -244,3 +244,12 @@ package verification pass. Disposable real-ZFS full/incremental, cancel/resume,
 low-space cleanup, base and unrelated-snapshot preservation tests pass; no test
 pools remained. The real-ZFS suite does not yet exercise full coordinator-owned
 replication phases. No release artifacts or installation were changed.
+
+## Development package 2026.09.16.02
+
+This package includes the source-only follow-ups recorded above: automatic
+configuration admission, fixed replication manifests, coordinator-owned cleanup
+launches and late deletion submission recovery. Both manifests retain the fork
+branch pluginURL so existing branch clients can discover the higher version.
+Full replication coordination and replanning after partial execution remain
+unfinished. Release artifacts are committed separately from source and docs.

@@ -5,6 +5,15 @@ It answers one question: "What changed for me?"
 
 ## Development releases
 
+### 2026.09.16.02 (2026-09-16)
+
+- Development update; full replication coordinator integration remains unfinished.
+- Queued automatic snapshots adopt updated settings only before their first attempt. Changed manual requests require fresh approval; schedule conversion preserves the new first-run time.
+- Frozen replication membership and snapshot/dataset GUIDs prevent child transfers from changing identity during recovery. Finalization requires matching success from every expected child.
+- Older pending finalizers without identity evidence fail safely; review a new run instead of assuming completion.
+- Replication cleanup launches deletion through the coordinator. Requests arriving during worker shutdown remain queued for another verified attempt.
+- Avoided redundant batch-manifest writes after completion and repaired interrupted configuration captures.
+
 ### 2026.09.16.01 (2026-09-16)
 
 - Development release from the fix/job-coordination branch; replication coordination is still being migrated and this is not a completed stable release.
