@@ -56,3 +56,15 @@ The optional real-ZFS script additionally requires `/dev/zfs`, mount capability 
 - Cleanup defaults remain per dataset. Pool-wide low-space cleanup is intentionally not offered by the preview UI. Written-byte totals are never presented as guaranteed reclaimable space.
 - Legacy `.op` requests are retained and never automatically executed by the replacement worker. Re-select those actions to create a current reviewed manifest.
 - Upgrade shutdown verification was tested with disposable processes. Actual plugin installation, service restart and deployment are outside these source changes.
+
+
+## Job coordination branch
+
+The subsequent `fix/job-coordination` implementation and its scoped verification
+are tracked in [Job coordination implementation record](job-coordination-progress.md).
+That record includes the flash-write inventory, schedule migration behavior and
+explicit remaining work. The branch is not yet a complete replacement of the
+replication queue handler. Run `coordinator_auto.php` separately in a disposable
+container because it installs a fake execution worker at a production path.
+`coordinator_flash.php` requires a read-only `/boot` fixture with an Auto Snapshot
+dataset configured and scheduling disabled; it does not write configuration.
