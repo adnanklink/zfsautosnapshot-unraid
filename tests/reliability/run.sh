@@ -11,6 +11,7 @@ bash tests/reliability/send_occurrences.sh
 php tests/reliability/settings_endpoints.php
 php tests/reliability/snapshots.php
 php tests/reliability/coordinator_state.php
+php tests/reliability/coordinator_replan.php
 php tests/reliability/coordinator_retention.php
 php tests/reliability/coordinator_socket.php
 php tests/reliability/coordinator_executor.php

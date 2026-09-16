@@ -147,9 +147,14 @@ final class ZfsasCoordinatorExecutor
         usort($ready, fn($a, $b) => (int) ($this->journal->state['tasks'][$a]['dataset'] === $this->lastDataset) <=> (int) ($this->journal->state['tasks'][$b]['dataset'] === $this->lastDataset));
         foreach ($ready as $taskId) {
             $task = $this->journal->state['tasks'][$taskId]; $kind = $task['kind'];
+            if (!in_array($task['state'], ['queued', 'waiting', 'retry_wait'], true)) { continue; }
             if (($active[$kind] ?? 0) >= ($this->limits[$kind] ?? 0)) { continue; }
             $command = ($this->command)($task);
             if ($command === null) { continue; } // Resource/array/configuration admission gate.
+            if (isset($command['outcome'])) {
+                $this->journal->rejectAdmission($taskId, $command, $now, time());
+                continue;
+            }
             $token = $this->journal->claim($taskId, $now, time());
             $dir = $this->root . '/attempts/' . $token;
             if (!mkdir($dir, 0700, true)) { throw new RuntimeException('Cannot create attempt launch gate.'); }

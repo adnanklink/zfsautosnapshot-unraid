@@ -144,6 +144,45 @@ final class ZfsasCoordinatorState
         return $ready;
     }
 
+    /** Only untouched automatic work may adopt new settings without approval. */
+    public function replanAuto(string $taskId, string $revision, array $parameters, int $now): bool
+    {
+        $task = $this->state['tasks'][$taskId] ?? null;
+        if (!$task) { return false; }
+        $run = $this->state['runs'][$task['runId']];
+        if ($task['kind'] !== 'auto' || $run['manual'] || $run['schedule'] !== 'auto'
+            || count($run['tasks']) !== 1 || $run['state'] !== 'queued'
+            || $task['state'] !== 'queued' || $task['attempt'] !== null) { return false; }
+        // Recovering an attempt is not evidence that its mutations never began.
+        // This also protects journals written before replanning was introduced.
+        foreach ($this->state['attempts'] as $attempt) {
+            if ($attempt['taskId'] === $taskId) { return false; }
+        }
+        if ($revision === $run['revision']) { return true; }
+        $this->state['runs'][$run['id']]['replannedFrom'] ??= $run['revision'];
+        $this->state['runs'][$run['id']]['replannedAt'] = $now;
+        $this->state['runs'][$run['id']]['revision'] = $revision;
+        $this->state['tasks'][$taskId]['parameters'] = $parameters;
+        // Command identity and occurrence acceptance do not change on replanning.
+        $this->commit();
+        return true;
+    }
+
+    /** Admission failures do not need a worker or a destructive validation retry. */
+    public function rejectAdmission(string $taskId, array $result, float $monotonic, int $now): void
+    {
+        if (($result['outcome'] ?? '') !== 'validation_failure'
+            || !in_array($taskId, $this->runnable($monotonic), true)) {
+            throw new InvalidArgumentException('Only runnable work can fail admission validation.');
+        }
+        $task =& $this->state['tasks'][$taskId];
+        $task['state'] = 'failed'; $task['result'] = $result;
+        $task['blocked'] = $result['reason'] ?? '';
+        $task['retryAt'] = null; $task['retryMonotonic'] = null;
+        $this->settle($task['runId'], $now);
+        $this->commit();
+    }
+
     public function claim(string $taskId, float $monotonic, int $now): string
     {
         if (!in_array($taskId, $this->runnable($monotonic), true)) { throw new InvalidArgumentException('Task is not runnable.'); }

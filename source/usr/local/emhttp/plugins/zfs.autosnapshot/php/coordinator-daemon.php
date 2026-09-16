@@ -3,6 +3,7 @@ if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 require_once __DIR__ . '/coordinator-socket.php';
 require_once __DIR__ . '/coordinator-executor.php';
 require_once __DIR__ . '/coordinator-retention.php';
+require_once __DIR__ . '/coordinator-auto-admission.php';
 require_once __DIR__ . '/schedule-spec.php';
 require_once __DIR__ . '/snapshot-manager-helpers.php';
 
@@ -37,9 +38,9 @@ $submitAuto = static function (string $commandId, bool $manual, ?int $occurrence
         'occurrence' => $occurrence, 'revision' => $config['revision'], 'tasks' => ['snapshot' => ['kind' => 'auto',
             'parameters' => ['revision' => $config['revision'],
                 'autoConfig' => $config['rawAuto'], 'sendConfig' => $config['rawSend'],
-                'prefixHistory' => $config['prefixHistory']]]]], time());
+                'prefixHistory' => $config['prefixHistory'], 'scheduleSpec' => $config['schedule']]]]], time());
 };
-$command = static function (array $task) use ($root, $configDir, &$config): ?array {
+$command = static function (array $task) use ($root, $configDir, $journal): ?array {
     if (is_file($configDir . '/maintenance')) { return null; }
     if ($task['kind'] === 'delete') { return ['/usr/local/sbin/zfs_autosnapshot_delete_worker']; }
     if ($task['kind'] === 'batch') {
@@ -47,19 +48,12 @@ $command = static function (array $task) use ($root, $configDir, &$config): ?arr
             $task['dataset'], $task['parameters']['token']];
     }
     if ($task['kind'] !== 'auto') { throw new RuntimeException('No execution adapter for task kind.'); }
-    $parameters = $task['parameters'];
-    if ($parameters['revision'] !== zfsas_config_revision($configDir)) {
-        // The executor records an explicit validation failure; stale captured
-        // settings never reach a ZFS mutation worker.
-        return ['/bin/false'];
-    }
-    $capture = $root . '/config/' . $parameters['revision'];
-    if (!is_dir($capture)) { mkdir($capture, 0700, true); }
-    foreach (['zfs_autosnapshot.conf' => 'autoConfig', 'zfs_send.conf' => 'sendConfig', 'send-prefix-history' => 'prefixHistory'] as $file => $key) {
-        if (!is_file($capture . '/' . $file)) { file_put_contents($capture . '/' . $file, $parameters[$key]); }
-    }
-    return ['/usr/bin/env', 'ZFSAS_COORDINATED=1', 'CONFIG_FILE=' . $capture . '/zfs_autosnapshot.conf',
-        'ZFSAS_CONFIG_REVISION=' . $parameters['revision'], '/usr/local/sbin/zfs_autosnapshot'];
+    // Read both files under the shared nonblocking lock. A settings save must
+    // neither launch work with mixed settings nor block cancellation requests.
+    $pair = zfsas_config_read_pair($configDir, true);
+    if ($pair === null) { return null; }
+    $pair['schedule'] = ZfsasSchedule::autoConfig($pair['auto']);
+    return zfsas_coordinator_auto_command($journal, $task, $pair, $root);
 };
 $outcome = static function ($task, $code) use ($configDir): array {
     if ($task['kind'] === 'delete') { return ['outcome' => $code === 0 ? 'success' : 'transient_failure', 'exitCode' => $code]; }
