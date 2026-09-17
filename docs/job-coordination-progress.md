@@ -715,3 +715,30 @@ transfer requiring rollback, and verify that the unrelated snapshot survives.
 Fixtures also cover completion identity races and inventory changes during
 inspection. This phase is still read-only: native reference publication, cleanup,
 space approval, transfer admission and finalization remain to be connected.
+
+## Native local manual replication execution
+
+Snapshot Manager Send now submits a stable command to the coordinator. Submission
+pins the selected source snapshot; preparation atomically publishes exact references
+and space, transfer and verification tasks. The native pipeline supports a single
+local full send to a new receiver under an existing, GUID-captured parent, or an
+incremental send to a verified receiver. Existing datasets are never overwritten.
+Full/incremental execution reports explicit outcomes; finalization checks receiver
+GUID evidence from its expected transfer child. Already-received snapshots produce
+verification-only tasks. Configured rate limits are captured and native concurrency
+limits follow settings. Dataset/Migrator gates remain held during execution.
+
+Activity includes native replication and routes cancellation to its coordinator.
+Cancel persists before worker signals; manual cancellation does not pause Auto
+Snapshot. UI retries of an accepted submission return the original receipt even
+when a full transfer has since created the receiver. No manual work is reconstructed
+from ZFS metadata after RAM loss. Snapshot Manager Send no longer writes a legacy
+send job or starts the old queue worker.
+
+Verification: reliability and stage-one suites, PHP lint, adapter ShellCheck,
+workspace browser suite, native graph/reference/cancellation unit coverage, and
+actual daemon plus disposable-pool full/incremental sends, explicit child outcomes,
+measured space, duplicate submission/no-op and persistent array-wait cancellation.
+Scheduled replication, SSH, recursive planning, native prerequisite cleanup and
+explicit native resume remain unfinished; automatic snapshot per-mutation ownership
+and the wider release gates also remain open. No release artifacts published.
