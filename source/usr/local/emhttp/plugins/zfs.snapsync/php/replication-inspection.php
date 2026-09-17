@@ -47,7 +47,17 @@ final class ZfsasReplicationInspection
     /** Each command is bounded and remains in the granted worker process group. */
     public static function command(array $arguments): string
     {
-        $process = proc_open(array_merge(['/usr/bin/timeout','--foreground','--signal=TERM','--kill-after=2','15','zfs'], $arguments),
+        return self::boundedCommand('zfs',$arguments);
+    }
+
+    public static function poolCommand(array $arguments): string
+    {
+        return self::boundedCommand('zpool',$arguments);
+    }
+
+    private static function boundedCommand(string $program,array $arguments): string
+    {
+        $process = proc_open(array_merge(['/usr/bin/timeout','--foreground','--signal=TERM','--kill-after=2','15',$program], $arguments),
             [0=>['file','/dev/null','r'],1=>['pipe','w'],2=>['pipe','w']], $pipes);
         if (!is_resource($process)) { throw new RuntimeException('Unable to start ZFS inspection.'); }
         foreach ($pipes as $pipe) { stream_set_blocking($pipe, false); }

@@ -637,6 +637,11 @@ process_delete_job() {
     retry_delete_job "Dataset is in use; deletion delayed."
     return 0
   fi
+  if [[ -n "${checked_job[DATASET_GUID]:-}" && "$(zfs_guid_for_transport "${snapshot%@*}" "$transport" || true)" != "${checked_job[DATASET_GUID]}" ]]; then
+    release_dataset_gates
+    skip_delete_job "Receiver dataset identity changed; plan cleanup again."
+    return 0
+  fi
   if snapshot_delete_conflicts_with_send_jobs "$snapshot"; then
     release_dataset_gates
     retry_delete_job "Snapshot dataset is referenced by a pending transfer."

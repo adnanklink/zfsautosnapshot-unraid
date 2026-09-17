@@ -10,7 +10,7 @@ function zfsas_replication_schedule_plan(array $parameters, ?callable $read=null
         $key=sprintf('%05d',$index++);$snapshot='snapshot-'.$key;$prepare='member-'.$key;
         $common=$member+['revision'=>$parameters['revision'],'rateLimit'=>$parameters['rateLimit'],
             'snapshotName'=>$parameters['snapshotName'],'scheduleId'=>$parameters['job']['id'],
-            'occurrence'=>(string)$parameters['occurrence'],'nativeSchedule'=>true];
+            'occurrence'=>(string)$parameters['occurrence'],'cleanupPolicy'=>$parameters['cleanupPolicy'] ?? null,'nativeSchedule'=>true];
         $tasks[$snapshot]=['kind'=>'auto','dataset'=>$member['source'],'parameters'=>$common+['phase'=>'replication_snapshot']];
         $dependencies=[$snapshot];
         if($member['source']!==$parameters['job']['source']){

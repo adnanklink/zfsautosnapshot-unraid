@@ -3,6 +3,7 @@ if(PHP_SAPI!=='cli'){http_response_code(404);exit;}
 require_once __DIR__.'/coordinator-worker-client.php';
 require_once __DIR__.'/replication-schedule-plan.php';
 require_once __DIR__.'/replication-snapshot.php';
+require_once __DIR__.'/replication-cleanup.php';
 require_once __DIR__.'/send-helpers.php';
 try{
     zfsas_coordinator_worker_report('progress',2,['phase'=>'scheduled_preparation','message'=>'Checking captured scheduled replication work.']);$sequence=3;
@@ -32,6 +33,12 @@ try{
             if($result['outcome']==='success'){
                 if($result['inspection']['sourceDatasetGuid']!==$p['sourceDatasetGuid']){throw new InvalidArgumentException('Captured member dataset changed.');}
                 $plan=zfsas_replication_plan($request,$result['inspection'],$p['revision'],$p['rateLimit']);
+                if ($result['inspection']['mode']!=='already_received' && is_array($p['cleanupPolicy'] ?? null)) {
+                    foreach (['space','transfer'] as $phase) { $plan['tasks'][$phase]['parameters']['freeSpaceFloor']=$p['cleanupPolicy']['freeSpaceFloor'] ?? '0G'; }
+                    $cleanup=zfsas_replication_cleanup($request,$result['inspection'],$p['cleanupPolicy']);
+                    $plan['tasks']['space']['dependencies']=array_keys($cleanup);
+                    $plan['tasks']=$cleanup+$plan['tasks'];
+                }
                 zfsas_replication_publish_plan($plan,$sequence);
             }
         }else{throw new InvalidArgumentException('Unknown scheduled replication phase.');}

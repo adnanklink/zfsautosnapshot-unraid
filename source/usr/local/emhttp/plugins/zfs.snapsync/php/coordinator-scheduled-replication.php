@@ -40,6 +40,9 @@ function zfsas_coordinator_submit_schedule(ZfsasCoordinatorState $journal, array
     return $journal->submit($command,['manual'=>$manual,'schedule'=>$manual?'':$job['id'],'occurrence'=>$occurrence,
         'revision'=>$config['revision'],'tasks'=>['prepare'=>['kind'=>'prepare','dataset'=>$job['source'],'parameters'=>[
             'phase'=>'replication_schedule','nativeSchedule'=>true,'nativePlan'=>true,'allowDynamicPlan'=>true,
+            'cleanupPolicy'=>['freeSpaceFloor'=>$job['threshold'],'scheduleId'=>$job['id'],'prefix'=>$prefix,'sendConfigHash'=>hash('sha256',$config['rawSend']),
+                'keepAll'=>(int)$config['send']['SEND_KEEP_ALL_FOR_DAYS'],'keepDaily'=>(int)$config['send']['SEND_KEEP_DAILY_UNTIL_DAYS'],
+                'keepWeekly'=>(int)$config['send']['SEND_KEEP_WEEKLY_UNTIL_DAYS']],
             'job'=>$job,'revision'=>$config['revision'],'snapshotName'=>$name,'occurrence'=>$occurrence,
             'rateLimit'=>$config['send']['SEND_RATE_LIMIT']]]]],time());
 }

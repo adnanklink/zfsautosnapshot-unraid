@@ -67,6 +67,17 @@ echo 'PASS: real ZFS creation intent, exact recursive targets, GUID manifest and
 zfs create "$source_pool/native-schedule"
 zfs create "$source_pool/native-schedule/child"
 zfs create "$source_pool/native-schedule/child/deep"
+zfs set mountpoint="$fixture/native-source" "$source_pool/native-schedule"
+zfs mount "$source_pool/native-schedule" 2>/dev/null || true
+dd if=/dev/urandom of="$fixture/native-source/retention.bin" bs=1M count=32 status=none
+zfs snapshot "$source_pool/native-schedule@snapsync-send-abcdef123456-old"
+zfs send "$source_pool/native-schedule@snapsync-send-abcdef123456-old" | zfs receive -u "$target_pool/native-schedule"
+rm "$fixture/native-source/retention.bin"
+sleep 1 # Separate legacy creation-second ordering from native TXG ordering.
+zfs snapshot "$source_pool/native-schedule@snapsync-send-abcdef123456-base"
+zfs send -i "$source_pool/native-schedule@snapsync-send-abcdef123456-old" "$source_pool/native-schedule@snapsync-send-abcdef123456-base" | zfs receive -u "$target_pool/native-schedule"
+zfs set quota=40M "$target_pool/native-schedule"
+(( $(zfs get -H -p -o value available "$target_pool/native-schedule") < 16777216 ))
 php "$ROOT/tests/reliability/native_scheduled_replication.php" "$source_pool/native-schedule" "$target_pool/native-schedule"
 
 printf 'base content\n' > "$fixture/source/base.txt"

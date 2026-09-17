@@ -43,24 +43,34 @@ function zfsas_replication_revalidate(array $parameters): array
     return $result;
 }
 
-function zfsas_replication_space(array $parameters): array
+function zfsas_replication_space(array $parameters, ?callable $read=null, ?callable $readPool=null): array
 {
+    $read ??= [ZfsasReplicationInspection::class,'command'];
+    $readPool ??= [ZfsasReplicationInspection::class,'poolCommand'];
     $request = $parameters['replication']; $base = $parameters['inspection']['base']['snapshot'] ?? null;
     if ($parameters['inspection']['mode'] === 'resume') {
         $token=zfsas_replication_resume_token($parameters);
-        $estimate=ZfsasReplicationInspection::command(['send','-nP','-t',$token]);
-    } else { $estimate = ZfsasReplicationInspection::command(array_merge(['send','-nP'],$base === null ? [] : ['-i',$base],[$request['sourceSnapshot']])); }
+        $estimate=$read(['send','-nP','-t',$token]);
+    } else { $estimate = $read(array_merge(['send','-nP'],$base === null ? [] : ['-i',$base],[$request['sourceSnapshot']])); }
     if (!preg_match('/^size\s+([0-9]+)$/m', $estimate, $match)
         || strlen($match[1]) > 18) { throw new RuntimeException('Unable to measure the incremental stream size.'); }
     $required = (int)$match[1];
     $capacity = $parameters['inspection']['mode'] === 'full' ? substr($request['destination'],0,strrpos($request['destination'],'/')) : $request['destination'];
-    $available = trim(ZfsasReplicationInspection::command(['get','-H','-p','-o','value','available','--',$capacity]));
+    $available = trim($read(['get','-H','-p','-o','value','available','--',$capacity]));
     if (!ctype_digit($available) || strlen($available) > 18) { throw new RuntimeException('Incomplete receiver available-space measurement.'); }
     // Stream estimates are not guaranteed allocation sizes. Preserve a margin and
     // still treat any receive failure explicitly; never force rollback to fit.
-    $required += max(16777216, (int)ceil($required / 20));
+    $floor=zfsas_replication_space_floor($parameters['freeSpaceFloor'] ?? '0G');
+    $required += max(16777216, (int)ceil($required / 20),$floor);
     if ((int)$available < $required) {
-        return ['outcome'=>'validation_failure','reason'=>'space','message'=>"Insufficient destination space: need $required bytes including margin, measured $available available. This explicit send authorizes no snapshot cleanup; free space and Retry."];
+        $freeing=trim($readPool(['get','-H','-p','-o','value','freeing',explode('/',$capacity)[0]]));
+        if (!ctype_digit($freeing)||strlen($freeing)>20) { throw new RuntimeException('Incomplete ZFS freeing metadata.'); }
+        if (trim($freeing,'0')!=='') {
+            return ['outcome'=>'wait','reason'=>'space','delay'=>5,'requiredBytes'=>$required,'availableBytes'=>(int)$available,
+                'message'=>'Waiting for measured ZFS freeing work before rechecking destination space.'];
+        }
+
+        return ['outcome'=>'validation_failure','reason'=>'space','message'=>"Insufficient destination space: need $required bytes including margin, measured $available available. No further cleanup is authorized by this plan; free space or review cleanup and Retry."];
     }
     return ['outcome'=>'success','requiredBytes'=>$required,'availableBytes'=>(int)$available];
 }
@@ -72,4 +82,12 @@ function zfsas_replication_resume_token(array $parameters): string
         throw new InvalidArgumentException('Resume token changed before execution.');
     }
     return $token;
+}
+
+function zfsas_replication_space_floor(string $value): int
+{
+    if(!preg_match('/^([0-9]+)([KMGT])$/D',$value,$match)||strlen($match[1])>15){throw new InvalidArgumentException('Invalid destination free-space target.');}
+    $factor=['K'=>1024,'M'=>1048576,'G'=>1073741824,'T'=>1099511627776][$match[2]];
+    if((int)$match[1]>intdiv(PHP_INT_MAX-1000000000000000000,$factor)){throw new InvalidArgumentException('Destination free-space target is too large.');}
+    return (int)$match[1]*$factor;
 }

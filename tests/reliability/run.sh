@@ -18,6 +18,8 @@ php tests/reliability/coordinator_references.php
 php tests/reliability/replication_inspection.php
 php tests/reliability/replication_membership.php
 php tests/reliability/replication_snapshot.php
+php tests/reliability/replication_cleanup.php
+php tests/reliability/replication_space.php
 php tests/reliability/replication_schedule_plan.php
 php tests/reliability/native_replication_plan.php
 php tests/reliability/coordinator_journal.php
