@@ -498,3 +498,33 @@ migration: the compatibility worker still owns deletion-batch item transitions
 and must be replaced by journal-owned item/dependency transitions. Shared cleanup
 ownership, full replication integration and the previously listed release gates
 remain open.
+
+## Ownership update: journal-owned deletion batches
+
+New Snapshot Manager deletion batches now use immutable journal items. The
+coordinator delegates at most 50 items to individual deletion runs, exposes their
+dependencies and waits without a batch process, transfer slot or retry timer.
+Verified child outcomes update journal items and wake the next chunk. Partial
+failures preserve successful results and do not cancel untouched selections.
+Finalization waits for every selected item's terminal outcome.
+
+Stable child command IDs make interrupted delegation replayable. Recovery counts
+already-delegated items against the 50-item window. Legacy inbox submissions cannot
+add items to a journal-owned approval. The compatibility batch worker is no longer
+selected by the production daemon; pending approvals without journal items require
+fresh review. Operation-boundary metadata, exclusion and cleanup-policy checks now
+run in the deletion adapter's existing review check, preserving safety after the
+old batch preparation worker is removed from this path.
+
+Batch manifests are compatibility projections. Contended projections retry, and
+restart rebuilds them from committed items. The fixture covers bounded admission,
+immutable membership, interrupted delegation, partial failure, inbox rejection,
+projection locking and reconstruction. It passes with read-only `/boot`. The full
+reliability suite, stage-one checks, PHP parsing, actual batch endpoint suite and
+temporary package verification pass. Endpoint coverage includes retry exhaustion,
+fresh failed-only retry, daemon restart and 601-item selections.
+
+Still open: cancellation propagation and shared cleanup ownership, full replication
+and Auto Snapshot mutation authority, complete installation handoff, configuration
+replanning and remaining release gates. Large-journal commit and inventory costs
+still require the planned scale work; no all-path performance claim is made here.

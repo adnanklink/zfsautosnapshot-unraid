@@ -139,3 +139,12 @@ passes with read-only `/boot`. Coordinator crash recovery also defers unrelated
 new grants until every surviving old process group has stopped. The full
 reliability suite covers this cross-task recovery barrier. Journal ownership of
 all deletion-batch item transitions remains unfinished.
+
+Deletion batches now delegate immutable journal items to at most 50 concurrent
+pending deletion dependencies and finalize from verified results. The production
+daemon no longer launches the manifest-owned deletion batch worker. New fixtures
+cover interrupted delegation, bounded replay, partial outcomes, rejection of inbox
+approval bypass and reconstruction of contended/lost status projections. Read-only
+flash, reliability, stage-one, PHP, package and actual batch endpoint checks pass.
+Shared cancellation, full replication ownership and the final scale/host gates
+remain outstanding.
