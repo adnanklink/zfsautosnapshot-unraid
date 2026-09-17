@@ -4,9 +4,13 @@ ZFS Auto Snapshot is an Unraid plugin for managing ZFS snapshots from the WebGUI
 
 The plugin also includes ZFS Send replication, a Dataset Migrator, Snapshot Manager bulk and cleanup tools, and a diagnostics download for support.
 
-## Branch status: `fix/job-coordination`
+## Branch status: `feat/ui-overhaul`
 
-This is the development branch of [adnanklink/zfsautosnapshot-unraid](https://github.com/adnanklink/zfsautosnapshot-unraid/tree/fix/job-coordination). It includes the completed `fix/send-cancellation` work and ongoing job-coordination changes. **The published development package is `2026.09.16.02`; full coordinator integration is not finished.** It includes Auto Snapshot configuration admission, replication recovery, and deletion coordination improvements.
+This is the UI preview branch of [adnanklink/zfsautosnapshot-unraid](https://github.com/adnanklink/zfsautosnapshot-unraid/tree/feat/ui-overhaul), based on `fix/job-coordination`. **The UI preview package is `2026.09.17.01`; full replication coordinator integration is still unfinished.**
+
+The interface now has a shared sidebar and six sections: **Overview, Snapshots, Replication, Activity, Tools, and Help**. It adapts to light/dark Unraid themes and smaller screens. Snapshot browsing is integrated directly, Automation has its own tab, replication jobs use Add/Edit drawers, and Activity brings recent operations and logs together. Dataset Migrator requires a preview and review acknowledgment before Start. Existing configuration and execution safeguards are preserved.
+
+Overview reads current runtime records and saved configuration. Missing sources are shown as unavailable, and recent records are not a complete historical ledger. Editing configuration does not change a running command; Save or Discard before using Run Now.
 
 Implemented on this branch:
 
@@ -55,12 +59,12 @@ Minimum Unraid version: `6.12.0`, the first Unraid release series with native ZF
 The branch installation URL is:
 
 ```text
-https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/fix/job-coordination/dist/zfs.autosnapshot.plg
+https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/feat/ui-overhaul/dist/zfs.autosnapshot.plg
 ```
 
-The published development package is **`2026.09.16.02`**. Its manifest and package URLs point to this fork and branch. It updates development version `2026.09.16.01` and replaces the older `2026.08.24.01` upstream installation without requiring an uninstall. Future source pushes do not automatically rebuild the package.
+The UI preview package is **`2026.09.17.01`**. Its manifest and package URLs point to this fork and `feat/ui-overhaul`. It updates `2026.09.16.02` and replaces the upstream installation without requiring an uninstall. Future source pushes do not automatically rebuild the package.
 
-Clients already installed from this branch URL can use **Plugins → Check for Updates → Update**. Clients installed from upstream must use the branch URL below once to switch their update source. Let active snapshot, replication, and migration jobs finish before updating.
+Clients already on `feat/ui-overhaul` can use **Plugins → Check for Updates → Update**. Clients on upstream or `fix/job-coordination` must install the URL above once to switch to this UI preview. The coordination branch keeps its own update source; this release does not silently switch those clients. Let active snapshot, replication, and migration jobs finish before updating.
 
 To install or upgrade to this development package using its URL:
 
@@ -76,17 +80,17 @@ This fork uses the same plugin identity as upstream; it replaces the existing pl
 On a development machine with Git, Bash, tar and xz:
 
 ```bash
-git clone --branch fix/job-coordination --single-branch https://github.com/adnanklink/zfsautosnapshot-unraid.git
+git clone --branch feat/ui-overhaul --single-branch https://github.com/adnanklink/zfsautosnapshot-unraid.git
 cd zfsautosnapshot-unraid
 
 # Example development version; choose a new, unused version for each publication.
-./scripts/build-release.sh 2026.09.16.03 \
-  https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/fix/job-coordination/dist
+./scripts/build-release.sh 2026.09.17.02 \
+  https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/feat/ui-overhaul/dist
 ```
 
 The script builds and verifies the package, generates a manifest with the fork's branch URLs and package checksum, and copies the manifest to the repository root. Before publication, update `VERSION`, `CHANGELOG.md` and the release notes in `zfs.autosnapshot.plg.in` to describe the chosen build, then rebuild. Publish the generated `.txz`, `dist/zfs.autosnapshot.plg`, `dist/zfs-autosnapshot.png` and root `zfs.autosnapshot.plg` on this same branch in a separate release-artifact commit. The Unraid URL needs those files on GitHub; a local build alone does not update it.
 
-The release workflow automatically publishes only `main` and `testing`. A push to `fix/job-coordination` runs verification but does not publish installation artifacts. Alternatively, after updating the version and release notes, manually run **Build Release Artifacts** for this branch if that workflow is available in the fork. Its version guard requires a new package version.
+The release workflow automatically publishes only `main` and `testing`. A push to `feat/ui-overhaul` runs verification but does not publish installation artifacts. Alternatively, after updating the version and release notes, manually run **Build Release Artifacts** for this branch if that workflow is available in the fork. Its version guard requires a new package version.
 
 ### Existing upstream release
 
@@ -160,7 +164,7 @@ Use the Run Now button in the WebGUI, or run this from a shell:
 
 ## ZFS Send
 
-ZFS Send is for replicating selected datasets to destination datasets.
+Open **Replication** to replicate selected datasets to destination datasets. Add or Edit a job in its drawer, choose Done, then Save replication. Shared connection and tuning settings are grouped separately. Monitor transfers in **Activity**.
 
 Each send job has:
 
@@ -205,7 +209,7 @@ Stop any watchdogs or outside tools that might restart containers before you use
 
 ## Snapshot Manager
 
-Snapshot Manager works on one dataset at a time, with server-side search, filtering and pages of 50, 100 or 250 snapshots (100 by default). It supports large inventories, including 10,000-snapshot datasets. Filter by name, prefix/origin, dates, age, Used/Written bytes, holds, replication protection and pending actions. Dataset search works alongside the pool filter.
+Open **Snapshots → Browse snapshots** for Snapshot Manager. It works on one dataset at a time, with server-side search, filtering and pages of 50, 100 or 250 snapshots (100 by default). It supports large inventories, including 10,000-snapshot datasets. Filter by name, prefix/origin, dates, age, Used/Written bytes, holds, replication protection and pending actions. Dataset search works alongside the pool filter.
 
 Used and Written measure different properties. Used is space exclusively referenced by that snapshot; Written is referenced space written since its predecessor. A zero value does not mean the snapshot contains no files. Written totals are not a reclaimable-space estimate.
 
@@ -237,7 +241,7 @@ Validation evidence and remaining operational limits are in [the reliability aud
 
 The main settings page includes run output and debug logs.
 
-The Help tab has a diagnostics download. The diagnostics zip is meant for GitHub issues and includes redacted plugin config, plugin logs, queue state, and read-only ZFS/zpool/system summaries.
+**Tools → Diagnostics** provides the diagnostics download; Help links to it. The diagnostics zip is meant for GitHub issues and includes redacted plugin config, plugin logs, queue state, and read-only ZFS/zpool/system summaries.
 
 When reporting a bug, include:
 

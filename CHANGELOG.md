@@ -5,6 +5,15 @@ It answers one question: "What changed for me?"
 
 ## Development releases
 
+### 2026.09.17.01 (2026-09-17)
+
+- UI preview on feat/ui-overhaul; full replication coordinator integration remains unfinished.
+- New Overview, Snapshots, Replication, Activity, Tools, and Help navigation adapts to light/dark themes and mobile screens.
+- Browse snapshots directly; edit replication jobs in drawers and follow recent operations and bounded logs in Activity.
+- Save or discard pending settings before Run Now. Migration requires a preview and review acknowledgment before Start.
+- Runtime polling does not start workers or write boot-flash state; migration inventories are inspected on explicit Preview.
+- Same plugin identity and configuration. Install the UI branch URL once to switch update sources; runtime history remains limited to the current boot.
+
 ### 2026.09.16.02 (2026-09-16)
 
 - Development update; full replication coordinator integration remains unfinished.

@@ -87,3 +87,9 @@ work during worker exit and verifies a second granted attempt in the same run,
 without consuming a failure retry. Replication cleanup now uses this coordinator
 launch path. The batch endpoint regression also caught and verified a fix for
 unnecessary unchanged manifest publication after worker completion.
+
+## UI preview verification (2026-09-17)
+
+The `feat/ui-overhaul` branch adds a shared shell and read-only activity/summary interfaces. See [UI implementation and tests](ui-overhaul.md). Stage-one and backend reliability fixtures continue to pass after separating controllers, views and browser behavior. PHP endpoint checks run with `/boot` read-only; the new views and runtime summary do not initialize persistent directories. A `strace -f -e trace=%file` run of `workspace_endpoints.php` recorded zero attempted `/boot` writes or metadata changes. Migrator polling now has a RAM-only runtime mode, with dataset and Docker inspection reserved for explicit preview.
+
+The UI does not close the remaining replication coordinator/reboot-reconstruction work. Real-ZFS execution coverage recorded above belongs to the underlying coordination work; this presentation change retains those execution workers. Actual Unraid theme integration still requires a host smoke test.
