@@ -12,7 +12,7 @@ if (($argv[1] ?? '') === '--server') {
 $root = '/tmp/zfsas-recovery-test-' . bin2hex(random_bytes(8)); mkdir($root);
 file_put_contents($root . '/worker.sh', '#!/bin/bash' . "\n" . 'if mkdir "$1/first" 2>/dev/null; then sleep 60 & echo $! > "$1/child"; wait; else printf recovered > "$1/recovered"; fi' . "\n");
 function launch($root) { return proc_open([PHP_BINARY, __FILE__, '--server', $root], [0 => ['file', '/dev/null', 'r'], 1 => ['file', $root . '/server.log', 'a'], 2 => ['file', $root . '/server.log', 'a']], $pipes); }
-function readState($root) { $record = json_decode((string) @file_get_contents($root . '/checkpoint.json'), true); return json_decode($record['payload'] ?? '{}', true); }
+function readState($root) { return ZfsasCoordinatorState::readCommitted($root); }
 function until($predicate, $root): void {
     for ($round = 0; $round < 400; $round++) { if ($predicate()) { return; } usleep(20000); }
     throw new RuntimeException('Recovery fixture timed out: ' . file_get_contents($root . '/server.log'));

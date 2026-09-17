@@ -46,12 +46,13 @@ try {
     rejected(fn() => $journal->workerReport(['taskId'=>$child,'token'=>$childToken,'generation'=>$generation,'sequence'=>1,'type'=>'result','payload'=>['outcome'=>'success']],$generation,105));
     $journal->stopped($childToken,106,11);
     check($journal->state['runs'][$receipt['runId']]['state']==='canceled','Fan-out cancellation failed');
+    $journal->checkpoint();
     unset($journal);
     $record=json_decode(file_get_contents($root.'/checkpoint.json'),true);
     $legacy=json_decode($record['payload'],true);$legacy['version']=1;
     $payload=json_encode($legacy);file_put_contents($root.'/checkpoint.json',json_encode(['payload'=>$payload,'sha256'=>hash('sha256',$payload)]));
     $journal=new ZfsasCoordinatorState($root);
-    check($journal->state['version']===2 && count($journal->state['tasks'])===4,'Legacy checkpoint migration lost records');
+    check($journal->state['version']===3 && count($journal->state['tasks'])===4,'Legacy checkpoint migration lost records');
     echo "PASS: generation/attempt/sequence fences, idempotent publication, atomic fan-out, finalizer membership, verified completion, cancellation and v1 journal loading\n";
 } finally {
     unset($journal);

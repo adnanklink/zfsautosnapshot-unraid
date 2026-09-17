@@ -31,6 +31,7 @@ final class ZfsasCoordinatorExecutor
             $task['state'] = 'stopping';
             $this->stopping[$token] = ['since' => hrtime(true) / 1e9, 'recovery' => true]; $changed = true;
         }
+        if ($journal->loadedVersion < 3) { $journal->requireUpgradeReview(time()); $changed = true; }
         if ($changed) { $journal->commit(); }
     }
 
@@ -84,7 +85,9 @@ final class ZfsasCoordinatorExecutor
 
     public function tick(float $now): float
     {
-        foreach ($this->journal->state['attempts'] as $token => $attempt) {
+        foreach ($this->journal->activeTaskIds() as $activeTaskId) {
+            $token = $this->journal->state['tasks'][$activeTaskId]['attempt'];
+            $attempt = $this->journal->state['attempts'][$token];
             if ($attempt['state'] === 'stopped') { continue; }
             $taskId = $attempt['taskId']; $task = $this->journal->state['tasks'][$taskId];
             if ($task['attempt'] !== $token) { continue; }
@@ -148,8 +151,9 @@ final class ZfsasCoordinatorExecutor
             }
         }
         $active = [];
-        foreach ($this->journal->state['tasks'] as $task) {
-            if (in_array($task['state'], ['launching', 'running', 'stopping'], true)) { $active[$task['kind']] = ($active[$task['kind']] ?? 0) + 1; }
+        foreach ($this->journal->activeTaskIds() as $id) {
+            $kind = $this->journal->state['tasks'][$id]['kind'];
+            $active[$kind] = ($active[$kind] ?? 0) + 1;
         }
         $ready = $this->journal->runnable($now);
         // Rotate datasets at each admission pass while preserving per-dataset order.
@@ -179,13 +183,6 @@ final class ZfsasCoordinatorExecutor
         }
         // Process checks are only needed while attempts exist; idle scheduling
         // sleeps to its actual deadline instead of scanning inventories.
-        foreach ($this->journal->state['tasks'] as $task) {
-            if (in_array($task['state'], ['launching', 'running', 'stopping'], true)) { return $now + .1; }
-        }
-        $next = $now + 30;
-        foreach ($this->journal->state['tasks'] as $task) {
-            if (($task['retryMonotonic'] ?? 0) > $now) { $next = min($next, $task['retryMonotonic']); }
-        }
-        return $next;
+        return $this->journal->activeTaskIds() ? $now + .1 : $this->journal->nextDeadline($now);
     }
 }

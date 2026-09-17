@@ -37,7 +37,7 @@ trait ZfsasCoordinatorWorkerState
         $type = $request['type'] ?? '';
         $payload = $request['payload'] ?? null;
         if (!is_int($sequence) || $sequence < 1 || !is_array($payload)
-            || !in_array($type, ['progress', 'result', 'plan'], true)) {
+            || !in_array($type, ['progress', 'result', 'plan', 'plan_chunk', 'plan_seal'], true)) {
             throw new InvalidArgumentException('Invalid worker publication.');
         }
         $fingerprint = hash('sha256', json_encode(self::canonical(['type' => $type, 'payload' => $payload]), JSON_THROW_ON_ERROR));
@@ -59,10 +59,19 @@ trait ZfsasCoordinatorWorkerState
             $this->state['tasks'][$taskId]['progress'] = $payload;
         } elseif ($type === 'result') {
             self::checkedWorkerOutcome($payload);
+            if (($payload['outcome'] ?? '') === 'success' && isset($this->state['plans'][$taskId])
+                && empty($this->state['plans'][$taskId]['sealed'])) {
+                throw new InvalidArgumentException('Preparation cannot succeed before its plan is sealed.');
+            }
             // An acknowledged report is not completion. The executor must verify
             // the entire process group has stopped before consuming this result.
             $attempt['reportedResult'] = $payload;
+        } elseif ($type === 'plan_chunk') {
+            $this->stageWorkerPlan($taskId, $payload);
+        } elseif ($type === 'plan_seal') {
+            $this->sealWorkerPlan($taskId, $payload, $now);
         } else {
+            if (isset($this->state['plans'][$taskId])) { throw new InvalidArgumentException('A staged plan requires explicit sealing.'); }
             $this->publishWorkerPlan($taskId, $payload, $now);
         }
         $attempt['publication'] = ['sequence' => $sequence, 'fingerprint' => $fingerprint];
@@ -70,15 +79,68 @@ trait ZfsasCoordinatorWorkerState
         return ['accepted' => true, 'sequence' => $sequence];
     }
 
-    private function publishWorkerPlan(string $taskId, array $plan, int $now): void
+    private function stageWorkerPlan(string $taskId, array $payload): void
+    {
+        $parent = $this->state['tasks'][$taskId];
+        $offset = $payload['offset'] ?? null; $digest = $payload['digest'] ?? null; $tasks = $payload['tasks'] ?? null;
+        if ($parent['kind'] !== 'prepare' || empty($parent['parameters']['allowDynamicPlan'])
+            || isset($parent['planFingerprint']) || !is_int($offset) || $offset < 0
+            || !is_string($digest) || !preg_match('/^[a-f0-9]{64}$/D', $digest)
+            || !is_array($tasks) || !$tasks || array_is_list($tasks) || count($tasks) > 50
+            || strlen(json_encode($payload, JSON_THROW_ON_ERROR)) > 786432) {
+            throw new InvalidArgumentException('Invalid bounded plan chunk.');
+        }
+        foreach ($tasks as $name => $spec) {
+            self::identifier((string) $name);
+            if (!is_array($spec)) { throw new InvalidArgumentException('Invalid staged task.'); }
+        }
+        $header = $this->state['plans'][$taskId] ?? ['taskId'=>$taskId, 'digest'=>$digest, 'count'=>0, 'chunks'=>[], 'sealed'=>false];
+        if ($header['digest'] !== $digest || $header['sealed']) { throw new InvalidArgumentException('Frozen plan identity changed.'); }
+        $key = $taskId . ':chunk:' . $offset;
+        $fingerprint = hash('sha256', json_encode(self::canonical($tasks), JSON_THROW_ON_ERROR));
+        if (isset($this->state['plans'][$key])) {
+            if ($this->state['plans'][$key]['fingerprint'] !== $fingerprint) { throw new InvalidArgumentException('Conflicting staged plan replay.'); }
+            return;
+        }
+        if ($offset !== $header['count'] || $offset + count($tasks) > 50001) { throw new InvalidArgumentException('Plan chunk is out of order or exceeds the item limit.'); }
+        $header['count'] += count($tasks); $header['chunks'][] = $key;
+        $this->state['plans'][$key] = ['taskId'=>$taskId, 'fingerprint'=>$fingerprint, 'tasks'=>$tasks];
+        $this->state['plans'][$taskId] = $header;
+    }
+
+    private function sealWorkerPlan(string $taskId, array $payload, int $now): void
+    {
+        $header = $this->state['plans'][$taskId] ?? null;
+        if (!$header || ($payload['digest'] ?? null) !== $header['digest'] || ($payload['count'] ?? null) !== $header['count']) {
+            throw new InvalidArgumentException('Plan seal does not match staged membership.');
+        }
+        if ($header['sealed']) { return; }
+        $tasks = [];
+        foreach ($header['chunks'] as $key) {
+            foreach ($this->state['plans'][$key]['tasks'] as $name => $spec) {
+                if (isset($tasks[$name])) { throw new InvalidArgumentException('Duplicate member across plan chunks.'); }
+                $tasks[$name] = $spec;
+            }
+        }
+        $plan = ['tasks'=>$tasks];
+        if (!hash_equals($header['digest'], hash('sha256', json_encode(self::canonical($plan), JSON_THROW_ON_ERROR)))) {
+            throw new InvalidArgumentException('Staged plan digest does not match its contents.');
+        }
+        $this->publishWorkerPlan($taskId, $plan, $now, true);
+        foreach ($header['chunks'] as $key) { unset($this->state['plans'][$key]); }
+        $header['sealed'] = true; $header['chunks'] = [];
+        $this->state['plans'][$taskId] = $header;
+    }
+
+    private function publishWorkerPlan(string $taskId, array $plan, int $now, bool $staged = false): void
     {
         $parent = $this->state['tasks'][$taskId];
         if ($parent['kind'] !== 'prepare' || empty($parent['parameters']['allowDynamicPlan'])) {
             throw new InvalidArgumentException('This attempt cannot publish child tasks.');
         }
         $tasks = $plan['tasks'] ?? null;
-        if (!is_array($tasks) || !$tasks || count($tasks) > 1000 || array_is_list($tasks)
-            || strlen(json_encode($plan, JSON_THROW_ON_ERROR)) > 786432) {
+        if (!is_array($tasks) || !$tasks || count($tasks) > ($staged ? 50001 : 1000) || array_is_list($tasks)
+            || strlen(json_encode($plan, JSON_THROW_ON_ERROR)) > ($staged ? 128 * 1048576 : 786432)) {
             throw new InvalidArgumentException('Invalid or oversized preparation plan.');
         }
         $fingerprint = hash('sha256', json_encode(self::canonical($plan), JSON_THROW_ON_ERROR));

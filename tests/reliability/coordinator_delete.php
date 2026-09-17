@@ -48,8 +48,7 @@ try {
         }
         return false;
     });
-    $envelope = json_decode(file_get_contents('/tmp/zfs-autosnapshot-coordinator/checkpoint.json'), true);
-    $state = json_decode($envelope['payload'], true);
+    $state = ZfsasCoordinatorState::readCommitted('/tmp/zfs-autosnapshot-coordinator');
     check(count($state['runs']) === 1 && count($state['attempts']) === 2, 'Late publication lost same-run ownership');
     foreach ($state['attempts'] as $attempt) { check($attempt['state'] === 'stopped', 'Deletion run completed before verified shutdown'); }
     // Interrupted inbox draining and queued state also require another attempt.

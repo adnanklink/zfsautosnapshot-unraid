@@ -1,9 +1,11 @@
 <?php
 require_once __DIR__ . "/coordinator-worker-state.php";
+require_once __DIR__ . "/coordinator-journal.php";
+require_once __DIR__ . "/coordinator-indexes.php";
 /** Single-writer, boot-local coordinator state. Never place this under /boot. */
 final class ZfsasCoordinatorState
 {
-    use ZfsasCoordinatorWorkerState;
+    use ZfsasCoordinatorWorkerState, ZfsasCoordinatorJournal, ZfsasCoordinatorIndexes;
     private string $root;
     private $lock;
     public array $state;
@@ -17,41 +19,8 @@ final class ZfsasCoordinatorState
         $this->root = $root;
         $this->lock = fopen($root . '/owner.lock', 'c');
         if (!$this->lock || !flock($this->lock, LOCK_EX | LOCK_NB)) { throw new RuntimeException('Coordinator already owns this journal.'); }
-        $this->state = ['version' => 2, 'sequence' => 0, 'commands' => [], 'schedules' => [], 'runs' => [], 'tasks' => [], 'attempts' => []];
-        $path = $root . '/checkpoint.json';
-        if (is_file($path)) {
-            $record = json_decode((string) file_get_contents($path), true, 512, JSON_THROW_ON_ERROR);
-            if (!is_string($record['payload'] ?? null) || !hash_equals(hash('sha256', $record['payload']), $record['sha256'] ?? '')) {
-                throw new RuntimeException('Coordinator checkpoint is incomplete or corrupt; refusing recovery.');
-            }
-            $loaded = json_decode($record['payload'], true, 512, JSON_THROW_ON_ERROR);
-            if (!in_array($loaded['version'] ?? null, [1, 2], true)) { throw new RuntimeException('Unsupported coordinator journal version.'); }
-            $this->state = $loaded;
-            // Existing grants are revoked by the executor before any recovery.
-            $this->state['version'] = 2;
-        }
-        // A .pending file is never an accepted command. Atomic rename is the
-        // publication point; callers are acknowledged only after publication.
-    }
-
-    public function commit(): void
-    {
-        $this->state['sequence']++;
-        $payload = json_encode($this->state, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
-        $envelope = json_encode(['sha256' => hash('sha256', $payload), 'payload' => $payload], JSON_THROW_ON_ERROR);
-        $path = $this->root . '/checkpoint.pending';
-        $stream = fopen($path, 'wb');
-        if (!$stream) { throw new RuntimeException('Cannot publish coordinator checkpoint.'); }
-        try {
-            $offset = 0;
-            while ($offset < strlen($envelope)) {
-                $written = fwrite($stream, substr($envelope, $offset));
-                if ($written === false || $written === 0) { throw new RuntimeException('Short coordinator checkpoint write.'); }
-                $offset += $written;
-            }
-            if (!fflush($stream) || !fsync($stream)) { throw new RuntimeException('Cannot synchronize RAM checkpoint.'); }
-        } finally { fclose($stream); }
-        if (!rename($path, $this->root . '/checkpoint.json')) { throw new RuntimeException('Cannot publish RAM checkpoint.'); }
+        $this->loadJournal();
+        $this->rebuildIndexes();
     }
 
     private static function identifier(string $id): void
@@ -132,20 +101,21 @@ final class ZfsasCoordinatorState
 
     public static function terminal(string $state): bool { return in_array($state, ['complete', 'failed', 'canceled'], true); }
 
-    public function runnable(float $monotonic): array
+    /** Upgrade invalidates manual authority, but active ownership survives until stopped. */
+    public function requireUpgradeReview(int $now): void
     {
-        $ready = [];
-        foreach ($this->state['tasks'] as $id => $task) {
-            if (!in_array($task['state'], ['queued', 'waiting', 'retry_wait'], true)) { continue; }
-            if (($task['retryMonotonic'] ?? 0) > $monotonic) { continue; }
-            $run = $this->state['runs'][$task['runId']];
-            if (self::terminal($run['state']) || $run['state'] === 'canceling') { continue; }
-            foreach ($task['dependencies'] as $dependency) {
-                if (($this->state['tasks'][$dependency]['state'] ?? '') !== 'complete') { continue 2; }
+        foreach ($this->state['runs'] as $run) {
+            if (empty($run['upgradeReviewRequired']) || self::terminal($run['state'])) { continue; }
+            foreach ($run['tasks'] as $id) {
+                $task =& $this->state['tasks'][$id];
+                if (self::terminal($task['state']) || in_array($task['state'], ['launching', 'running', 'stopping'], true)) { continue; }
+                $task['state'] = 'failed'; $task['blocked'] = 'recovery_required';
+                $task['result'] = ['outcome' => 'validation_failure', 'recoveryRequired' => true,
+                    'message' => 'Coordinator ownership upgraded. Review and approve the remaining manual work again.'];
             }
-            $ready[] = $id;
+            unset($task);
+            $this->settle($run['id'], $now);
         }
-        return $ready;
     }
 
     /** Only untouched automatic work may adopt new settings without approval. */
@@ -297,6 +267,11 @@ final class ZfsasCoordinatorState
             $task['state'] = 'canceled';
             $active = array_filter($run['tasks'], fn($id) => $this->state['tasks'][$id]['state'] === 'stopping');
             if (!$active) { $run['state'] = 'canceled'; $run['finishedAt'] = $now; }
+        } elseif (!empty($run['upgradeReviewRequired'])) {
+            $task['state'] = 'failed'; $task['blocked'] = 'recovery_required';
+            $task['result'] = ['outcome' => 'validation_failure', 'recoveryRequired' => true,
+                'message' => 'Coordinator ownership upgraded. Worker shutdown verified; fresh approval is required.'];
+            $this->settle($run['id'], $now);
         } else {
             $task['state'] = 'queued'; $task['retryAt'] = $now; $task['retryMonotonic'] = $monotonic;
         }
@@ -313,6 +288,9 @@ final class ZfsasCoordinatorState
             foreach ($run['tasks'] as $task) {
                 foreach ($this->state['attempts'] as $token => $attempt) {
                     if ($attempt['taskId'] === $task) { unset($this->state['attempts'][$token]); }
+                }
+                foreach ($this->state['plans'] as $key => $plan) {
+                    if (($plan['taskId'] ?? '') === $task) { unset($this->state['plans'][$key]); }
                 }
                 unset($this->state['tasks'][$task]);
             }

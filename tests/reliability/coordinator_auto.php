@@ -7,7 +7,7 @@ $dir = '/boot/config/plugins/zfs.autosnapshot'; @mkdir($dir, 0775, true);
 file_put_contents($dir . '/zfs_autosnapshot.conf', "DATASETS=\"tank/data:1G\"\nPREFIX=\"auto-\"\nSCHEDULE_MODE=\"disabled\"\n");
 file_put_contents($dir . '/zfs_send.conf', "SEND_SNAPSHOT_PREFIX=\"send-\"\n");
 @mkdir('/usr/local/sbin', 0755, true);
-file_put_contents('/usr/local/sbin/zfs_autosnapshot', '#!/bin/bash' . "\n" . 'printf "%s\n" "$CONFIG_FILE" > /tmp/auto-captured-path; cat "$CONFIG_FILE" > /tmp/auto-captured-content; sleep 60 & wait' . "\n");
+file_put_contents('/usr/local/sbin/zfs_autosnapshot', '#!/bin/bash' . "\n" . 'printf "%s\n" "$CONFIG_FILE" > /tmp/auto-captured-path; cat "$CONFIG_FILE" > /tmp/auto-captured-content; touch /tmp/auto-captured-ready; sleep 60 & wait' . "\n");
 chmod('/usr/local/sbin/zfs_autosnapshot', 0755);
 $process = null;
 function request($action, $extra = []) { $response = zfsas_coordinator_request(['action' => $action] + $extra); if (!$response['ok']) { throw new RuntimeException($response['error']); } return $response['result']; }
@@ -21,7 +21,7 @@ try {
     $process = launch($plugin);
     $receipt = request('auto', ['commandId' => 'manual-auto-fixture']);
     if ($receipt !== request('auto', ['commandId' => 'manual-auto-fixture'])) { throw new RuntimeException('Manual duplicate lost identity'); }
-    until(fn() => is_file('/tmp/auto-captured-content'));
+    until(fn() => is_file('/tmp/auto-captured-ready'));
     $visible = request('status')['runs'][0];
     if (!isset($visible['taskStatus'][0]['dependencies']) || !array_key_exists('nextRetry', $visible) || !array_key_exists('recoveryRequired', $visible)) { throw new RuntimeException('Status omitted coordination details'); }
     if (!str_starts_with(file_get_contents('/tmp/auto-captured-path'), '/tmp/zfs-autosnapshot-coordinator/config/')) { throw new RuntimeException('Worker did not receive captured RAM config'); }

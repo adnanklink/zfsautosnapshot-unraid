@@ -3,6 +3,7 @@
 if (!file_exists('/.dockerenv')) { throw new RuntimeException('Use the disposable test container.'); }
 $base = realpath(__DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.autosnapshot/php');
 require $base . '/snapshot-manager-helpers.php';
+require_once $base . '/coordinator-state.php';
 function check($ok, $message) { if (!$ok) { throw new RuntimeException($message); } }
 $dir = '/boot/config/plugins/zfs.autosnapshot'; @mkdir($dir, 0775, true);
 file_put_contents($dir . '/zfs_autosnapshot.conf', "PREFIX=\"auto-\"\nDATASETS=\"tank/data:10G\"\n");
@@ -75,8 +76,7 @@ check(count(file('/tmp/batch-fixture/actions'))===600,'Duplicate actions repeate
 $path=zfsas_sm_batch_path($token); $before=file_get_contents($path); $stat=stat($path);
 for($poll=0;$poll<3;$poll++) { check(endpoint(['action'=>'status','token'=>$token])['ok'],'Read-only poll failed'); }
 clearstatcache(true,$path); check(file_get_contents($path)===$before && stat($path)['ino']===$stat['ino'],'Polling republished runtime state');
-$envelope=json_decode(file_get_contents('/tmp/zfs-autosnapshot-coordinator/checkpoint.json'),true);
-$journal=json_decode($envelope['payload'],true); $taskId=$journal['runs'][$submitted['runId']]['tasks'][0];
+$journal=ZfsasCoordinatorState::readCommitted('/tmp/zfs-autosnapshot-coordinator'); $taskId=$journal['runs'][$submitted['runId']]['tasks'][0];
 $attempts=array_filter($journal['attempts'],fn($attempt)=>$attempt['taskId']===$taskId);
 check(count($attempts)>=13,'Coordinator did not bound 601-item work into chunks of 50');
 unlink('/tmp/batch-fixture/fail');
