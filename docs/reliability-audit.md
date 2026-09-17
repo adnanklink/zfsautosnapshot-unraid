@@ -215,3 +215,13 @@ ZFS fixtures verify the completed-target decision and reject a new transfer past
 an unrelated receiver snapshot while preserving that snapshot. Inspection output
 is not execution authority or proof of available space; native downstream phase
 integration remains open.
+
+### Recursive native scheduled execution
+
+The actual coordinator completed a three-level local recursive graph on disposable
+ZFS pools, including exact member GUID checks and metadata-proven snapshot reuse.
+Unit fixtures cover 10,000 captured members, missing/changed membership, atomic
+snapshot intent, bounded plan sealing, nested completion dependencies across restart,
+and source-reference publication before acknowledgment. Browser, PHP, ShellCheck
+and temporary package checks pass. This does not certify replacement of automatic
+Send scheduling: native retention/space cleanup and timer admission remain open.

@@ -31,11 +31,16 @@ The implementation order is:
 5. Finish all-path flash-write tracing, scale/idle behavior, failure/reboot tests,
    browser regressions and real-ZFS pipeline acceptance before publishing a release.
 
-Implemented preparation currently supports a local, existing receiver and one
-explicit source snapshot. Inspection compares GUIDs, bounds commands and output,
-rechecks identities, and flags receive-token recovery without exposing the token.
-It is a read-only phase, not a transfer approval. SSH, absent receivers, recursive
-member planning, transfer admission and end-to-end replication remain unfinished.
+Native manual local replication now supports new receivers, GUID-validated
+incremental transfer, explicit Retry of interrupted receives and verification of
+all expected children. Snapshot Manager Send uses this coordinator path.
+
+The native scheduled-run graph also captures recursive membership, creates
+snapshots with intent metadata and verifies every member. It is exercised through
+the coordinator RPC, but automatic timer admission remains on the previous path
+until native cleanup/retention policy is integrated. SSH, shared cleanup ownership,
+remaining automatic snapshot mutation ownership and full release acceptance are
+still unfinished.
 
 See [the implementation record](job-coordination-progress.md) and
 [verification audit](reliability-audit.md) for evidence and limitations.

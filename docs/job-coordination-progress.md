@@ -762,3 +762,35 @@ interrupted receive was resumed through the actual coordinator, finalized with G
 checks and compared byte-for-byte to the source. Scheduled/recursive/SSH native
 replication, prerequisite cleanup integration and the remaining release gates are
 still outstanding.
+
+## Native recursive scheduled-run graph
+
+Added a native local scheduled-run RPC and bounded membership capture (up to 10,000
+datasets). Membership is checked twice, freezes source dataset GUIDs and maps exact
+destination paths. Snapshot tasks create one explicit snapshot each with atomic
+schedule, occurrence and source-identity properties. Repeated execution adopts only
+matching intent metadata; foreign same-name snapshots and replaced datasets fail.
+Successful creation reports atomically register exact source references before
+acknowledgment. Member plans wait for their source snapshot and parent receiver's
+completed transfer. Dynamic preparation consumers now inherit the published
+finalizer dependency, closing the planner-exit versus child-completion gap.
+
+Plans publish in chunks of at most 50 tasks and become runnable only after sealing.
+Each member uses the existing native space/transfer/verification graph; the run
+finalizer requires explicit success from all captured members. Native scheduled
+snapshot tasks cannot succeed from exit status alone. Cancellation persists the
+schedule pause separately from Auto Snapshot. RAM captures are retained with their
+tasks and pruned after evidence expires. Activity identifies these as replication.
+
+Verification: reliability suite, nested graph restart/idempotency tests, 10,000
+member planning, interrupted snapshot creation and foreign-intent fixtures, staged
+plan and exact reference publication tests, browser checks, PHP lint, adapter
+ShellCheck, and temporary package verification. Actual daemon/disposable-pool tests
+completed a three-level recursive full send and a metadata-proven repeated run;
+existing full/incremental, explicit resume and low-space cleanup tests also passed.
+
+Automatic cron/timer admission and the existing Run Now UI have NOT been switched
+to this graph yet. Native cleanup/retention and threshold policy must be integrated
+before replacing the old scheduled path. Native SSH, shared cleanup authorization,
+automatic replanning after mutations, full Auto Snapshot task ownership and remaining
+flash/reboot/scale acceptance gates are still unfinished. No artifacts published.
