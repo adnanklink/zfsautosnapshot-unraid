@@ -18,7 +18,7 @@ while ($more && !is_file(zfsas_sm_plugin_config_dir() . '/maintenance')) {
     foreach ([zfsas_sm_batch_path($token)] as $path) {
         $batch = zfsas_sm_read_json_file($path);
         if (!$batch || $batch['dataset'] !== $dataset || !in_array($batch['state'], ['queued', 'running'], true)) { continue; }
-        if (empty($batch['approvedAt'])) { exit(1); }
+        if (empty($batch['approvedAt']) || $batch['action'] !== 'delete') { exit(1); }
         zfsas_sm_batch_reconcile($batch);
         if (!array_filter($batch['items'], static fn($item) => in_array($item['state'], ['queued', 'running'], true))) {
             if ($batch['action'] === 'delete' && $batch['state'] !== 'complete') { zfsas_ops_start_delete_queue_daemon($daemonError); }

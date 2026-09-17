@@ -16,6 +16,7 @@ php tests/reliability/batch_item_recovery.php
 php tests/reliability/coordinator_state.php
 php tests/reliability/coordinator_journal.php
 php tests/reliability/coordinator_indexes.php
+php tests/reliability/coordinator_items.php
 php tests/reliability/coordinator_worker_protocol.php
 php tests/reliability/coordinator_staged_plan.php
 php tests/reliability/coordinator_replan.php

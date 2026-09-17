@@ -37,19 +37,22 @@ trait ZfsasCoordinatorWorkerState
         $type = $request['type'] ?? '';
         $payload = $request['payload'] ?? null;
         if (!is_int($sequence) || $sequence < 1 || !is_array($payload)
-            || !in_array($type, ['progress', 'result', 'plan', 'plan_chunk', 'plan_seal'], true)) {
+            || !in_array($type, ['progress', 'result', 'plan', 'plan_chunk', 'plan_seal', 'item_chunk', 'item_start', 'item_result'], true)) {
             throw new InvalidArgumentException('Invalid worker publication.');
         }
         $fingerprint = hash('sha256', json_encode(self::canonical(['type' => $type, 'payload' => $payload]), JSON_THROW_ON_ERROR));
         $attempt =& $this->state['attempts'][$token];
         $last = $attempt['publication'] ?? ['sequence' => 0];
         if ($sequence === $last['sequence'] && ($last['fingerprint'] ?? '') === $fingerprint) {
-            return ['accepted' => true, 'sequence' => $sequence];
+            return $last['response'] ?? ['accepted' => true, 'sequence' => $sequence];
         }
         if ($sequence !== $last['sequence'] + 1 || isset($attempt['reportedResult'])) {
             throw new InvalidArgumentException('Out-of-order or conflicting worker publication.');
         }
-        if ($type === 'progress') {
+        $response = ['accepted'=>true, 'sequence'=>$sequence];
+        if (str_starts_with($type, 'item_')) {
+            $response += $this->reportItem($taskId, $token, $type, $payload, $now);
+        } elseif ($type === 'progress') {
             if (array_diff(array_keys($payload), ['phase', 'message', 'percent'])
                 || !is_string($payload['phase'] ?? '') || strlen($payload['phase'] ?? '') > 80
                 || !is_string($payload['message'] ?? '') || strlen($payload['message'] ?? '') > 4096
@@ -59,6 +62,7 @@ trait ZfsasCoordinatorWorkerState
             $this->state['tasks'][$taskId]['progress'] = $payload;
         } elseif ($type === 'result') {
             self::checkedWorkerOutcome($payload);
+            if (!empty($attempt['activeItem'])) { throw new InvalidArgumentException('Commit the active item outcome before finishing the attempt.'); }
             if (($payload['outcome'] ?? '') === 'success' && isset($this->state['plans'][$taskId])
                 && empty($this->state['plans'][$taskId]['sealed'])) {
                 throw new InvalidArgumentException('Preparation cannot succeed before its plan is sealed.');
@@ -74,9 +78,9 @@ trait ZfsasCoordinatorWorkerState
             if (isset($this->state['plans'][$taskId])) { throw new InvalidArgumentException('A staged plan requires explicit sealing.'); }
             $this->publishWorkerPlan($taskId, $payload, $now);
         }
-        $attempt['publication'] = ['sequence' => $sequence, 'fingerprint' => $fingerprint];
+        $attempt['publication'] = ['sequence' => $sequence, 'fingerprint' => $fingerprint, 'response'=>$response];
         $this->commit();
-        return ['accepted' => true, 'sequence' => $sequence];
+        return $response;
     }
 
     private function stageWorkerPlan(string $taskId, array $payload): void

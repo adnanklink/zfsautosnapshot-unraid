@@ -2,10 +2,11 @@
 require_once __DIR__ . "/coordinator-worker-state.php";
 require_once __DIR__ . "/coordinator-journal.php";
 require_once __DIR__ . "/coordinator-indexes.php";
+require_once __DIR__ . "/coordinator-items.php";
 /** Single-writer, boot-local coordinator state. Never place this under /boot. */
 final class ZfsasCoordinatorState
 {
-    use ZfsasCoordinatorWorkerState, ZfsasCoordinatorJournal, ZfsasCoordinatorIndexes;
+    use ZfsasCoordinatorWorkerState, ZfsasCoordinatorJournal, ZfsasCoordinatorIndexes, ZfsasCoordinatorItems;
     private string $root;
     private $lock;
     public array $state;
@@ -67,6 +68,7 @@ final class ZfsasCoordinatorState
             if (!is_array($task) || !in_array($task['kind'] ?? '', ['auto', 'send', 'prepare', 'delete', 'batch', 'finalize'], true)) {
                 throw new InvalidArgumentException('Unsupported task kind.');
             }
+            self::checkedItems($task);
             $tasks[$name] = $task;
         }
         // Reject missing edges and cycles before accepting any execution authority.
@@ -87,6 +89,7 @@ final class ZfsasCoordinatorState
                 'dependencies' => array_map(fn($dep) => $runId . ':' . $dep, $task['dependencies'] ?? []),
                 'references' => $task['references'] ?? [], 'state' => 'queued', 'attemptCount' => 0,
                 'attempt' => null, 'retryAt' => null, 'retryMonotonic' => null, 'blocked' => '', 'result' => null];
+            if (isset($task['items'])) { $this->registerItems($id, $task['items']); }
         }
         $this->state['runs'][$runId] = ['id' => $runId, 'commandId' => $command, 'schedule' => $schedule,
             'occurrence' => $spec['occurrence'] ?? null, 'revision' => $spec['revision'] ?? '',
@@ -195,6 +198,8 @@ final class ZfsasCoordinatorState
         if ($outcome === 'wait' && !in_array($result['reason'] ?? '', ['dependency', 'resource', 'array', 'configuration', 'space'], true)) {
             throw new InvalidArgumentException('Explicit wait reason required.');
         }
+        $this->recoverItems($taskId, $token, $now);
+        if (isset($this->state['tasks'][$taskId]['items']) && $outcome !== 'transient_failure') { $result = $this->itemTaskOutcome($taskId); $outcome = $result['outcome']; }
         $task =& $this->state['tasks'][$taskId];
         $task['result'] = $result; $task['attempt'] = null;
         $this->state['attempts'][$token]['state'] = 'stopped';
@@ -261,6 +266,7 @@ final class ZfsasCoordinatorState
         $attempt =& $this->state['attempts'][$token];
         $task =& $this->state['tasks'][$attempt['taskId']];
         if ($task['attempt'] !== $token) { return; }
+        $this->recoverItems($task['id'], $token, $now);
         $attempt['state'] = 'stopped'; $task['attempt'] = null;
         $run =& $this->state['runs'][$task['runId']];
         if ($run['state'] === 'canceling') {
@@ -278,12 +284,25 @@ final class ZfsasCoordinatorState
         $this->commit();
     }
 
+    public function runRequiresReview(string $runId): bool
+    {
+        foreach ($this->state['runs'][$runId]['tasks'] as $id) {
+            $task = $this->state['tasks'][$id];
+            if (!empty($task['result']['recoveryRequired']) || $task['blocked'] === 'recovery_required') { return true; }
+            foreach ($task['items'] ?? [] as $itemId) {
+                if (!empty($this->state['items'][$itemId]['result']['recoveryRequired'])) { return true; }
+            }
+        }
+        return false;
+    }
+
     public function prune(int $now): void
     {
         $terminal = array_filter($this->state['runs'], fn($run) => self::terminal($run['state']));
         uasort($terminal, fn($a, $b) => $b['finishedAt'] <=> $a['finishedAt']);
         $changed = false; $count = 0;
         foreach ($terminal as $id => $run) {
+            if ($this->runRequiresReview($id)) { continue; }
             if (++$count <= 1000 && $run['finishedAt'] >= $now - 30 * 86400) { continue; }
             foreach ($run['tasks'] as $task) {
                 foreach ($this->state['attempts'] as $token => $attempt) {
@@ -292,6 +311,7 @@ final class ZfsasCoordinatorState
                 foreach ($this->state['plans'] as $key => $plan) {
                     if (($plan['taskId'] ?? '') === $task) { unset($this->state['plans'][$key]); }
                 }
+                foreach ($this->state['tasks'][$task]['items'] ?? [] as $itemId) { unset($this->state['items'][$itemId]); }
                 unset($this->state['tasks'][$task]);
             }
             // Keep compact command receipts for idempotency for this entire boot.

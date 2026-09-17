@@ -10,15 +10,16 @@ final class ZfsasCoordinatorExecutor
     private string $generation;
     private $command;
     private $outcome;
+    private $onTransition;
     private array $processes = [];
     private array $stopping = [];
     private array $exitCodes = [];
     private array $limits;
     private string $lastDataset = '';
 
-    public function __construct(ZfsasCoordinatorState $journal, string $root, string $runtime, callable $command, callable $outcome, array $limits = [])
+    public function __construct(ZfsasCoordinatorState $journal, string $root, string $runtime, callable $command, callable $outcome, array $limits = [], ?callable $onTransition = null)
     {
-        $this->journal = $journal; $this->root = $root; $this->command = $command; $this->outcome = $outcome;
+        $this->journal = $journal; $this->root = $root; $this->command = $command; $this->outcome = $outcome; $this->onTransition = $onTransition;
         $this->limits = $limits + ['auto' => 1, 'send' => 1, 'prepare' => 16, 'delete' => 1, 'batch' => 16, 'finalize' => 16];
         if (!is_dir($runtime) && !mkdir($runtime, 0770, true)) { throw new RuntimeException('Cannot create coordinator ownership directory.'); }
         $this->generation = bin2hex(random_bytes(24)); $this->generationFile = $runtime . '/generation';
@@ -117,7 +118,8 @@ final class ZfsasCoordinatorExecutor
                 // A launch without a grant cannot mutate ZFS. Old-generation
                 // launchers abort before exec, even if they start after recovery.
                 if (isset($this->stopping[$token]) || isset($this->exitCodes[$token])) {
-                    $this->journal->stopped($token, time(), $now); unset($this->stopping[$token], $this->exitCodes[$token]);
+                    $this->journal->stopped($token, time(), $now);
+                    if ($this->onTransition) { ($this->onTransition)($taskId); } unset($this->stopping[$token], $this->exitCodes[$token]);
                 }
                 continue;
             }
@@ -132,7 +134,8 @@ final class ZfsasCoordinatorExecutor
                     $signal = $now - $this->stopping[$token]['since'] >= 2 ? 9 : 15;
                     foreach ($members as $member) { self::signal($member, $signal); }
                 } else {
-                    $this->journal->stopped($token, time(), $now); unset($this->stopping[$token], $this->exitCodes[$token]);
+                    $this->journal->stopped($token, time(), $now);
+                    if ($this->onTransition) { ($this->onTransition)($taskId); } unset($this->stopping[$token], $this->exitCodes[$token]);
                 }
             } elseif (isset($this->exitCodes[$token])) {
                 if ($members) {
@@ -146,6 +149,7 @@ final class ZfsasCoordinatorExecutor
                         $result = ['outcome' => 'transient_failure', 'message' => 'Worker reported success but exited unsuccessfully.', 'exitCode' => $this->exitCodes[$token]];
                     }
                     $this->journal->result($taskId, $token, $result, $now, time(), true);
+                    if ($this->onTransition) { ($this->onTransition)($taskId); }
                     unset($this->exitCodes[$token]);
                 }
             }
@@ -166,6 +170,7 @@ final class ZfsasCoordinatorExecutor
             if ($command === null) { continue; } // Resource/array/configuration admission gate.
             if (isset($command['outcome'])) {
                 $this->journal->rejectAdmission($taskId, $command, $now, time());
+                if ($this->onTransition) { ($this->onTransition)($taskId); }
                 continue;
             }
             $token = $this->journal->claim($taskId, $now, time(), $this->generation);
@@ -177,7 +182,8 @@ final class ZfsasCoordinatorExecutor
             $detach = __DIR__ . '/../scripts/detach-worker.sh';
             $process = proc_open(['/bin/bash', $detach, 'setsid', '/bin/bash', $wrapper, $dir, $this->generationFile, $this->generation, $token],
                 [0 => ['file', '/dev/null', 'r'], 1 => ['file', '/dev/null', 'a'], 2 => ['file', '/dev/null', 'a']], $pipes);
-            if (!$process) { $this->journal->stopped($token, time(), $now); continue; }
+            if (!$process) { $this->journal->stopped($token, time(), $now);
+                    if ($this->onTransition) { ($this->onTransition)($taskId); } continue; }
             $this->processes[$token] = $process; $active[$kind] = ($active[$kind] ?? 0) + 1;
             $this->lastDataset = $task['dataset'];
         }

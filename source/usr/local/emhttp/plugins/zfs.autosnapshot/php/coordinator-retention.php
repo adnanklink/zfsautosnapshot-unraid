@@ -16,7 +16,7 @@ function zfsas_coordinator_prune_artifacts(ZfsasCoordinatorState $journal, strin
     $revisions = []; $activeBatches = [];
     foreach ($journal->state['tasks'] as $task) {
         if (!empty($task['parameters']['revision'])) { $revisions[$task['parameters']['revision']] = true; }
-        if ($task['kind'] === 'batch' && !ZfsasCoordinatorState::terminal($journal->state['runs'][$task['runId']]['state'])) {
+        if ($task['kind'] === 'batch' && (!ZfsasCoordinatorState::terminal($journal->state['runs'][$task['runId']]['state']) || $journal->runRequiresReview($task['runId']))) {
             $activeBatches[$task['parameters']['token']] = true;
         }
     }
