@@ -43,6 +43,7 @@ zfsas_sm_execute_item($batch, $batch['items'][0], []);
 $batch = zfsas_sm_read_json_file($path);
 check($batch['items'][0]['state'] === 'failed' && $batch['items'][0]['recoveryRequired'], 'Ambiguous outcome must require review');
 check(count(file($fixture . '/actions')) === 1, 'Interrupted mutation repeated');
+check(zfsas_sm_batch_payload($batch)['recoveryRequired'], 'Status omitted recovery review');
 // A completed item is committed immediately and cannot be executed twice.
 $batch['items'][0] = ['snapshot'=>'tank/data@next', 'guid'=>'', 'identity'=>'tank/data@next#', 'state'=>'queued'];
 zfsas_sm_execute_item($batch, $batch['items'][0], []);

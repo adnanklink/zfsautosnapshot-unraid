@@ -76,6 +76,7 @@ $outcome = static function ($task, $code) use ($configDir): array {
             if ($batch['state'] === 'complete') {
                 $failed = array_filter($batch['items'], static fn($item) => $item['state'] === 'failed');
                 return ['outcome' => $failed ? 'validation_failure' : 'success',
+                    'recoveryRequired' => (bool) array_filter($batch['items'], static fn($item) => !empty($item['recoveryRequired'])),
                     'message' => $failed ? 'Some items failed. Review a failed-only retry.' : 'All expected items reached a terminal result.'];
             }
             if ($code === 0 || $code === 75) {
@@ -105,10 +106,10 @@ $handler = static function (array $request) use ($journal, $executor, $submitAut
             foreach ($run['tasks'] as $id) {
                 $task = $journal->state['tasks'][$id];
                 $run['kinds'][] = $task['kind'];
-                $run['taskStatus'][] = array_intersect_key($task, array_flip(['id','kind','dataset','state','attemptCount','retryAt','blocked','dependencies','references','result']));
+                $run['taskStatus'][] = array_intersect_key($task, array_flip(['id','kind','dataset','state','attemptCount','retryAt','blocked','dependencies','references','progress','result']));
                 if ($task['blocked'] !== '') { $run['blockedReasons'][] = $task['blocked']; }
                 if ($task['retryAt'] !== null) { $run['nextRetry'] = min($run['nextRetry'] ?? PHP_INT_MAX, $task['retryAt']); }
-                $run['recoveryRequired'] = $run['recoveryRequired'] || $task['blocked'] === 'recovery_required';
+                $run['recoveryRequired'] = $run['recoveryRequired'] || $task['blocked'] === 'recovery_required' || !empty($task['result']['recoveryRequired']);
             }
             $run['kinds'] = array_values(array_unique($run['kinds']));
             $run['blockedReasons'] = array_values(array_unique($run['blockedReasons']));

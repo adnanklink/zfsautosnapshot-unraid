@@ -74,9 +74,10 @@ function zfsas_sm_batch_reconcile(array &$batch)
 function zfsas_sm_batch_payload(array $batch, $page = 1)
 {
     $counts = ['queued' => 0, 'completed' => 0, 'skipped' => 0, 'failed' => 0];
-    $eligible = 0;
+    $eligible = 0; $recoveryRequired = false;
     foreach ($batch['items'] as $item) {
         if (!empty($item['candidate'])) { $eligible++; }
+        $recoveryRequired = $recoveryRequired || !empty($item['recoveryRequired']);
         $key = in_array($item['state'], ['running', 'deleting'], true) ? 'queued' : $item['state'];
         if (isset($counts[$key])) { $counts[$key]++; }
     }
@@ -85,7 +86,7 @@ function zfsas_sm_batch_payload(array $batch, $page = 1)
     return ['ok' => true, 'token' => $batch['token'], 'dataset' => $batch['dataset'], 'action' => $batch['action'],
         'runId' => $batch['runId'] ?? null, 'commandId' => 'batch-' . $batch['token'],
         'state' => $batch['state'], 'selected' => count($batch['items']), 'eligible' => $eligible,
-        'counts' => $counts, 'expires' => $batch['expires'], 'page' => $page, 'pages' => $pages,
+        'counts' => $counts, 'recoveryRequired' => $recoveryRequired, 'expires' => $batch['expires'], 'page' => $page, 'pages' => $pages,
         'items' => array_slice(array_values($batch['items']), ($page - 1) * 100, 100)];
 }
 function zfsas_sm_start_batch_worker($dataset, $token)
