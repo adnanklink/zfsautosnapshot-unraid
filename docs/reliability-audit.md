@@ -205,3 +205,13 @@ checks the standalone update identity. No new release was published; existing
 tracked manifests remain historical original-identity artifacts. These checks do
 not certify concurrent old/new schedulers on the same datasets or completion of
 the native replication pipeline.
+
+### Native receiver preparation boundary
+
+Preparation now rejects divergent receiver histories and recognizes completed
+snapshots only from matching GUID evidence rechecked after inventory. The full
+reliability suite and granted worker timeout/cancellation tests pass. Disposable
+ZFS fixtures verify the completed-target decision and reject a new transfer past
+an unrelated receiver snapshot while preserving that snapshot. Inspection output
+is not execution authority or proof of available space; native downstream phase
+integration remains open.

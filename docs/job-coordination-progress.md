@@ -696,3 +696,22 @@ yet published. Independent paths and default prefixes do not make simultaneous
 operations on the same datasets safe across two independent plugins. Native
 replication planning/transfer/finalization, shared cleanup ownership, remaining
 mutation authority and full release acceptance remain open.
+
+## Native receiver lineage and completion boundary
+
+Read-only replication preparation now reports an incremental candidate,
+GUID-proven `already_received`, or `full_requires_receiver_approval`. It rejects
+same-name/different-GUID targets, nonempty snapshot histories without a common
+base, and receiver snapshots at or after the proposed incremental checkpoint.
+Receiver ordering uses receiver TXGs only, including unsigned 64-bit values.
+An empty snapshot inventory is explicitly not permission to overwrite an existing
+filesystem. Already-received evidence includes the exact destination checkpoint
+reference; its GUID and the receiver inventory are rechecked before returning.
+
+Verification: full reliability suite, real granted inspection worker cancellation
+and timeout retries, PHP lint, and disposable ZFS integration. New pool assertions
+prove completion even with a later unrelated receiver snapshot, reject a subsequent
+transfer requiring rollback, and verify that the unrelated snapshot survives.
+Fixtures also cover completion identity races and inventory changes during
+inspection. This phase is still read-only: native reference publication, cleanup,
+space approval, transfer admission and finalization remain to be connected.
