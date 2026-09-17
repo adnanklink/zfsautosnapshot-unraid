@@ -794,3 +794,28 @@ to this graph yet. Native cleanup/retention and threshold policy must be integra
 before replacing the old scheduled path. Native SSH, shared cleanup authorization,
 automatic replanning after mutations, full Auto Snapshot task ownership and remaining
 flash/reboot/scale acceptance gates are still unfinished. No artifacts published.
+
+## Native prerequisite retention and measured space
+
+Scheduled member preparation now captures the schedule's retention policy and
+publishes eligible receiver checkpoint deletions ahead of space approval. The
+atomic plan registers exact replication references before any deletion can run.
+Cleanup is limited to that schedule's prefix, retains newest/daily/weekly anchors,
+and excludes holds, clones, incomplete metadata and protected names/GUIDs. Existing
+delete-worker configuration and latest-common-checkpoint checks remain in force;
+receiver dataset GUID is now also checked under the dataset gate. Waiting transfer
+tasks hold no process, dataset lock or transfer slot during prerequisite deletion.
+
+Space approval measures availability after cleanup and includes the captured
+free-space target plus transfer allowance. A shortage waits without consuming a
+retry only while ZFS reports freeing work; otherwise it fails with measured bytes
+and a review/free-space action. Estimates never authorize transfer by themselves.
+
+Verification: reliability and stage-one suites, PHP lint, ShellCheck, bounded worker
+cancellation/timeout tests, retention and space policy fixtures. Actual coordinator
+recursive execution on disposable pools began with a quota shortage, deleted the
+eligible old checkpoint, preserved its incremental base, measured sufficient space
+and completed every child. The same native scheduled path passed with the flash
+fixture mounted read-only. This is a read-only-mount check, not a complete syscall
+trace of every runtime path. Shared cleanup authorization, proactive low-space
+policy beyond retention, native timer admission and SSH remain unfinished.

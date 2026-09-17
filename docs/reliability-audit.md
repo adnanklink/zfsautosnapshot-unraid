@@ -225,3 +225,14 @@ snapshot intent, bounded plan sealing, nested completion dependencies across res
 and source-reference publication before acknowledgment. Browser, PHP, ShellCheck
 and temporary package checks pass. This does not certify replacement of automatic
 Send scheduling: native retention/space cleanup and timer admission remain open.
+
+### Native cleanup before space admission
+
+Disposable-pool native recursive replication now covers a measured quota shortage
+resolved by coordinator-owned retention deletion before space approval, with the
+incremental base preserved. All required children complete explicit verification.
+The same scheduled execution passes with `/boot` mounted read-only in the isolated
+container. Retention fixtures cover exact prefix scope, newest/base/shared-GUID
+protection, holds, clones and replacement identities; space fixtures cover configured
+headroom, incomplete metadata, overflow and measured freeing waits. Full-path
+syscall tracing and shared cleanup ownership remain outstanding.
