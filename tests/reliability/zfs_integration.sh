@@ -81,6 +81,25 @@ echo "PASS: native read-only inspection selects GUID-matched base on real ZFS\n"
 ' "$ROOT/source/usr/local/emhttp/plugins/zfs.snapsync/php/replication-inspection.php" "$source_dataset" "$destination" "$(zfs get -H -p -o value guid "$source_dataset@next")"
 run_pipeline_with_status 'Real incremental transfer' "$source_dataset@base" "$source_dataset@next" "$destination"
 snapshots_have_same_guid "$source_dataset@next" "$destination@next" local
+# Native preparation proves completion without replay and rejects receiver divergence.
+zfs snapshot "$destination@receiver-only"
+php -r '
+require $argv[1];
+$result=ZfsasReplicationInspection::inspect(["sourceSnapshot"=>$argv[2]."@next","sourceGuid"=>$argv[4],"destination"=>$argv[3]]);
+if (($result["inspection"]["mode"]??"")!=="already_received") { fwrite(STDERR,json_encode($result)); exit(1); }
+' "$ROOT/source/usr/local/emhttp/plugins/zfs.snapsync/php/replication-inspection.php" "$source_dataset" "$destination" "$(zfs get -H -p -o value guid "$source_dataset@next")"
+zfs snapshot "$source_dataset@after-next"
+php -r '
+require $argv[1];
+try {
+ ZfsasReplicationInspection::inspect(["sourceSnapshot"=>$argv[2]."@after-next","sourceGuid"=>$argv[4],"destination"=>$argv[3]]);
+ fwrite(STDERR,"Divergent receiver unexpectedly accepted\n"); exit(1);
+} catch (InvalidArgumentException $error) {
+ if (!str_contains($error->getMessage(),"review divergence")) { throw $error; }
+}
+echo "PASS: native GUID-proven completion and receiver divergence rejection on real ZFS\n";
+' "$ROOT/source/usr/local/emhttp/plugins/zfs.snapsync/php/replication-inspection.php" "$source_dataset" "$destination" "$(zfs get -H -p -o value guid "$source_dataset@after-next")"
+zfs list -H "$destination@receiver-only" >/dev/null
 # Existing unrelated destination must survive both a full receive and a mismatched base.
 zfs create -o mountpoint="$fixture/unrelated" "$target_pool/unrelated"
 printf 'must survive\n' > "$fixture/unrelated/precious.txt"

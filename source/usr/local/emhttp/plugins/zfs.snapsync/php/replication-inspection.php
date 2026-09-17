@@ -111,6 +111,36 @@ final class ZfsasReplicationInspection
             $references[] = $reference('base',$source,$sourceGuid,$base['snapshot'],$base['guid']);
             $references[] = $reference('checkpoint',$destination,$destinationGuid,$base['destinationSnapshot'],$base['guid']);
         }
+        // Receiver TXGs are comparable only within the receiver pool. Never compare
+        // them with source TXGs or infer that rollback is safe from name ordering.
+        $target = $destination . '@' . substr($selected['snapshot'],strlen($source)+1);
+        $completed = $destinations[$target] ?? null;
+        if ($completed && $completed['guid'] !== $selected['guid']) {
+            throw new InvalidArgumentException('Receiver snapshot name has a different GUID; automatic replacement is forbidden.');
+        }
+        $latest = null;
+        foreach ($destinations as $row) {
+            if ($latest === null || self::compareDecimal($row['txg'],$latest['txg']) > 0) { $latest = $row; }
+        }
+        if ($completed) {
+            $mode = 'already_received';
+            $references[] = $reference('checkpoint',$destination,$destinationGuid,$target,$completed['guid']);
+        } elseif ($base) {
+            $checkpoint = $destinations[$base['destinationSnapshot']];
+            foreach ($destinations as $row) {
+                if ($row['snapshot'] !== $checkpoint['snapshot']
+                    && self::compareDecimal($row['txg'],$checkpoint['txg']) >= 0) {
+                    throw new InvalidArgumentException('Receiver has snapshots at or after the incremental base; review divergence without forced rollback.');
+                }
+            }
+            $mode = 'incremental';
+        } elseif ($destinations) {
+            throw new InvalidArgumentException('Receiver has snapshots but no verified common base; automatic reseeding is forbidden.');
+        } else {
+            // Empty snapshot inventory does not prove an existing filesystem is
+            // empty. Full receive needs a separate, explicit receiver admission.
+            $mode = 'full_requires_receiver_approval';
+        }
         // Identity is checked again after inventory to reject replacement races.
         if (self::guid($read,$source) !== $sourceGuid || self::guid($read,$destination) !== $destinationGuid
             || self::guid($read,$selected['snapshot']) !== $selected['guid']) { throw new InvalidArgumentException('Replication identities changed during inspection.'); }
@@ -118,12 +148,19 @@ final class ZfsasReplicationInspection
             || self::guid($read,$base['destinationSnapshot']) !== $base['guid'])) {
             throw new InvalidArgumentException('Incremental base identities changed during inspection.');
         }
+        if ($completed && self::guid($read,$target) !== $selected['guid']) {
+            throw new InvalidArgumentException('Completed receiver snapshot changed during inspection.');
+        }
+        if (self::inventory($read,$destination) !== $destinations) {
+            throw new InvalidArgumentException('Receiver snapshot inventory changed during inspection; replan before mutation.');
+        }
         if (trim($read(['get','-H','-o','value','receive_resume_token','--',$destination])) !== '-') {
             throw new InvalidArgumentException('Receiver resume state changed during inspection; review the interrupted transfer.');
         }
         return ['outcome'=>'success','message'=>'Read-only replication inspection completed; transfer admission still requires a validated plan.',
             'inspection'=>['sourceDatasetGuid'=>$sourceGuid,'destinationDatasetGuid'=>$destinationGuid,
                 'sourceSnapshot'=>$selected['snapshot'],'sourceGuid'=>$selected['guid'], 'base'=>$base,
+                'mode'=>$mode,'destinationSnapshot'=>$target,'latestDestinationSnapshot'=>$latest,
                 'sourceCount'=>count($sources),'destinationCount'=>count($destinations),
                 'conflictCount'=>count($conflicts),'resumeRequired'=>false,'references'=>$references]];
     }
