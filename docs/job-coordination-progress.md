@@ -369,3 +369,39 @@ unified deletion and Auto Snapshot mutation admission, full replication phases
 and scheduling, Snapshot Manager execution ownership and shared cancellation,
 installation handoff, compatibility/status migration and full acceptance gates.
 No release artifact, update URL or published version changes in this increment.
+
+## Ownership update: approved batch item authority
+
+Non-delete Snapshot Manager execution now uses coordinator-owned item records.
+Submission captures immutable approved item specifications. The worker requests
+at most 50 items from the journal, receives an acknowledged start grant for one
+item at a time, and reports a bounded result before starting the next item. Grant
+membership and fingerprints prevent expanding or changing the reviewed selection.
+Repeated report acknowledgments return the same response without new authority.
+The old batch worker refuses non-delete execution; older batch tasks without item
+authority require a new review rather than falling back to worker-owned state.
+
+The coordinator projects execution results into the existing RAM batch manifest
+for endpoint compatibility. The execution worker does not publish that manifest.
+Projection runs after item reports and verified process transitions. Existing
+selection capture and review remain in the endpoint. Deletion batches still use
+the legacy deletion adapter and are not yet covered by this ownership handoff.
+
+On verified shutdown, an item started without a committed result becomes failed
+and recovery-required. Completed items remain completed and untouched items can
+continue in another grant. An item report does not release process ownership.
+Ambiguous item evidence and its batch projection are exempt from ordinary terminal
+retention while review remains unresolved. No extra flash writes are introduced.
+
+Verification: full reliability suite and the actual 601-item endpoint suite pass.
+New item-state fixtures cover chunk limits, immutable membership, start response
+replay, serial execution, committed results, stale/canceled reports, recovery and
+retention. `coordinator_batch_recovery.php`, run in its own disposable container,
+uses the actual daemon and new worker, kills the coordinator while a simulated
+ZFS mutation is active, verifies surviving-process shutdown, preserves the
+ambiguous item for review, and completes the untouched item exactly once. PHP
+parsing and the item/coordinator runtime fixtures with read-only `/boot` pass.
+
+Still required: unified deletion execution, Auto Snapshot mutation authority,
+full replication phases and scheduling, shared cancellation, complete legacy
+installation handoff, configuration replanning and the remaining release gates.
