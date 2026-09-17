@@ -4,19 +4,30 @@ ZFS Auto Snapshot is an Unraid plugin for managing ZFS snapshots from the WebGUI
 
 The plugin also includes ZFS Send replication, a Dataset Migrator, Snapshot Manager bulk and cleanup tools, and a diagnostics download for support.
 
-## Branch status: `feat/ui-overhaul`
+## Standalone development: `fix/coordinator-completion`
 
-This is the UI preview branch of [adnanklink/zfsautosnapshot-unraid](https://github.com/adnanklink/zfsautosnapshot-unraid/tree/feat/ui-overhaul), based on `fix/job-coordination`. **The UI preview package is `2026.09.17.01`; full replication coordinator integration is still unfinished.**
+This branch is evolving into a separately named, standalone plugin. The new name
+and installation identity are not set yet. Development now prioritizes the native
+coordinator pipeline over compatibility with the original plugin's runtime queues.
+Existing ZFS safety checks remain requirements.
+
+**This is source development, not a new standalone release.** The published UI
+preview remains `2026.09.17.01`; its installation identity and URLs are unchanged.
+Do not install this source branch alongside the original plugin expecting isolation:
+a separate plugin ID, paths, services and update manifest have not yet been created.
+See [implementation progress](docs/job-coordination-progress.md) for completed work
+and outstanding replication, packaging and real-host verification.
 
 The interface now has a shared sidebar and six sections: **Overview, Snapshots, Replication, Activity, Tools, and Help**. It adapts to light/dark Unraid themes and smaller screens. Snapshot browsing is integrated directly, Automation has its own tab, replication jobs use Add/Edit drawers, and Activity brings recent operations and logs together. Dataset Migrator requires a preview and review acknowledgment before Start. Existing configuration and execution safeguards are preserved.
 
 Overview reads current runtime records and saved configuration. Missing sources are shown as unavailable, and recent records are not a complete historical ledger. Editing configuration does not change a running command; Save or Discard before using Run Now.
 
-Implemented on this branch:
+Implemented in the current source:
 
 - Runtime queues, completion cursors, batch manifests, migration progress and coordinator records live in RAM. Flash is reserved for configuration, explicit Cancel/Resume decisions, and essential migration recovery checkpoints.
-- A PHP coordinator with a local Unix socket owns Auto Snapshot runs, bounded Snapshot Manager attempts and shared deletion-worker launches. It records attempt ownership before granting execution and verifies that old process groups have stopped before recovery.
+- A PHP coordinator with a local Unix socket owns Auto Snapshot runs, Snapshot Manager item journals, individual deletion attempts and batch cancellation. It records attempt ownership before granting execution and verifies that old process groups have stopped before recovery.
 - Queued automatic snapshots can adopt updated settings before their first attempt, preserving the run ID and schedule occurrence. Changed manual requests require fresh approval; converted schedules retain their new first-run timing.
+- Native replication preparation now includes bounded, read-only inspection of local existing receivers. Full native replication remains under development; see the [standalone roadmap](docs/standalone-development.md).
 - Auto Snapshot cancellation persistently pauses its schedule until Resume. Status distinguishes a saved cancellation from completed worker shutdown.
 - New interval schedules start one interval after Save; Run Now does not move the cadence. Existing schedules preserve their actual alignment until explicitly converted. Send now has daily start-time and weekly day/time controls with shared schedule previews.
 - Waiting sends protect exact planned snapshots and bases so prerequisite cleanup can free space. Exhausted send failures remain visible while later scheduled occurrences can run.

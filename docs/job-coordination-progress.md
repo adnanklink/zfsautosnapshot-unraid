@@ -631,3 +631,43 @@ Legacy send planning still publishes its existing reference files and does not
 yet submit this schema. Shared cleanup execution authorizations, cancellation
 attachment/detachment, replication worker phases and the earlier release gates
 remain unfinished.
+
+## Direction change: standalone native coordinator
+
+The user has deprioritized legacy integration and intends a renamed standalone
+plugin. Automatic migration of the original runtime queues and a legacy preview
+update bridge are no longer release requirements. Preserve ZFS safety protections,
+but implement native coordinator phases directly. See
+[standalone development](standalone-development.md) for the revised delivery order.
+No installation identity or published URL has changed yet.
+
+## Native replication: bounded local destination inspection
+
+The coordinator can now grant a `prepare` task with phase `replication_inspect`.
+It captures the immutable request in RAM and starts a read-only PHP worker. The
+worker validates its live grant before reading input or inspecting ZFS. It checks
+source/destination dataset identities, exact selected snapshot GUID, name-and-GUID
+common bases, receive-token presence and identity changes during inspection.
+Transaction-group ordering uses decimal strings, avoiding signed 64-bit truncation.
+
+Every ZFS query has a 15-second timeout with a two-second kill grace and bounded
+stdout/stderr. The timeout remains in the granted worker's process group. Slow
+inspection does not block socket status/cancellation. A receive token requires
+explicit validated recovery; inspection never resumes it or publishes the token.
+Transient command failures return to coordinator retries; validation failures are
+explicit. Captured inputs follow journal retention and stay in RAM.
+
+This phase currently supports local, existing destinations and explicit snapshots.
+It reports inspected reference candidates, not committed transfer permission.
+The planner, space approval, transfer, recursive mapping, SSH and receiver-creation
+phases still need implementation. There is no public end-to-end native replication
+submission path yet, so existing clients are not directed into an incomplete run.
+
+Verification: inspection unit fixtures cover 10,000 snapshots, exact GUID matching,
+64-bit transaction groups, malformed inventory, overlapping trees, changed receiver
+identity and token-required recovery. A real socket/granted-worker fixture verifies
+responsiveness, same-group cancellation, actual timeout and coordinator retry with
+read-only `/boot`. The disposable real-ZFS suite verifies native base inspection
+alongside existing transfer, low-space, cancellation and resume protections. Full
+reliability, stage-one, PHP/ShellCheck and temporary package verification pass.
+These tests do not certify an end-to-end native coordinator replication pipeline.

@@ -180,3 +180,16 @@ cover 10,000-record fixtures and rebuild on restart. Tests preserve references
 through finalization/recovery and retain another owner's protection on cancellation.
 Read-only `/boot` fixtures pass. Legacy send planners have not yet switched to the
 new registry; this is not full replication integration or shared cleanup authority.
+
+## Standalone native inspection
+
+The new preparation worker performs bounded read-only local receiver inspection
+under a coordinator grant. Commands remain in the owned process group; timeout
+and cancellation fixtures use the actual socket/executor with `/boot` read-only.
+Inspection unit tests cover 10,000 snapshots, GUID matching, 64-bit ordering,
+identity races and explicit resume recovery without exposing tokens. The
+real-ZFS disposable-pool suite now asserts native GUID-matched base selection.
+The phase does not grant transfer permission; SSH, new receivers, complete native
+planning/transfer/finalization and shared cleanup ownership remain outstanding.
+Standalone packaging will use a new identity once a name is chosen; legacy queue
+migration is no longer a release requirement.
