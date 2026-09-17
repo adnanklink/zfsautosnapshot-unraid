@@ -742,3 +742,23 @@ measured space, duplicate submission/no-op and persistent array-wait cancellatio
 Scheduled replication, SSH, recursive planning, native prerequisite cleanup and
 explicit native resume remain unfinished; automatic snapshot per-mutation ownership
 and the wider release gates also remain open. No release artifacts published.
+
+## Explicit native Retry and recovery evidence
+
+Activity now offers Retry for stopped native manual runs. Retry creates one
+idempotent successor, validates the token's exact target name/GUID and incremental
+base identities, and preserves only a token hash in RAM records. Raw tokens are
+read again and hash-checked immediately before execution. Changed configuration
+requires a new Send review. Cancellation of an active transfer retains its recovery
+references; a fully verified successor explicitly resolves the earlier evidence.
+No Retry authority is reconstructed after RAM loss.
+
+Compact command receipts now retain bounded selection/settings context so pruning
+terminal task details cannot repeat a successful submission. Native preparation is
+also forbidden from reporting success before publishing its expected child plan.
+Validation includes unsigned 64-bit token GUIDs, wrong-target rejection, duplicate
+Retry, pruned receipts, the reliability suite and browser Retry routing. A real
+interrupted receive was resumed through the actual coordinator, finalized with GUID
+checks and compared byte-for-byte to the source. Scheduled/recursive/SSH native
+replication, prerequisite cleanup integration and the remaining release gates are
+still outstanding.
