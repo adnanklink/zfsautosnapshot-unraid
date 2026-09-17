@@ -528,3 +528,28 @@ Still open: cancellation propagation and shared cleanup ownership, full replicat
 and Auto Snapshot mutation authority, complete installation handoff, configuration
 replanning and remaining release gates. Large-journal commit and inventory costs
 still require the planned scale work; no all-path performance claim is made here.
+
+## Ownership update: batch cancellation and Activity controls
+
+Cancel now persists the batch decision before revoking its exclusively owned
+child runs. Queued children are canceled immediately; running children retain
+ownership until process-group shutdown is verified. The parent remains canceling
+until its children stop. Untouched batch items receive terminal retry-review
+reasons, while committed results remain available. Unrelated runs continue.
+Repeated cancellation retains the same persistent decision without rewriting it.
+Manual batch cancellation does not pause Auto Snapshot.
+
+Activity exposes Cancel for coordinator batch runs, routes it to the coordinator
+endpoint and uses batch-specific confirmation text. Status distinguishes committed
+cancellation from verified shutdown. A failed persistent control write returns an
+explicit error without changing the runtime cancellation decision.
+
+The actual endpoint fixture covers 51 selected items, delegated and untouched
+membership, failed persistent publication, successful retry, no unrelated schedule
+pause, final result projection and restart. The process fixture checks a live
+child, a queued child and unrelated work. Full reliability, stage-one, PHP checks,
+workspace browser tests and temporary package verification pass.
+
+This ownership relation is exclusive. Shared prerequisite cleanup with multiple
+independently valid authorizations still needs its planned detach/retain semantics;
+this increment does not treat shared work as exclusively owned.

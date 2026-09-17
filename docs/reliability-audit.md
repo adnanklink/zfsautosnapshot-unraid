@@ -148,3 +148,11 @@ approval bypass and reconstruction of contended/lost status projections. Read-on
 flash, reliability, stage-one, PHP, package and actual batch endpoint checks pass.
 Shared cancellation, full replication ownership and the final scale/host gates
 remain outstanding.
+
+Batch cancellation now propagates to exclusively owned deletion runs, preserves
+unrelated work and reports shutdown completion only after children stop. Activity
+routes batch Cancel to the coordinator. Fixtures cover live and queued children,
+51-item membership, persistent-write failure and retry, unchanged repeated control
+decisions, no unrelated schedule pause and restart. Workspace browser coverage
+checks the request route and batch confirmation. Shared cleanup cancellation with
+multiple owners remains a separate, unfinished acceptance gate.
