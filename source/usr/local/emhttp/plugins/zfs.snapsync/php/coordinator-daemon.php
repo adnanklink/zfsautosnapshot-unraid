@@ -184,20 +184,25 @@ $handler = static function (array $request) use ($journal, $executor, $submitAut
             if (!in_array($kind, ['auto', 'batch'], true) && !isset($journal->state['tasks'][$taskId]['parameters']['replication']) && empty($journal->state['tasks'][$taskId]['parameters']['nativeSchedule'])) { throw new InvalidArgumentException('Cancel this task through its owning run.'); }
             $pauseAuto = $pauseAuto || ($kind === 'auto' && empty($journal->state['tasks'][$taskId]['parameters']['nativeSchedule']));
         }
-        if (!zfsas_ops_persist_control(zfsas_ops_control_path('cancelled', $runId), $runId)
-            || ($pauseAuto && !zfsas_ops_persist_control(zfsas_ops_control_path('paused', 'auto'), $runId))) {
-            throw new InvalidArgumentException('Cancellation could not be synchronized to flash. Retry cancellation after restoring writable control storage.');
+        $scheduleId=$pauseAuto ? 'auto' : ($journal->state['tasks'][$runId.':prepare']['parameters']['job']['id'] ?? '');
+        // Persist pause first: a crash or failed second publication must never
+        // leave a committed cancellation that permits future scheduled mutation.
+        if ($scheduleId!=='' && !zfsas_ops_persist_control(zfsas_ops_control_path('paused',$scheduleId),$runId)) {
+            throw new InvalidArgumentException('Cannot persist schedule pause. Retry cancellation.');
         }
-        $scheduleId=$journal->state['tasks'][$runId.':prepare']['parameters']['job']['id'] ?? '';
-        if ($scheduleId!=='' && !zfsas_ops_persist_control(zfsas_ops_control_path('paused',$scheduleId),$runId)) { throw new InvalidArgumentException('Cannot persist schedule pause. Retry cancellation.'); }
+        if (!zfsas_ops_persist_control(zfsas_ops_control_path('cancelled',$runId),$runId)) {
+            throw new InvalidArgumentException('Cancellation could not be synchronized to flash. The schedule may already be paused; retry cancellation.');
+        }
         $executor->cancel($runId);
         return ['runId' => $runId, 'cancellationCommitted' => true, 'shutdownComplete' => ZfsasCoordinatorState::terminal($journal->state['runs'][$runId]['state'])];
     }
     if ($action === 'resume') {
         foreach ($journal->state['runs'] as $run) { if ($run['state'] === 'canceling') { throw new InvalidArgumentException('Wait for verified shutdown before Resume.'); } }
+        $scheduleId=$request['scheduleId'] ?? 'auto';
+        if (!is_string($scheduleId) || ($scheduleId!=='auto' && !preg_match('/^[a-f0-9]{12}$/D',$scheduleId))) { throw new InvalidArgumentException('Invalid schedule identity.'); }
         $error = null;
-        if (!zfsas_ops_resume_schedule('auto', $error)) { throw new RuntimeException($error ?: 'Unable to persist Resume.'); }
-        return ['resumed' => true];
+        if (!zfsas_ops_resume_schedule($scheduleId, $error)) { throw new RuntimeException($error ?: 'Unable to persist Resume.'); }
+        return ['resumed' => true,'scheduleId'=>$scheduleId];
     }
     throw new InvalidArgumentException('Unknown coordinator action.');
 };

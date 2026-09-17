@@ -8,6 +8,6 @@ $action = $_POST['action'] ?? '';
 if (!in_array($action, ['cancel', 'resume', 'retry'], true)) { zfsas_emit_marked_json(['ok' => false, 'error' => 'Invalid action.'], 400); }
 try {
     zfsas_coordinator_ensure();
-    $response = zfsas_coordinator_request(['action' => $action, 'runId' => (string) ($_POST['run_id'] ?? '')]);
+    $response = zfsas_coordinator_request(['action' => $action, 'runId' => (string) ($_POST['run_id'] ?? ''),'scheduleId'=>(string)($_POST['schedule_id'] ?? 'auto')]);
     zfsas_emit_marked_json($response['ok'] ? ['ok' => true] + $response['result'] : $response, $response['ok'] ? 200 : 409);
 } catch (Throwable $error) { zfsas_emit_marked_json(['ok' => false, 'error' => $error->getMessage()], 503); }
