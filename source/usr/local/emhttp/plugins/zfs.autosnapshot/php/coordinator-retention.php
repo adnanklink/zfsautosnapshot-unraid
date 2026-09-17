@@ -28,6 +28,10 @@ function zfsas_coordinator_prune_artifacts(ZfsasCoordinatorState $journal, strin
         $id = basename($path, '.job');
         if (preg_match('/^[a-f0-9]{64}$/D', $id) && !isset($inputs[$id])) { @unlink($path); }
     }
+    foreach (glob($root . '/attempt-inputs/*.job.approval.json') ?: [] as $path) {
+        $id = basename($path, '.job.approval.json');
+        if (preg_match('/^[a-f0-9]{64}$/D', $id) && !isset($inputs[$id])) { @unlink($path); }
+    }
     foreach (glob($root . '/config/*') ?: [] as $path) {
         $revision = basename($path);
         if (preg_match('/^[a-f0-9]{64}$/D', $revision) && !isset($revisions[$revision])) { $removeTree($path); }

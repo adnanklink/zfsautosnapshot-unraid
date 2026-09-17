@@ -27,6 +27,17 @@ check(count($journal->state['tasks'][$parent]['dependencies']) === 50, 'Status o
 foreach ($journal->state['tasks'][$parent]['items'] as $index => $id) {
     check($journal->state['items'][$id]['spec'] === $items[$index], 'Captured item specification changed');
 }
+// Worker approval comes from captured journal items, never the status manifest.
+$firstItem = $journal->state['items'][$journal->state['tasks'][$parent]['items'][0]];
+$firstTask = $journal->state['tasks'][$firstItem['deletionTaskId']];
+$command = $deletion->command($firstTask);
+$approvalPath = $command[2] . '.approval.json';
+$approval = json_decode(file_get_contents($approvalPath), true);
+check($approval['item'] === $items[0] && $approval['taskId'] === $firstTask['id'], 'Captured approval lost item identity');
+$tampered = array_replace($batch, ['items'=>[], 'approvedAt'=>0]); zfsas_sm_batch_store($tampered);
+$deletion->command($firstTask);
+check(json_decode(file_get_contents($approvalPath), true) === $approval, 'Status manifest altered execution approval');
+$deletion->projectBatch($parent);
 // Legacy queue submission cannot create authority for a journal-owned batch.
 $firstChild = current(array_filter($journal->state['tasks'], fn($task) => $task['kind'] === 'delete'));
 $unapproved = $firstChild['parameters']['deleteJob'];
@@ -34,6 +45,15 @@ $unapproved['JOB_ID'] .= '-extra';
 zfsas_ops_append_delete_queue_inbox(zfsas_ops_delete_queue_command_line($unapproved));
 $deletion->tick(hrtime(true)/1e9);
 check(count($journal->state['runs']) === 51 && is_file($root . '/deletion-review-required.log'), 'Inbox bypassed item authority');
+// Compatibility result files cannot complete a still-active journal item.
+$staleResult = zfsas_ops_status_dir() . '/delete-results/' . $firstItem['deleteJobId'] . '.result';
+zfsas_sm_ensure_dir(dirname($staleResult)); file_put_contents($staleResult, "completed\tStale projection\n");
+$deletion->projectBatch($parent);
+check(zfsas_sm_read_json_file(zfsas_sm_batch_path($batch['token']))['items'][0]['state'] === 'deleting', 'Status projection overrode journal item state');
+$status = zfsas_sm_read_json_file(zfsas_sm_batch_path($batch['token']));
+zfsas_sm_batch_reconcile($status);
+check($status['items'][0]['state'] === 'deleting', 'Endpoint reconciliation replaced journal authority');
+unlink($staleResult);
 // Model a crash after the last child receipt but before the final parent update.
 $last = $journal->state['tasks'][$parent]['items'][49];
 $journal->state['items'][$last]['state'] = 'queued';

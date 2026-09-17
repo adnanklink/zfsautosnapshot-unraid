@@ -49,11 +49,17 @@ try{
     foreach(['normal','held','changed','failure'] as $case){
         $id='delete-'.$case;$path=$inputs.'/'.$id.'.job';
         check(zfsas_ops_write_job_file($path,['JOB_ID'=>$id,'DATASET'=>'tank/data','SNAPSHOT'=>'tank/data@auto-'.$case,'SNAPSHOT_GUID'=>'123','SEND_CONFIG_HASH'=>$hash,'SEND_PROTECTED'=>'0','DELETE_SCOPE'=>'snapshot']),'Job capture failed');
+        if($case==='normal'){
+            @mkdir(zfsas_ops_status_dir().'/delete-results',0775,true);
+            file_put_contents(zfsas_ops_status_dir().'/delete-results/'.$id.'.result', "skipped\tStale compatibility projection\n");
+        }
         $receipt=rpc(['action'=>'submit','commandId'=>$id,'spec'=>['tasks'=>['delete'=>['kind'=>'delete','dataset'=>'tank/data','parameters'=>['path'=>$path]]]]]);$task=$receipt['runId'].':delete';
         until(function()use($task,$case){$state=rpc(['action'=>'status']);return $state['tasks'][$task]['state']===($case==='failure'?'retry_wait':'complete');});
         $state=rpc(['action'=>'status']);$result=$state['tasks'][$task]['result'];
         check($result['itemState']===($case==='normal'?'completed':($case==='failure'?'failed':'skipped')),'Incorrect explicit deletion outcome');
-        check(!is_file(zfsas_ops_status_dir().'/delete-results/'.$id.'.result'),'Worker published authoritative result file');
+        if($case==='normal'){
+            check(file_get_contents(zfsas_ops_status_dir().'/delete-results/'.$id.'.result')==="skipped\tStale compatibility projection\n",'Worker rewrote compatibility evidence');
+        }else{check(!is_file(zfsas_ops_status_dir().'/delete-results/'.$id.'.result'),'Worker published authoritative result file');}
         if($case==='failure'){check($state['tasks'][$task]['attemptCount']===1,'Worker retried internally');rpc(['action'=>'cancel','runId'=>$receipt['runId']]);}
     }
     check(file($root.'/destroy',FILE_IGNORE_NEW_LINES)===['tank/data@auto-normal','tank/data@auto-failure'],'Unsafe or repeated destroy');

@@ -608,11 +608,15 @@ process_standard_delete() {
   complete_delete_job "Deleted snapshot ${snapshot}."
 }
 
+delete_result_already_committed() {
+  [[ -f "$OPS_STATUS_DIR/delete-results/$CURRENT_JOB_ID.result" ]]
+}
+
 process_delete_job() {
   local -A checked_job=()
   local snapshot transport=local schedule_id expected actual command props userrefs clones
   queue_load_job_assoc "$CURRENT_JOB_ID" checked_job || return 1
-  if [[ -f "$OPS_STATUS_DIR/delete-results/$CURRENT_JOB_ID.result" ]]; then
+  if delete_result_already_committed; then
     queue_remove_job "$CURRENT_JOB_ID"
     return 0
   fi

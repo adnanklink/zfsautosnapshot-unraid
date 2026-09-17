@@ -52,7 +52,7 @@ zfsas_ops_append_delete_queue_inbox(zfsas_ops_delete_queue_command_line($owned))
 $deletion->request(); $deletion->tick(8);
 $child = $journal->state['commands']['delete-' . hash('sha256', $owned['JOB_ID'])]['runId'] . ':snapshot';
 check($journal->state['tasks'][$child]['parameters']['ownerRunId'] === $owner['runId'], 'Batch ownership lost');
-check(isset($deletion->command($journal->state['tasks'][$child])[0]), 'Active owner rejected');
+check(!empty($deletion->command($journal->state['tasks'][$child])['recoveryRequired']), 'Legacy batch gained authority without journal items');
 $journal->cancel($owner['runId'], 9);
 check(($deletion->command($journal->state['tasks'][$child])['outcome'] ?? '') === 'validation_failure', 'Canceled owner retained deletion authority');
 echo "PASS: versioned deletion admission, captured identities, interrupted import replay, legacy quarantine, verified status/results, waits and late submissions\n";

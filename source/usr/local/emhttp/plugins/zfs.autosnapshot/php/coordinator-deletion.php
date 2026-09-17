@@ -201,6 +201,20 @@ final class ZfsasCoordinatorDeletion
         }
         $job = $task['parameters']['deleteJob'];
         $path = $this->root . '/attempt-inputs/' . hash('sha256', $task['id']) . '.job';
+        if (str_starts_with($job['JOB_ID'], 'sm-')) {
+            $itemId = $task['parameters']['ownerItemId'] ?? '';
+            $item = $this->journal->state['items'][$itemId] ?? null;
+            $parent = $item ? ($this->journal->state['tasks'][$item['taskId']] ?? null) : null;
+            if (!$item || !$parent || $parent['runId'] !== $ownerId
+                || ($item['deletionTaskId'] ?? '') !== $task['id'] || $item['state'] !== 'deleting'
+                || $item['spec']['snapshot'] !== $job['SNAPSHOT'] || $item['spec']['guid'] !== $job['SNAPSHOT_GUID']) {
+                return ['outcome'=>'validation_failure', 'recoveryRequired'=>true,
+                    'message'=>'Deletion lacks journal-owned item approval. Review a new selection.'];
+            }
+            $approval = ['version'=>1, 'taskId'=>$task['id'], 'jobId'=>$job['JOB_ID'],
+                'batch'=>$parent['parameters']['batch'], 'item'=>$item['spec']];
+            self::publish($path . '.approval.json', json_encode($approval, JSON_THROW_ON_ERROR));
+        }
         $text = "JOB_TYPE=\"delete\"\n";
         foreach ($job as $key => $value) { $text .= $key . '="' . str_replace(['\\','"'], ['\\\\','\\"'], $value) . '"' . "\n"; }
         self::publish($path, $text);

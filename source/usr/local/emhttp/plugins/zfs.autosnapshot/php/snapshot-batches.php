@@ -55,6 +55,9 @@ function zfsas_sm_batch_review(array &$batch, array $rows)
 }
 function zfsas_sm_batch_reconcile(array &$batch)
 {
+    // Journal projections already contain committed outcomes. Compatibility
+    // result files are only recovery evidence for old manifest-owned batches.
+    if (($batch['executionAuthority'] ?? '') === 'coordinator-items-v1') { return; }
     foreach ($batch['items'] as &$item) {
         if ($item['state'] !== 'deleting' || empty($item['deleteJobId'])) { continue; }
         $file = zfsas_ops_status_dir() . '/delete-results/' . $item['deleteJobId'] . '.result';

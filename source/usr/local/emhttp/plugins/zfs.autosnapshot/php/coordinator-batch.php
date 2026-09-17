@@ -31,6 +31,7 @@ function zfsas_coordinator_project_batch(ZfsasCoordinatorState $journal, string 
             return true;
         }
         $batch['runId'] = $task['runId']; $batch['items'] = [];
+        $batch['executionAuthority'] = 'coordinator-items-v1';
         foreach ($task['items'] as $id) {
             $item = $journal->state['items'][$id];
             $spec = $item['spec'];
@@ -39,7 +40,10 @@ function zfsas_coordinator_project_batch(ZfsasCoordinatorState $journal, string 
         }
         $run = $journal->state['runs'][$task['runId']];
         $batch['state'] = in_array($run['state'], ['canceling', 'canceled'], true) ? $run['state'] : 'running';
-        zfsas_sm_batch_reconcile($batch);
+        if ($batch['state'] === 'running' && !array_filter($batch['items'],
+            static fn($item) => in_array($item['state'], ['queued', 'running', 'deleting'], true))) {
+            $batch['state'] = 'complete';
+        }
         if (zfsas_sm_read_json_file($path) !== $batch) { zfsas_sm_batch_store($batch); }
         return true;
     } finally { flock($lock, LOCK_UN); fclose($lock); }

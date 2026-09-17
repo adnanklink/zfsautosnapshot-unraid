@@ -7,6 +7,7 @@ source /usr/local/sbin/zfs_autosnapshot_delete_worker
 CLIENT=/usr/local/emhttp/plugins/zfs.autosnapshot/php/coordinator-worker-client.php
 # The adapter is only usable with an immutable job file supplied by its grant.
 [[ $# == 1 && "$1" == /tmp/zfs-autosnapshot-coordinator/attempt-inputs/*.job && -f "$1" && ! -L "$1" ]] || exit 1
+export ZFSAS_DELETE_APPROVAL="$1.approval.json"
 declare -A ATTEMPT_JOB=()
 job_load "$1" ATTEMPT_JOB || exit 1
 CURRENT_JOB_ID="${ATTEMPT_JOB[JOB_ID]:-}"
@@ -23,6 +24,8 @@ queue_load_job_assoc() {
   local key
   for key in "${!ATTEMPT_JOB[@]}"; do target[$key]="${ATTEMPT_JOB[$key]}"; done
 }
+# Compatibility files cannot replace a granted attempt's explicit result.
+delete_result_already_committed() { return 1; }
 queue_remove_job() { OUTCOME=success; RESULT_STATE=completed; RESULT_MESSAGE='A committed deletion result already exists.'; }
 complete_delete_job() { OUTCOME=success; RESULT_STATE=completed; RESULT_MESSAGE="$1"; }
 skip_delete_job() { OUTCOME=success; RESULT_STATE=skipped; RESULT_MESSAGE="$1"; }
