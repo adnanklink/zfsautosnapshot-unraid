@@ -253,3 +253,74 @@ launches and late deletion submission recovery. Both manifests retain the fork
 branch pluginURL so existing branch clients can discover the higher version.
 Full replication coordination and replanning after partial execution remain
 unfinished. Release artifacts are committed separately from source and docs.
+
+## Coordinator completion branch: recovery boundaries (2026-09-17)
+
+Work continues on `fix/coordinator-completion`, based on `feat/ui-overhaul`.
+This is source work for the planned complete release; it does not change the
+published version, install manifests, packages, or update channels.
+
+The RAM journal now uses protocol version 2 and accepts version 1 checkpoints
+from the same boot. Each granted attempt carries the coordinator generation,
+task ID and attempt token. Workers can propose bounded progress, explicit results
+and an atomic child graph over the Unix socket. Ordered report sequences reject
+conflicting or stale publications, while replaying the last accepted report is
+idempotent. Preparation graphs require a finalizer that depends on every child.
+Reported completion never releases resources before verified group shutdown.
+These capabilities are tested, but replication adapters are not yet migrated to
+this protocol.
+
+Scheduled replication now publishes exact snapshot creation targets and source
+dataset GUIDs in RAM before invoking ZFS. Explicit targets freeze recursive
+membership. Snapshot GUIDs are committed before child publication. If execution
+is interrupted without those GUIDs, existing targets are preserved and require
+review. The intent retains cleanup protection even if the create command exits
+with an error and retries are exhausted. Successful GUID publication clears the
+recovery flag. Explicitly clearing an ambiguous recovery record warns that its
+cleanup protection will be released. Intent publication failure prevents creation.
+
+Snapshot Manager publishes an item intent before execution and its result
+immediately after execution, rather than deferring all results until chunk end.
+An interrupted non-delete item becomes a failed item requiring a fresh review;
+rollback is never automatically repeated. Deletion continues to reconcile its
+stable ID and existing result record. Failed-only retry still creates a new
+review, and previously completed items are retained. Recovery flags appear in
+batch and coordinator status. These records remain RAM-only and disappear on
+reboot; no old approval is reconstructed.
+
+Status reads and rejected socket requests no longer force an admission tick.
+Accepted mutation commands and the watchdog still wake the coordinator, with
+the existing maximum 30-second recovery deadline.
+
+Verification for this increment:
+
+- Stage-one and full reliability suites passed in disposable containers.
+- Actual 601-item batch endpoints passed, including bounded chunks, partial
+  failures, failed-only retries, approval expiry and exact deletion boundaries.
+- A SIGKILL fixture interrupts a batch after the mutation and before result
+  publication, verifies review is required, and verifies no repeated mutation.
+- Real granted fixture workers exercised progress, duplicate reports, child graph
+  publication, explicit child failure, finalizer dependencies and stale rejection
+  through the production Unix-socket client and executor.
+- Actual Auto Snapshot daemon checks passed for captured settings, cancellation,
+  verified shutdown, RAM loss and persistent pause/Resume.
+- New intent/recovery fixtures and the coordinator flash fixture passed with
+  `/boot` read-only. A file-syscall trace recorded 199 `/boot` accesses and zero
+  attempted writes or metadata changes. This remains scoped fixture coverage,
+  not certification of all transfer paths.
+
+- Disposable real-ZFS pools passed the new exact-target creation/GUID fixture,
+  fixed membership after a child dataset is added, and the existing full/incremental,
+  cancel/resume, shortage cleanup and unrelated-snapshot preservation checks.
+  A follow-up `zpool list` found no remaining test pools.
+- Chromium workspace checks passed across all sections, desktop/tablet/mobile,
+  recovery presentation, and dismissal/acceptance of the clear-protection warning.
+- A package built only under `/tmp` matched the source inventory. No release
+  artifact was added to the repository.
+
+The remaining-plan section above still applies. In particular, individual
+replication/deletion transitions, batch cancellation across deletion children,
+partial-execution replanning, conservative reboot completion proof, full-path
+flash tracing and coordinator-driven real-ZFS acceptance remain unfinished.
+User-run Unraid checks remain the final release gate. Publish one completed main
+release afterward, with update manifests for existing fork preview clients.

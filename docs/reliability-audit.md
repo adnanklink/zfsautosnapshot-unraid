@@ -93,3 +93,20 @@ unnecessary unchanged manifest publication after worker completion.
 The `feat/ui-overhaul` branch adds a shared shell and read-only activity/summary interfaces. See [UI implementation and tests](ui-overhaul.md). Stage-one and backend reliability fixtures continue to pass after separating controllers, views and browser behavior. PHP endpoint checks run with `/boot` read-only; the new views and runtime summary do not initialize persistent directories. A `strace -f -e trace=%file` run of `workspace_endpoints.php` recorded zero attempted `/boot` writes or metadata changes. Migrator polling now has a RAM-only runtime mode, with dataset and Docker inspection reserved for explicit preview.
 
 The UI does not close the remaining replication coordinator/reboot-reconstruction work. Real-ZFS execution coverage recorded above belongs to the underlying coordination work; this presentation change retains those execution workers. Actual Unraid theme integration still requires a host smoke test.
+
+## Recovery boundary follow-up (2026-09-17)
+
+The completion branch adds RAM creation intent before replication snapshots and
+per-item intent/results for Snapshot Manager. Interrupted creation without a
+committed GUID manifest preserves exact targets for review. Interrupted batch
+mutations cannot be silently replayed; failed-only retries require a new review.
+See [implementation record](job-coordination-progress.md#coordinator-completion-branch-recovery-boundaries-2026-09-17)
+for verification and remaining release gates.
+
+The version 2 worker protocol fences generation, attempt and report sequence.
+Its socket fixture exercises real granted workers and finalization dependencies.
+Read-only status polls and rejected requests no longer wake admission scans.
+The new crash fixtures and coordinator flash fixture pass with read-only `/boot`;
+a syscall trace found zero attempted flash writes or metadata changes. Production
+replication still uses the legacy queue handler, so this is not yet full
+coordinator integration or all-path flash-write certification.
