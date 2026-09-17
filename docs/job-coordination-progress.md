@@ -594,3 +594,40 @@ batch crash recovery, batch cancellation, PHP parsing, ShellCheck and temporary
 package verification pass. The scoped approval-path syscall trace recorded zero
 attempted `/boot` mutations. Full replication and all-path flash certification
 remain separate unfinished gates.
+
+## Ownership update: replication reference registration boundary
+
+Coordinator submissions and preparation plans now validate and register exact
+source, base, checkpoint and resume references with endpoint, dataset identity,
+snapshot name and GUID. Plan children and reference records publish together;
+unsealed chunks cannot create either execution authority or reference ownership.
+A plan that asks cleanup to delete its own required reference is rejected before
+publication. A planner also cannot claim an identity already owned by an active
+deletion attempt; it must prepare again after verified shutdown.
+
+The production deletion admission adapter checks registered references before
+launch. Protected cleanup waits on a bounded 30-second dependency deadline with
+no process, transfer slot or retry attempt. Name/GUID indexes avoid repeatedly
+scanning inventories or historical reference records. Protection lasts through
+run finalization, and recovery-required terminal runs retain evidence. Canceling
+one reference owner does not release another owner's protection. Pruning removes
+reference records only with their owning tasks.
+
+Endpoint identities are captured, but deletion submissions do not yet carry a
+verified endpoint identity. Matching therefore conservatively protects the same
+snapshot name or GUID across endpoints. This can delay unrelated remote work;
+relaxing it requires the planned destination identity handoff, not a hostname
+assumption.
+
+Verification covers malformed references, atomic rejection, active-delete races,
+self-destructive dependency plans, two reference owners, finalization/recovery
+retention, restart and 10,000 indexed references. Staged-plan tests verify atomic
+reference publication at seal. Reference and deletion admission fixtures pass
+with read-only `/boot`; reliability, stage-one, real deletion-adapter and actual
+batch-cancellation endpoint checks pass.
+
+This is a prerequisite for the replication handoff, not completed integration.
+Legacy send planning still publishes its existing reference files and does not
+yet submit this schema. Shared cleanup execution authorizations, cancellation
+attachment/detachment, replication worker phases and the earlier release gates
+remain unfinished.

@@ -171,3 +171,12 @@ A `strace -f -e trace=%file` run of the isolated approval fixture with read-only
 `/boot` recorded 2,922 filesystem calls, 92 boot-path references and zero attempted
 boot writes or metadata mutations. This is scoped approval-path evidence, not the
 outstanding all-path flash-write certification.
+
+Coordinator reference registration now requires exact dataset and snapshot GUIDs,
+name, endpoint and reference role. It commits with preparation plans, rejects
+self-destructive cleanup graphs and races with active deletion attempts, and gates
+production deletion admission without launching waiting workers. Reference indexes
+cover 10,000-record fixtures and rebuild on restart. Tests preserve references
+through finalization/recovery and retain another owner's protection on cancellation.
+Read-only `/boot` fixtures pass. Legacy send planners have not yet switched to the
+new registry; this is not full replication integration or shared cleanup authority.
