@@ -27,6 +27,7 @@ php tests/reliability/coordinator_batch_handoff.php
 php tests/reliability/coordinator_socket.php
 php tests/reliability/coordinator_worker_socket.php
 php tests/reliability/coordinator_executor.php
+php tests/reliability/coordinator_owned_cancel.php
 php tests/reliability/coordinator_recovery.php
 php tests/reliability/schedules.php
 php tests/reliability/send_schedules.php

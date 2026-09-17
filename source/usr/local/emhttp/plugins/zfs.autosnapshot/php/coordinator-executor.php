@@ -82,11 +82,19 @@ final class ZfsasCoordinatorExecutor
 
     public function cancel(string $runId): void
     {
+        $affected = [$runId];
+        for ($i = 0; $i < count($affected); $i++) {
+            foreach ($this->journal->ownedRuns($affected[$i]) as $child) {
+                if (!in_array($child, $affected, true)) { $affected[] = $child; }
+            }
+        }
         foreach ($this->journal->cancel($runId, time()) as $token) {
             $this->stopping[$token] ??= ['since' => hrtime(true) / 1e9, 'recovery' => false];
         }
         if ($this->onTransition) {
-            foreach ($this->journal->state['runs'][$runId]['tasks'] as $taskId) { ($this->onTransition)($taskId); }
+            foreach ($affected as $id) {
+                foreach ($this->journal->state['runs'][$id]['tasks'] as $taskId) { ($this->onTransition)($taskId); }
+            }
         }
     }
 

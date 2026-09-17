@@ -140,12 +140,15 @@ $handler = static function (array $request) use ($journal, $executor, $submitAut
         $runId = $request['runId'] ?? '';
         $run = is_string($runId) ? ($journal->state['runs'][$runId] ?? null) : null;
         if (!$run) { throw new InvalidArgumentException('Unknown run.'); }
+        $pauseAuto = false;
         foreach ($run['tasks'] as $taskId) {
-            if ($journal->state['tasks'][$taskId]['kind'] !== 'auto') { throw new InvalidArgumentException('This run does not support Auto Snapshot cancellation.'); }
+            $kind = $journal->state['tasks'][$taskId]['kind'];
+            if (!in_array($kind, ['auto', 'batch'], true)) { throw new InvalidArgumentException('Cancel this task through its owning run.'); }
+            $pauseAuto = $pauseAuto || $kind === 'auto';
         }
         if (!zfsas_ops_persist_control(zfsas_ops_control_path('cancelled', $runId), $runId)
-            || !zfsas_ops_persist_control(zfsas_ops_control_path('paused', 'auto'), $runId)) {
-            throw new RuntimeException('Cancellation could not be synchronized to flash.');
+            || ($pauseAuto && !zfsas_ops_persist_control(zfsas_ops_control_path('paused', 'auto'), $runId))) {
+            throw new InvalidArgumentException('Cancellation could not be synchronized to flash. Retry cancellation after restoring writable control storage.');
         }
         $executor->cancel($runId);
         return ['runId' => $runId, 'cancellationCommitted' => true, 'shutdownComplete' => ZfsasCoordinatorState::terminal($journal->state['runs'][$runId]['state'])];

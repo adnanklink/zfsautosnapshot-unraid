@@ -243,6 +243,33 @@ final class ZfsasCoordinatorState
         }
     }
 
+    /** Runs with exclusive execution authority inherited from this owner. */
+    public function ownedRuns(string $runId): array
+    {
+        $owned = [];
+        foreach ($this->state['tasks'] as $task) {
+            if (($task['parameters']['ownerRunId'] ?? '') === $runId) { $owned[$task['runId']] = true; }
+        }
+        return array_keys($owned);
+    }
+
+    private function finishCancellation(string $runId, int $now): void
+    {
+        $run =& $this->state['runs'][$runId];
+        if ($run['state'] !== 'canceling') { return; }
+        foreach ($run['tasks'] as $id) {
+            if (in_array($this->state['tasks'][$id]['state'], ['launching', 'running', 'stopping'], true)) { return; }
+        }
+        foreach ($this->ownedRuns($runId) as $id) {
+            if (!self::terminal($this->state['runs'][$id]['state'])) { return; }
+        }
+        $run['state'] = 'canceled'; $run['finishedAt'] = $now;
+        foreach ($run['tasks'] as $id) {
+            $parent = $this->state['tasks'][$id]['parameters']['ownerRunId'] ?? '';
+            if ($parent !== '' && isset($this->state['runs'][$parent])) { $this->finishCancellation($parent, $now); }
+        }
+    }
+
     // Persistent pause/cancel decisions must be synchronized by the caller first.
     public function cancel(string $runId, int $now): array
     {
@@ -252,11 +279,19 @@ final class ZfsasCoordinatorState
         $run['state'] = 'canceling'; $tokens = [];
         foreach ($run['tasks'] as $id) {
             $task =& $this->state['tasks'][$id];
+            foreach ($task['items'] ?? [] as $itemId) {
+                if ($this->state['items'][$itemId]['state'] !== 'queued') { continue; }
+                $this->state['items'][$itemId]['state'] = 'failed';
+                $this->state['items'][$itemId]['finishedAt'] = $now;
+                $this->state['items'][$itemId]['result'] = ['state'=>'failed',
+                    'error'=>'Canceled before execution. Review a new selection to retry.'];
+            }
             if (in_array($task['state'], ['launching', 'running', 'stopping'], true)) {
                 $task['state'] = 'stopping'; $tokens[] = $task['attempt'];
             } elseif (!self::terminal($task['state'])) { $task['state'] = 'canceled'; }
         }
-        if (!$tokens) { $run['state'] = 'canceled'; $run['finishedAt'] = $now; }
+        foreach ($this->ownedRuns($runId) as $child) { $tokens = array_merge($tokens, $this->cancel($child, $now)); }
+        $this->finishCancellation($runId, $now);
         $this->commit(); return $tokens;
     }
 
@@ -271,8 +306,7 @@ final class ZfsasCoordinatorState
         $run =& $this->state['runs'][$task['runId']];
         if ($run['state'] === 'canceling') {
             $task['state'] = 'canceled';
-            $active = array_filter($run['tasks'], fn($id) => $this->state['tasks'][$id]['state'] === 'stopping');
-            if (!$active) { $run['state'] = 'canceled'; $run['finishedAt'] = $now; }
+            $this->finishCancellation($run['id'], $now);
         } elseif (!empty($run['upgradeReviewRequired'])) {
             $task['state'] = 'failed'; $task['blocked'] = 'recovery_required';
             $task['result'] = ['outcome' => 'validation_failure', 'recoveryRequired' => true,

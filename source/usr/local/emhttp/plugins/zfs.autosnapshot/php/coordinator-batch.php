@@ -38,7 +38,7 @@ function zfsas_coordinator_project_batch(ZfsasCoordinatorState $journal, string 
             $batch['items'][] = array_replace($spec, $item['result'] ?? [], ['state'=>$item['state']]);
         }
         $run = $journal->state['runs'][$task['runId']];
-        $batch['state'] = $run['state'] === 'canceled' ? 'canceled' : 'running';
+        $batch['state'] = in_array($run['state'], ['canceling', 'canceled'], true) ? $run['state'] : 'running';
         zfsas_sm_batch_reconcile($batch);
         if (zfsas_sm_read_json_file($path) !== $batch) { zfsas_sm_batch_store($batch); }
         return true;

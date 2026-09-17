@@ -2,7 +2,7 @@ const {chromium}=require('/opt/zfsas-tests/node_modules/playwright-core');
 const {execFileSync}=require('node:child_process');
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const plugin=path.resolve(__dirname,'../../source/usr/local/emhttp/plugins/zfs.autosnapshot');
-const summary={ok:true,generatedAt:1700000000,timezone:'UTC',sources:{configuration:{available:true},coordinator:{available:true}},operations:[{id:'coordinator:example',nativeId:'example',type:'auto',title:'Automatic snapshots',state:'running',createdAt:1700000000,actions:['cancel'],url:'?section=snapshots&tab=automation',logType:'auto'},{id:'replication:recovery',nativeId:'recovery',type:'replication',title:'Interrupted snapshot creation',state:'failed',createdAt:1700000000,recoveryRequired:true,actions:['clear_failed'],url:'?section=replication',logType:'replication'}],schedules:[],pausedSchedules:[]};
+const summary={ok:true,generatedAt:1700000000,timezone:'UTC',sources:{configuration:{available:true},coordinator:{available:true}},operations:[{id:'coordinator:batch',nativeId:'batch-run',type:'batch',title:'Snapshot batch',state:'running',createdAt:1699999999,actions:['cancel'],url:'?section=snapshots',logType:'batch'},{id:'coordinator:example',nativeId:'example',type:'auto',title:'Automatic snapshots',state:'running',createdAt:1700000000,actions:['cancel'],url:'?section=snapshots&tab=automation',logType:'auto'},{id:'replication:recovery',nativeId:'recovery',type:'replication',title:'Interrupted snapshot creation',state:'failed',createdAt:1700000000,recoveryRequired:true,actions:['clear_failed'],url:'?section=replication',logType:'replication'}],schedules:[],pausedSchedules:[]};
 (async()=>{const browser=await chromium.launch({executablePath:'/usr/bin/chromium',args:['--no-sandbox']});try{
  for(const query of ['section=overview','section=snapshots','section=snapshots&tab=automation','section=replication','section=activity','section=tools','section=tools&tab=migrator','section=help']){
  const html=execFileSync('php',['-r','parse_str($argv[1],$_GET); require $argv[2];',query,plugin+'/php/workspace.php'],{encoding:'utf8'});
@@ -30,6 +30,11 @@ const summary={ok:true,generatedAt:1700000000,timezone:'UTC',sources:{configurat
  page.once('dialog',dialog=>dialog.accept());
  const [request]=await Promise.all([page.waitForRequest(request=>request.url().endsWith('send-queue-action.php')),page.getByRole('button',{name:'Clear failed record',exact:true}).click()]);
  assert.match(request.postData(),/action=clear_failed/);assert.match(request.postData(),/job_id=recovery/);
+ await page.keyboard.press('Escape');
+ await page.locator('[data-operation="coordinator:batch"] button').click();
+ page.once('dialog',async dialog=>{assert.match(dialog.message(),/Cancel this batch/);assert.doesNotMatch(dialog.message(),/paused/);await dialog.accept();});
+ const [batchRequest]=await Promise.all([page.waitForRequest(request=>request.url().endsWith('coordinator-action.php')),page.getByRole('button',{name:'Cancel run',exact:true}).click()]);
+ assert.match(batchRequest.postData(),/action=cancel/);assert.match(batchRequest.postData(),/run_id=batch-run/);
  await page.keyboard.press('Escape');
  }
  if(query==='section=replication'){await page.locator('#open-new-job').click();assert(await page.locator('#new-job-dialog').evaluate(el=>el.open));await page.keyboard.press('Escape');}

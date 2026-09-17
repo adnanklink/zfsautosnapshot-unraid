@@ -32,7 +32,7 @@ function zfsas_sm_pending_snapshot_actions($dataset)
     $pending = [];
     foreach (glob(zfsas_sm_batches_dir() . '/*.json') ?: [] as $path) {
         $batch = zfsas_sm_read_json_file($path);
-        if (!$batch || $batch['dataset'] !== $dataset || !in_array($batch['state'], ['queued', 'running'], true)) { continue; }
+        if (!$batch || $batch['dataset'] !== $dataset || !in_array($batch['state'], ['queued', 'running', 'canceling'], true)) { continue; }
         zfsas_sm_batch_reconcile($batch);
         foreach ($batch['items'] as $item) {
             if (in_array($item['state'], ['queued', 'running', 'deleting'], true)) { $pending[$item['snapshot']]['action'] = $batch['action']; $pending[$item['snapshot']]['tokens'][] = $batch['token']; }
