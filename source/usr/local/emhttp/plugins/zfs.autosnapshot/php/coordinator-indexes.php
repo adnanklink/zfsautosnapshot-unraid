@@ -12,6 +12,8 @@ trait ZfsasCoordinatorIndexes
     private function rebuildIndexes(): void
     {
         $this->readyTasks = []; $this->activeTasks = []; $this->dependents = []; $this->indexedDependencies = []; $this->deadlineVersions = [];
+        $this->referenceNames = []; $this->referenceGuids = []; $this->indexedReferences = [];
+        foreach (array_keys($this->state['references']) as $id) { $this->indexReference($id); }
         $this->deadlines = new SplPriorityQueue();
         $this->deadlines->setExtractFlags(SplPriorityQueue::EXTR_BOTH);
         foreach (array_keys($this->state['tasks']) as $id) { $this->indexTask($id); }
@@ -47,6 +49,7 @@ trait ZfsasCoordinatorIndexes
     private function updateIndexes(array $put, array $remove): void
     {
         if ($this->deadlines === null) { $this->rebuildIndexes(); return; }
+        foreach (array_merge(array_keys($put['references'] ?? []), $remove['references'] ?? []) as $id) { $this->indexReference($id); }
         $affected = [];
         foreach (array_merge(array_keys($put['tasks'] ?? []), $remove['tasks'] ?? []) as $id) {
             $affected[$id] = true;

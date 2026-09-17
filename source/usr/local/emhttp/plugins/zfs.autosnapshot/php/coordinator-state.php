@@ -3,10 +3,11 @@ require_once __DIR__ . "/coordinator-worker-state.php";
 require_once __DIR__ . "/coordinator-journal.php";
 require_once __DIR__ . "/coordinator-indexes.php";
 require_once __DIR__ . "/coordinator-items.php";
+require_once __DIR__ . "/coordinator-references.php";
 /** Single-writer, boot-local coordinator state. Never place this under /boot. */
 final class ZfsasCoordinatorState
 {
-    use ZfsasCoordinatorWorkerState, ZfsasCoordinatorJournal, ZfsasCoordinatorIndexes, ZfsasCoordinatorItems;
+    use ZfsasCoordinatorWorkerState, ZfsasCoordinatorJournal, ZfsasCoordinatorIndexes, ZfsasCoordinatorItems, ZfsasCoordinatorReferences;
     private string $root;
     private $lock;
     public array $state;
@@ -69,8 +70,11 @@ final class ZfsasCoordinatorState
                 throw new InvalidArgumentException('Unsupported task kind.');
             }
             self::checkedItems($task);
+            self::checkedReferences($task['references'] ?? []);
+            $this->checkReferenceAdmission($task['references'] ?? []);
             $tasks[$name] = $task;
         }
+        self::checkPlanReferenceConflicts($tasks);
         // Reject missing edges and cycles before accepting any execution authority.
         $visiting = []; $visited = [];
         $visit = static function ($name) use (&$visit, &$visiting, &$visited, $tasks) {
@@ -90,6 +94,7 @@ final class ZfsasCoordinatorState
                 'references' => $task['references'] ?? [], 'state' => 'queued', 'attemptCount' => 0,
                 'attempt' => null, 'retryAt' => null, 'retryMonotonic' => null, 'blocked' => '', 'result' => null];
             if (isset($task['items'])) { $this->registerItems($id, $task['items']); }
+            $this->registerReferences($id, $task['references'] ?? []);
         }
         $this->state['runs'][$runId] = ['id' => $runId, 'commandId' => $command, 'schedule' => $schedule,
             'occurrence' => $spec['occurrence'] ?? null, 'revision' => $spec['revision'] ?? '',
@@ -143,6 +148,16 @@ final class ZfsasCoordinatorState
         // Command identity and occurrence acceptance do not change on replanning.
         $this->commit();
         return true;
+    }
+
+    public function deferAdmission(string $taskId, array $result, float $monotonic, int $now): void
+    {
+        if (($result['outcome'] ?? '') !== 'wait' || ($result['reason'] ?? '') !== 'dependency'
+            || !in_array($taskId, $this->runnable($monotonic), true)) { throw new InvalidArgumentException('Invalid dependency admission wait.'); }
+        $task =& $this->state['tasks'][$taskId];
+        $task['state'] = 'waiting'; $task['blocked'] = 'dependency'; $task['result'] = $result;
+        $task['retryAt'] = $now + 30; $task['retryMonotonic'] = $monotonic + 30;
+        $this->commit();
     }
 
     /** Admission failures do not need a worker or a destructive validation retry. */
@@ -352,6 +367,9 @@ final class ZfsasCoordinatorState
                     if (($plan['taskId'] ?? '') === $task) { unset($this->state['plans'][$key]); }
                 }
                 foreach ($this->state['tasks'][$task]['items'] ?? [] as $itemId) { unset($this->state['items'][$itemId]); }
+                foreach ($this->state['references'] as $referenceId => $reference) {
+                    if ($reference['taskId'] === $task) { unset($this->state['references'][$referenceId]); }
+                }
                 unset($this->state['tasks'][$task]);
             }
             // Keep compact command receipts for idempotency for this entire boot.

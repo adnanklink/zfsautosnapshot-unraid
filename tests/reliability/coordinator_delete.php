@@ -22,6 +22,14 @@ check(count($journal->state['runs'])===1,'Submission did not become a task');
 $taskId=array_key_first($journal->state['tasks']);
 $path=$deletion->command($journal->state['tasks'][$taskId])[2];
 check(zfsas_ops_parse_job_file($path)['SNAPSHOT_GUID']==='123','Captured adapter input changed identity');
+$ref = ['role'=>'source','endpoint'=>'local','dataset'=>'tank/data','datasetGuid'=>'42',
+    'snapshot'=>$job['SNAPSHOT'],'guid'=>$job['SNAPSHOT_GUID']];
+$protected = $journal->submit('reference-owner', ['tasks'=>['send'=>['kind'=>'send','references'=>[$ref]]]], 1);
+check(($deletion->command($journal->state['tasks'][$taskId])['reason'] ?? '') === 'dependency', 'Deletion ignored registered reference');
+$journal->cancel($protected['runId'],1);
+check(isset($deletion->command($journal->state['tasks'][$taskId])[0]), 'Stopped owner kept deletion blocked');
+// Terminal retention removes the fixture owner, preserving its receipt.
+$journal->prune(32 * 86400);
 // Cursor loss after commit replays the same acceptance, never another task.
 file_put_contents($root.'/deletion-inbox',$line."\n");file_put_contents($root.'/deletion-inbox.cursor','0');
 $deletion->request();$deletion->tick(2);

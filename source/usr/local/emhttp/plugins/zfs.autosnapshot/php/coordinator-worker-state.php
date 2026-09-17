@@ -163,6 +163,8 @@ trait ZfsasCoordinatorWorkerState
                 || !is_array($spec['dependencies'] ?? [])) {
                 throw new InvalidArgumentException('Invalid child task specification.');
             }
+            self::checkedReferences($spec['references'] ?? []);
+            $this->checkReferenceAdmission($spec['references'] ?? []);
             $dependencies = [$taskId];
             foreach ($spec['dependencies'] ?? [] as $dependency) {
                 if (!is_string($dependency) || !isset($tasks[$dependency]) || $dependency === $name) {
@@ -191,8 +193,9 @@ trait ZfsasCoordinatorWorkerState
             unset($visiting[$id]); $visited[$id] = true;
         };
         foreach (array_keys($candidate) as $id) { $visit($id); }
+        self::checkPlanReferenceConflicts($candidate);
         // Validate the complete graph before mutating the accepted journal.
-        foreach ($candidate as $id => $task) { $this->state['tasks'][$id] = $task; $this->state['runs'][$runId]['tasks'][] = $id; }
+        foreach ($candidate as $id => $task) { $this->state['tasks'][$id] = $task; $this->state['runs'][$runId]['tasks'][] = $id; $this->registerReferences($id, $task['references']); }
         $this->state['tasks'][$taskId]['planFingerprint'] = $fingerprint;
         $this->state['tasks'][$taskId]['planPublishedAt'] = $now;
     }

@@ -12,6 +12,8 @@ try {
     $base = ['taskId'=>$task,'token'=>$token,'generation'=>'generation'];
     $tasks = [];
     for ($i = 0; $i < 1100; $i++) { $tasks['send-' . $i] = ['kind'=>'send','dataset'=>'tank/data-' . $i]; }
+    $tasks['send-0']['references'] = [['role'=>'base','endpoint'=>'local','dataset'=>'tank/data-0',
+        'datasetGuid'=>'42','snapshot'=>'tank/data-0@base','guid'=>'123']];
     $tasks['finish'] = ['kind'=>'finalize','dataset'=>'tank/data'];
     $digest = hash('sha256', json_encode(canonical(['tasks'=>$tasks]), JSON_THROW_ON_ERROR));
     $sequence = 1; $offset = 0;
@@ -27,7 +29,7 @@ try {
             rejected(fn() => $journal->workerReport($bad, 'generation', 1));
         }
         $offset += count($chunk);
-        check(count($journal->state['tasks']) === 1 && $journal->runnable(1) === [], 'Unsealed tasks became executable');
+        check(count($journal->state['tasks']) === 1 && !$journal->state['references'] && $journal->runnable(1) === [], 'Unsealed tasks became executable');
     }
     rejected(fn() => $journal->workerReport($base + ['sequence'=>$sequence,'type'=>'result','payload'=>['outcome'=>'success']], 'generation', 1));
     rejected(fn() => $journal->workerReport($base + ['sequence'=>$sequence,'type'=>'plan_seal','payload'=>['digest'=>$digest,'count'=>1100]], 'generation', 1));
@@ -35,6 +37,7 @@ try {
     // process shutdown and generation replacement (covered by recovery fixtures).
     unset($journal); $journal = new ZfsasCoordinatorState($root);
     $journal->workerReport($base + ['sequence'=>$sequence++,'type'=>'plan_seal','payload'=>['digest'=>$digest,'count'=>1101]], 'generation', 2);
+    check($journal->deletionReferenceOwners('tank/data-0@base','123') === [$run], 'Sealing did not atomically register reference ownership');
     check(count($journal->state['tasks']) === 1102, 'Seal lost large plan members');
     check(count($journal->state['tasks'][$task . ':finish']['dependencies']) === 1101, 'Finalizer omitted expected children');
     check($journal->runnable(2) === [], 'Seal released preparation ownership early');

@@ -191,7 +191,8 @@ final class ZfsasCoordinatorExecutor
             $command = ($this->command)($task);
             if ($command === null) { continue; } // Resource/array/configuration admission gate.
             if (isset($command['outcome'])) {
-                $this->journal->rejectAdmission($taskId, $command, $now, time());
+                if ($command['outcome'] === 'wait') { $this->journal->deferAdmission($taskId, $command, $now, time()); }
+                else { $this->journal->rejectAdmission($taskId, $command, $now, time()); }
                 if ($this->onTransition) { ($this->onTransition)($taskId); }
                 continue;
             }
