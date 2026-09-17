@@ -819,3 +819,19 @@ and completed every child. The same native scheduled path passed with the flash
 fixture mounted read-only. This is a read-only-mount check, not a complete syscall
 trace of every runtime path. Shared cleanup authorization, proactive low-space
 policy beyond retention, native timer admission and SSH remain unfinished.
+
+## Persistent cancellation ordering and targeted Resume
+
+Coordinator cancellation now publishes the schedule pause before the run's
+cancellation decision. A failed second write can leave the schedule safely paused,
+but cannot leave an acknowledged cancellation with its schedule enabled. Signals
+still follow both durable decisions. Resume accepts an explicit schedule ID and
+preserves per-run cancellation evidence. The actual daemon fixture injects failure
+into each publication, retries cancellation, verifies shutdown, and checks that
+resuming a Send schedule does not alter Auto Snapshot. Batch cancellation and the
+full reliability suite pass as regressions.
+
+A proposed extension to delete retention anchors under low-space pressure was
+rejected by automatic approval review pending explicit user approval. That command
+made no changes. Native cleanup remains limited to retention-eligible snapshots;
+insufficient space after permitted cleanup fails without deleting retained anchors.
