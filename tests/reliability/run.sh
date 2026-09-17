@@ -18,6 +18,7 @@ php tests/reliability/coordinator_worker_protocol.php
 php tests/reliability/coordinator_replan.php
 php tests/reliability/coordinator_retention.php
 php tests/reliability/coordinator_socket.php
+php tests/reliability/coordinator_worker_socket.php
 php tests/reliability/coordinator_executor.php
 php tests/reliability/coordinator_recovery.php
 php tests/reliability/schedules.php
