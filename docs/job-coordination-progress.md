@@ -425,3 +425,42 @@ This adapter is not yet selected by the production daemon. Deletion submission
 import, individual task/result projections and shared run ownership must be wired
 before replacing the existing deletion pump. The legacy worker remains executable
 and can now also be sourced by the adapter without starting its daemon loop.
+
+## Ownership update: individual deletion admission
+
+The production coordinator now imports versioned RAM deletion submissions into
+stable per-snapshot tasks and selects the single-attempt adapter. A committed
+command receipt precedes advancement of the import cursor, so interrupted drains
+can replay without repeating an accepted deletion. Admission is limited to 50
+records per pass. Idle import checks occur at most every 30 seconds, with immediate
+wakeups for submissions. Workers no longer own deletion retries or result files;
+results are projected only after verified process-group shutdown. The legacy
+worker executable now submits a coordinator wakeup instead of starting its queue
+loop. Its safety functions remain available to the adapter.
+
+New submissions capture snapshot GUIDs, configuration hashes and, for Snapshot
+Manager, the authorizing batch run. Legacy records and conflicting identities are
+retained as RAM review evidence, never replayed as execution authority. Existing
+legacy queue displays are copied to review evidence before replacement. Old batch
+tasks lacking the new deletion protocol require fresh review. This does not yet
+constitute the full installation handoff: old processing spools and surviving
+legacy processes still require the planned upgrade procedure.
+
+Attempt input files are removed only after their journal tasks are pruned.
+Deletion results retain active task and unfinished batch references; unreferenced
+results are bounded to 30 days or 1,000 files. Completed child records remain while
+their owning run is active or requires recovery review. All these records remain
+in RAM and disappear after reboot.
+
+Verification includes the reliability suite, deletion import replay/conflict and
+legacy-evidence fixtures, the real socket/adapter fixture, retention tests and
+admission with read-only `/boot`. The endpoint deletion-failure fixture allows the
+full initial/60/300-second attempt sequence before testing a failed-only retry;
+that endpoint suite passes, including the 601-item fixture and daemon restart.
+Stage-one, PHP/Bash, ShellCheck and temporary package verification also pass.
+
+Still unfinished: coordinator-owned deletion-batch item execution, shared cleanup
+owners and cancellation, Auto Snapshot mutations, full replication phase planning,
+configuration replanning, legacy installation handoff and the remaining release
+acceptance gates. No release artifact or update URL changes accompany this source
+increment.

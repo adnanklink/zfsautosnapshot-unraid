@@ -110,3 +110,23 @@ The new crash fixtures and coordinator flash fixture pass with read-only `/boot`
 a syscall trace found zero attempted flash writes or metadata changes. Production
 replication still uses the legacy queue handler, so this is not yet full
 coordinator integration or all-path flash-write certification.
+
+## Individual deletion ownership follow-up
+
+Production deletion submissions now become coordinator tasks with captured GUIDs,
+configuration identity and batch ownership where applicable. The PHP coordinator
+owns retry deadlines, import receipts and result publication after shutdown. The
+old deletion executable wakes admission; it no longer starts the queue daemon.
+Legacy queue displays are preserved in RAM for review rather than replayed.
+
+The deletion importer fixture covers interrupted cursor replay, identity conflicts,
+legacy authority rejection, revoked batch ownership and late submissions. It also
+passes with read-only `/boot`. The granted adapter fixture verifies hold/GUID
+checks and single-attempt failure reporting. Retention fixtures preserve completed
+children of unfinished owners while removing expired orphaned RAM artifacts.
+Stage-one, reliability, syntax/ShellCheck and temporary package verification pass.
+The actual batch endpoint suite also passes the full 60/300-second retry sequence,
+failed-only retry, daemon restart and exact deletion checks.
+These checks do not replace the outstanding all-path flash trace, real-ZFS
+coordinator pipeline tests or complete installation handoff. Shared cleanup
+ownership and deletion-batch item authority remain open.
