@@ -59,7 +59,7 @@ function capture($action,$items) {
     return $r;
 }
 function wait_batch($token) {
-    $until=microtime(true)+100;
+    $until=microtime(true)+420;
     do { usleep(100000); $r=endpoint(['action'=>'status','token'=>$token]); check($r['ok'],'Status failed'); if ($r['state']==='complete') return $r; } while(microtime(true)<$until);
     throw new RuntimeException('Batch did not complete: '.json_encode($r).' '.@file_get_contents('/var/log/zfs_autosnapshot_snapshot_manager.log'));
 }

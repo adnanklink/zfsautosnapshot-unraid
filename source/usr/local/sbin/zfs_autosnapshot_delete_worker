@@ -826,4 +826,4 @@ main() {
   log "Delete daemon $$ finished after processing ${DELETE_SUCCESS_COUNT} snapshot delete(s)"
 }
 
-if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then main "$@"; fi
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then exec /usr/local/sbin/zfs_autosnapshot_coordinator delete; fi

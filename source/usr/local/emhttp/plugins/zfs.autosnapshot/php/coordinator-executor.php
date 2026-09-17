@@ -46,8 +46,11 @@ final class ZfsasCoordinatorExecutor
     public static function identity(int $pid): ?array
     {
         $stat = @file_get_contents('/proc/' . $pid . '/stat');
-        if ($stat === false) { return null; }
-        $fields = preg_split('/\s+/', substr($stat, strrpos($stat, ')') + 2));
+        if ($stat === false || ($end = strrpos($stat, ')')) === false) { return null; }
+        $fields = preg_split('/\s+/', trim(substr($stat, $end + 2)));
+        // A process may disappear while procfs is being read. Never construct
+        // an ownership identity from an empty or incomplete record.
+        if (count($fields) < 20 || !ctype_digit($fields[2]) || !ctype_digit($fields[19])) { return null; }
         return ['pid' => $pid, 'state' => $fields[0], 'group' => (int) $fields[2], 'start' => (string) $fields[19]];
     }
 
@@ -82,6 +85,9 @@ final class ZfsasCoordinatorExecutor
         foreach ($this->journal->cancel($runId, time()) as $token) {
             $this->stopping[$token] ??= ['since' => hrtime(true) / 1e9, 'recovery' => false];
         }
+        if ($this->onTransition) {
+            foreach ($this->journal->state['runs'][$runId]['tasks'] as $taskId) { ($this->onTransition)($taskId); }
+        }
     }
 
     public function tick(float $now): float
@@ -103,6 +109,7 @@ final class ZfsasCoordinatorExecutor
                         $this->journal->commit();
                     } elseif ($this->journal->started($taskId, $token, $identity['pid'], $identity['start'])) {
                         self::publish($dir . '/grant', $token);
+                        if ($this->onTransition) { ($this->onTransition)($taskId); }
                     }
                     $attempt = $this->journal->state['attempts'][$token];
                 }

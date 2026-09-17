@@ -4,7 +4,7 @@ require_once __DIR__ . '/coordinator-socket.php';
 require_once __DIR__ . '/coordinator-executor.php';
 require_once __DIR__ . '/coordinator-retention.php';
 require_once __DIR__ . '/coordinator-auto-admission.php';
-require_once __DIR__ . '/coordinator-delete.php';
+require_once __DIR__ . '/coordinator-deletion.php';
 require_once __DIR__ . '/coordinator-batch.php';
 require_once __DIR__ . '/schedule-spec.php';
 require_once __DIR__ . '/snapshot-manager-helpers.php';
@@ -17,6 +17,7 @@ if (!is_dir($runtime)) { mkdir($runtime, 0770, true); }
 $owner = fopen($runtime . '/owner.lock', 'c');
 if (!$owner || !flock($owner, LOCK_EX | LOCK_NB)) { exit(0); }
 $journal = new ZfsasCoordinatorState($root);
+$deletion = new ZfsasCoordinatorDeletion($journal, $root);
 $config = null; $nextConfigCheck = 0; $nextPrune = 0;
 $loadConfig = static function () use ($configDir, &$config) {
     $pair = zfsas_config_read_pair($configDir, true);
@@ -42,16 +43,16 @@ $submitAuto = static function (string $commandId, bool $manual, ?int $occurrence
                 'autoConfig' => $config['rawAuto'], 'sendConfig' => $config['rawSend'],
                 'prefixHistory' => $config['prefixHistory'], 'scheduleSpec' => $config['schedule']]]]], time());
 };
-$command = static function (array $task) use ($root, $configDir, $journal): ?array {
+$command = static function (array $task) use ($root, $configDir, $journal, $deletion): ?array {
     if (is_file($configDir . '/maintenance')) { return null; }
-    if ($task['kind'] === 'delete') { return ['/usr/local/sbin/zfs_autosnapshot_delete_worker']; }
+    if ($task['kind'] === 'delete') { return $deletion->command($task); }
     if ($task['kind'] === 'batch') {
         if (isset($task['items'])) {
             zfsas_coordinator_project_batch($journal, $task['id']);
             return [PHP_BINARY, __DIR__ . '/coordinator-batch-worker.php'];
         }
         $legacyBatch = zfsas_sm_read_json_file(zfsas_sm_batch_path($task['parameters']['token']));
-        if (($legacyBatch['action'] ?? '') !== 'delete') {
+        if (($legacyBatch['action'] ?? '') !== 'delete' || ($task['parameters']['deleteProtocol'] ?? null) !== 3) {
             return ['outcome'=>'validation_failure', 'reason'=>'recovery_required', 'recoveryRequired'=>true,
                 'message'=>'Batch execution ownership changed. Review and approve the unfinished selection again.'];
         }
@@ -67,7 +68,7 @@ $command = static function (array $task) use ($root, $configDir, $journal): ?arr
     return zfsas_coordinator_auto_command($journal, $task, $pair, $root);
 };
 $outcome = static function ($task, $code) use ($configDir, $journal): array {
-    if ($task['kind'] === 'delete') { return zfsas_coordinator_delete_outcome($code); }
+    if ($task['kind'] === 'delete') { return ['outcome'=>'transient_failure', 'message'=>'Deletion attempt stopped without an explicit result.', 'exitCode'=>$code]; }
     if ($task['kind'] === 'batch') {
         if (isset($task['items'])) { return in_array($code, [0, 75], true) ? $journal->itemTaskOutcome($task['id']) : ['outcome'=>'transient_failure', 'exitCode'=>$code]; }
         $path = zfsas_sm_batch_path($task['parameters']['token']);
@@ -102,12 +103,12 @@ $outcome = static function ($task, $code) use ($configDir, $journal): array {
     return ['outcome' => $code === 0 ? 'success' : 'transient_failure', 'exitCode' => $code];
 };
 $executor = new ZfsasCoordinatorExecutor($journal, $root, $runtime, $command, $outcome, [],
-    static fn($taskId) => zfsas_coordinator_project_batch($journal, $taskId));
+    static function($taskId) use ($journal, $deletion) { zfsas_coordinator_project_batch($journal, $taskId); $deletion->changed($taskId); });
 // Replay persistent decisions before allowing recovery to admit another attempt.
 foreach ($journal->state['runs'] as $run) {
     if (is_file(zfsas_ops_control_path('cancelled', $run['id'])) && !ZfsasCoordinatorState::terminal($run['state'])) { $executor->cancel($run['id']); }
 }
-$handler = static function (array $request) use ($journal, $executor, $submitAuto, $loadConfig, &$config): array {
+$handler = static function (array $request) use ($journal, $executor, $submitAuto, $loadConfig, $deletion, &$config): array {
     $action = $request['action'] ?? '';
     if ($action === 'worker_report') {
         $response = $executor->workerReport($request);
@@ -141,16 +142,7 @@ $handler = static function (array $request) use ($journal, $executor, $submitAut
         if (!$loadConfig()) { throw new InvalidArgumentException('Configuration save is in progress. Retry with the same command ID.'); }
         return $submitAuto($id, true);
     }
-    if ($action === 'delete') {
-        foreach ($journal->state['runs'] as $run) {
-            if (ZfsasCoordinatorState::terminal($run['state'])) { continue; }
-            foreach ($run['tasks'] as $id) {
-                if ($journal->state['tasks'][$id]['kind'] === 'delete') { return ['runId' => $run['id']]; }
-            }
-        }
-        return $journal->submit('delete-pump-' . bin2hex(random_bytes(16)),
-            ['manual' => false, 'tasks' => ['queue' => ['kind' => 'delete']]], time());
-    }
+    if ($action === 'delete') { return $deletion->request(); }
     if ($action === 'batch') {
         $token = $request['token'] ?? '';
         if (!is_string($token) || !preg_match('/^[a-f0-9]{32}$/', $token)) { throw new InvalidArgumentException('Invalid batch token.'); }
@@ -170,7 +162,7 @@ $handler = static function (array $request) use ($journal, $executor, $submitAut
         }
         return $journal->submit($id, ['manual' => true, 'revision' => $batch['configRevision'],
             'tasks' => ['items' => ['kind' => 'batch', 'dataset' => $batch['dataset'],
-                'parameters' => ['token' => $token, 'revision' => $batch['configRevision']]]]], time());
+                'parameters' => ['token' => $token, 'revision' => $batch['configRevision'], 'deleteProtocol'=>3]]]], time());
     }
     if ($action === 'cancel') {
         $runId = $request['runId'] ?? '';
@@ -195,7 +187,7 @@ $handler = static function (array $request) use ($journal, $executor, $submitAut
     throw new InvalidArgumentException('Unknown coordinator action.');
 };
 $calendar = [];
-$tick = static function (float $now) use ($journal, $executor, $root, $loadConfig, $submitAuto, &$config, &$nextConfigCheck, &$nextPrune, &$calendar): float {
+$tick = static function (float $now) use ($journal, $executor, $root, $loadConfig, $submitAuto, $deletion, &$config, &$nextConfigCheck, &$nextPrune, &$calendar): float {
     if ($now >= $nextConfigCheck) { $loadConfig(); $nextConfigCheck = $now + 30; }
     $schedule = $config['schedule']; $zone = $config['timezone']; $wall = time();
     $key = $config['revision'] . $zone->getName();
@@ -209,7 +201,7 @@ $tick = static function (float $now) use ($journal, $executor, $root, $loadConfi
     }
     if ($now >= $nextPrune) { $journal->prune($wall); zfsas_coordinator_prune_artifacts($journal, $root, zfsas_sm_batches_dir(), $wall); $nextPrune = $now + 3600; }
     $next = $calendar['next'];
-    return min($executor->tick($now), $nextConfigCheck, $next === null ? $now + 30 : $now + max(.1, $next - $wall));
+    return min($deletion->tick($now), $executor->tick($now), $nextConfigCheck, $next === null ? $now + 30 : $now + max(.1, $next - $wall));
 };
 $server = new ZfsasCoordinatorSocket($runtime . '/control.sock', $handler, $tick);
 $server->serve();

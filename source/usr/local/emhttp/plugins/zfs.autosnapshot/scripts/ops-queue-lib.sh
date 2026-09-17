@@ -480,7 +480,7 @@ delete_queue_emit_enqueue_line() {
   # shellcheck disable=SC2178
   local -n job_ref="$assoc_name"
 
-  printf 'ENQUEUE\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+  printf 'ENQUEUE3\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$(delete_queue_sanitize_field "${job_ref[JOB_ID]:-}")" \
     "$(delete_queue_sanitize_field "${job_ref[REQUESTED_EPOCH]:-0}")" \
     "$(delete_queue_sanitize_field "${job_ref[QUEUE_SORT]:-0}")" \
@@ -510,7 +510,7 @@ delete_queue_parse_enqueue_line() {
   job_ref=()
   IFS='|' read -r prefix job_id requested_epoch queue_sort dataset snapshot snapshot_name snapshot_epoch snapshot_guid \
     snapshot_createtxg delete_pool estimated_reclaim send_protected delete_scope send_schedule_job_id config_hash <<< "${line//$'\t'/|}"
-  [[ "$prefix" == "ENQUEUE" && -n "$job_id" && -n "$snapshot" ]] || return 1
+  [[ ( "$prefix" == "ENQUEUE" || "$prefix" == "ENQUEUE3" ) && -n "$job_id" && -n "$snapshot" ]] || return 1
 
   job_ref[JOB_ID]="$job_id"
   job_ref[STATE]="queued"
@@ -570,8 +570,7 @@ delete_queue_daemon_running() {
 }
 
 start_delete_queue_daemon() {
-  # Always submit, even when a daemon is exiting. The coordinator coalesces the
-  # request and checks for remaining RAM work after verified shutdown.
+  # Wake bounded coordinator admission. No producer launches a deletion worker.
   [[ -x /usr/local/sbin/zfs_autosnapshot_coordinator ]] || return 1
   /usr/local/sbin/zfs_autosnapshot_coordinator delete >/dev/null
 }
@@ -5550,7 +5549,7 @@ active_delete_inbox_count_for_pool() {
 
   while IFS= read -r line; do
     IFS=$'\t' read -r -a fields <<< "$line"
-    [[ "${fields[0]:-}" == "ENQUEUE" ]] || continue
+    [[ "${fields[0]:-}" == "ENQUEUE" || "${fields[0]:-}" == "ENQUEUE3" ]] || continue
     dataset="${fields[4]:-}"
     delete_pool="${fields[10]:-${dataset%%/*}}"
     [[ "$delete_pool" == "$pool" ]] || continue

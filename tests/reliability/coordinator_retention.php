@@ -15,8 +15,26 @@ $batches = $root . '/batches'; mkdir($batches);
 foreach (['a' => 'running', 'b' => 'complete', 'c' => 'review', 'd' => 'queued'] as $id => $status) {
     file_put_contents($batches . '/' . str_repeat($id, 32) . '.json', json_encode(['state' => $status, 'created' => $old]));
 }
+$delete = $state->submit('delete', ['tasks' => ['snapshot' => ['kind' => 'delete', 'parameters' => ['deleteJob' => ['JOB_ID' => 'active-delete']]]]], $old);
+mkdir($root . '/delete-results'); mkdir($root . '/attempt-inputs');
+$input = hash('sha256', $delete['runId'] . ':snapshot');
+foreach ([$input, str_repeat('f', 64)] as $id) { file_put_contents($root . '/attempt-inputs/' . $id . '.job', 'captured'); }
+foreach (['active-delete', 'orphan-delete'] as $id) {
+    file_put_contents($root . '/delete-results/' . $id . '.result', 'completed');
+    touch($root . '/delete-results/' . $id . '.result', $old);
+}
+$child = $state->submit('finished-child', ['tasks' => ['snapshot' => ['kind' => 'delete', 'parameters' => ['ownerRunId' => $receipt['runId']]]]], $old);
+$childId = $child['runId'] . ':snapshot';
+$childAttempt = $state->claim($childId, 1, $old);
+$state->started($childId, $childAttempt, 123, '123');
+$state->result($childId, $childAttempt, ['outcome' => 'success'], 1, $old, true);
 $state->prune($now);
-zfsas_coordinator_prune_artifacts($state, $root, $batches, $now);
+if (!isset($state->state['tasks'][$childId])) { throw new RuntimeException('Pruning lost an unfinished owner’s completed child'); }
+zfsas_coordinator_prune_artifacts($state, $root, $batches, $now, $root . '/delete-results');
+if (!is_file($root . '/delete-results/active-delete.result') || is_file($root . '/delete-results/orphan-delete.result')
+    || !is_file($root . '/attempt-inputs/' . $input . '.job') || is_file($root . '/attempt-inputs/' . str_repeat('f', 64) . '.job')) {
+    throw new RuntimeException('Deletion retention lost active evidence or retained expired artifacts');
+}
 if (!is_dir($root . '/attempts/' . $token) || !is_dir($root . '/config/' . $revision)
     || is_dir($root . '/attempts/' . str_repeat('b', 48)) || is_dir($root . '/config/' . $orphan)) {
     throw new RuntimeException('Artifact retention removed active evidence or retained orphaned files');

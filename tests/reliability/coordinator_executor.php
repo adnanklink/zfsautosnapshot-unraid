@@ -9,13 +9,18 @@ chmod($fixture, 0755);
 $journal = new ZfsasCoordinatorState($root);
 $command = fn($task) => ['/bin/bash', $fixture, $task['parameters']['sleep'], $root . '/child'];
 $outcome = fn($task, $code) => ['outcome' => $code === 0 ? 'success' : 'transient_failure'];
-$executor = new ZfsasCoordinatorExecutor($journal, $root, $root . '/runtime', $command, $outcome);
+$transitions = [];
+$executor = new ZfsasCoordinatorExecutor($journal, $root, $root . '/runtime', $command, $outcome, [],
+    static function ($id) use (&$transitions, $journal) { $transitions[$id] = $journal->state['tasks'][$id]['state']; });
 function drive($executor, $predicate, $timeout = 8): void {
     $deadline = microtime(true) + $timeout;
     do { $executor->tick(hrtime(true) / 1e9); if ($predicate()) { return; } usleep(20000); } while (microtime(true) < $deadline);
     throw new RuntimeException('Executor fixture timed out');
 }
 try {
+    $pending = $journal->submit('pending-cancel', ['tasks' => ['one' => ['kind' => 'delete']]], time());
+    $executor->cancel($pending['runId']);
+    check(($transitions[$pending['runId'] . ':one'] ?? '') === 'canceled', 'Queued cancellation did not publish its terminal transition');
     $receipt = $journal->submit('one', ['manual' => true, 'tasks' => ['one' => ['kind' => 'auto', 'parameters' => ['sleep' => '.05']]]], time());
     drive($executor, fn() => $journal->state['runs'][$receipt['runId']]['state'] === 'complete');
     $receipt = $journal->submit('reported', ['tasks' => ['one' => ['kind'=>'auto', 'parameters'=>['sleep'=>'.2']]]], time());

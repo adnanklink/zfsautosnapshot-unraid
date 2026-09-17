@@ -303,6 +303,12 @@ final class ZfsasCoordinatorState
         $changed = false; $count = 0;
         foreach ($terminal as $id => $run) {
             if ($this->runRequiresReview($id)) { continue; }
+            // A child deletion result remains evidence for its unfinished owner.
+            foreach ($run['tasks'] as $taskId) {
+                $ownerId = $this->state['tasks'][$taskId]['parameters']['ownerRunId'] ?? '';
+                if ($ownerId !== '' && isset($this->state['runs'][$ownerId])
+                    && (!self::terminal($this->state['runs'][$ownerId]['state']) || $this->runRequiresReview($ownerId))) { continue 2; }
+            }
             if (++$count <= 1000 && $run['finishedAt'] >= $now - 30 * 86400) { continue; }
             foreach ($run['tasks'] as $task) {
                 foreach ($this->state['attempts'] as $token => $attempt) {

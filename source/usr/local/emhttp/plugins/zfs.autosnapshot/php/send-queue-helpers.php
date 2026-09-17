@@ -310,7 +310,7 @@ function zfsas_ops_delete_queue_inbox_rows()
     $rows = [];
     foreach ($lines as $line) {
         $parts = explode("\t", (string) $line);
-        if (($parts[0] ?? '') !== 'ENQUEUE' || count($parts) < 15) {
+        if (!in_array($parts[0] ?? '', ['ENQUEUE', 'ENQUEUE3'], true) || count($parts) < 15) {
             continue;
         }
 
@@ -438,7 +438,7 @@ function zfsas_ops_start_delete_queue_daemon(&$error = null)
 
 function zfsas_ops_delete_queue_command_line($payload)
 {
-    $parts = ['ENQUEUE'];
+    $parts = ['ENQUEUE3'];
     $fields = [
         'JOB_ID',
         'REQUESTED_EPOCH',
@@ -454,6 +454,7 @@ function zfsas_ops_delete_queue_command_line($payload)
         'SEND_PROTECTED',
         'DELETE_SCOPE',
         'SEND_SCHEDULE_JOB_ID',
+        'SEND_CONFIG_HASH',
     ];
 
     foreach ($fields as $field) {
