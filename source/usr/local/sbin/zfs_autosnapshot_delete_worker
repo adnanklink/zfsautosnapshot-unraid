@@ -536,6 +536,10 @@ delete_single_snapshot() {
   destroy_single_snapshot_with_retries "$snapshot"
 }
 
+execute_remote_snapshot_delete() {
+  eval "$1"
+}
+
 process_send_checkpoint_delete() {
   local snapshot basename schedule_job_id source_root dest_root prefix delete_scope
   local -A job=()
@@ -583,7 +587,7 @@ process_send_checkpoint_delete() {
         fail_delete_job "Cannot delete remote SSH destination checkpoint ${snapshot}; SSH settings are incomplete or invalid."
         return 0
       }
-      eval "$command" || return $?
+      execute_remote_snapshot_delete "$command" || return $?
       complete_delete_job "Deleted remote SSH destination scheduled-send checkpoint snapshot ${snapshot}."
       return 0
     fi
@@ -822,4 +826,4 @@ main() {
   log "Delete daemon $$ finished after processing ${DELETE_SUCCESS_COUNT} snapshot delete(s)"
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then main "$@"; fi
