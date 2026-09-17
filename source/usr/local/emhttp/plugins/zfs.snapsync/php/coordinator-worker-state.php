@@ -70,6 +70,16 @@ trait ZfsasCoordinatorWorkerState
             }
             // An acknowledged report is not completion. The executor must verify
             // the entire process group has stopped before consuming this result.
+            if (($this->state['tasks'][$taskId]['parameters']['phase'] ?? '') === 'replication_snapshot' && $payload['outcome'] === 'success') {
+                $reference=$payload['reference'] ?? null;$parameters=$this->state['tasks'][$taskId]['parameters'];
+                if (!is_array($reference) || ($reference['snapshot'] ?? '') !== $parameters['source'].'@'.$parameters['snapshotName']
+                    || ($reference['datasetGuid'] ?? '') !== $parameters['sourceDatasetGuid'] || ($reference['role'] ?? '') !== 'source'
+                    || ($reference['dataset'] ?? '') !== $parameters['source'] || ($reference['endpoint'] ?? '') !== 'local') {
+                    throw new InvalidArgumentException('Snapshot outcome lacks captured creation identity.');
+                }
+                self::checkedReferences([$reference]);$this->checkReferenceAdmission([$reference]);
+                $this->state['tasks'][$taskId]['references']=[$reference];$this->registerReferences($taskId,[$reference]);
+            }
             $attempt['reportedResult'] = $payload;
         } elseif ($type === 'plan_chunk') {
             $this->stageWorkerPlan($taskId, $payload);
@@ -158,7 +168,7 @@ trait ZfsasCoordinatorWorkerState
             self::identifier((string) $name);
             $id = $taskId . ':' . $name;
             if (strlen($id) > 320 || isset($this->state['tasks'][$id]) || !is_array($spec)
-                || !in_array($spec['kind'] ?? '', ['prepare', 'send', 'delete', 'finalize'], true)
+                || !in_array($spec['kind'] ?? '', ['auto', 'prepare', 'send', 'delete', 'finalize'], true)
                 || !is_string($spec['dataset'] ?? null) || $spec['dataset'] === ''
                 || !is_array($spec['parameters'] ?? []) || !is_array($spec['references'] ?? [])
                 || !is_array($spec['dependencies'] ?? [])) {
@@ -197,6 +207,16 @@ trait ZfsasCoordinatorWorkerState
         self::checkPlanReferenceConflicts($candidate);
         // Validate the complete graph before mutating the accepted journal.
         foreach ($candidate as $id => $task) { $this->state['tasks'][$id] = $task; $this->state['runs'][$runId]['tasks'][] = $id; $this->registerReferences($id, $task['references']); }
+        // Consumers of dynamic preparation must also await its finalizer. A
+        // planner exiting proves only that the graph is committed, not that its
+        // transfers completed. Apply this within the same journal publication.
+        foreach ($this->state['runs'][$runId]['tasks'] as $consumerId) {
+            if (isset($candidate[$consumerId]) || $consumerId === $taskId) { continue; }
+            if (in_array($taskId,$this->state['tasks'][$consumerId]['dependencies'],true)) {
+                $this->state['tasks'][$consumerId]['dependencies'] = array_values(array_unique(array_merge(
+                    $this->state['tasks'][$consumerId]['dependencies'],[$finalizer])));
+            }
+        }
         $this->state['tasks'][$taskId]['planFingerprint'] = $fingerprint;
         $this->state['tasks'][$taskId]['planPublishedAt'] = $now;
     }

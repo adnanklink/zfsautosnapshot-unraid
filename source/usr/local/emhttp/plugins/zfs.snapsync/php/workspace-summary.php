@@ -19,7 +19,7 @@ function zfsas_workspace_summary(): array
             $kinds = $run['kinds'] ?? [];
             $replication = in_array('send',$kinds,true) || in_array('prepare',$kinds,true) || in_array('finalize',$kinds,true);
             if (!in_array('auto', $kinds, true) && !in_array('batch', $kinds, true) && !$replication) { continue; }
-            $auto = in_array('auto', $kinds, true);
+            $auto = in_array('auto', $kinds, true) && empty($run['nativeReplication']);
             $details = []; $datasets = [];
             foreach ($run['taskStatus'] ?? [] as $task) {
                 if (!empty($task['dataset'])) { $datasets[] = $task['dataset']; }

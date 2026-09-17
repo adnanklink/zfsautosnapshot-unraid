@@ -13,8 +13,9 @@ function zfsas_coordinator_prune_artifacts(ZfsasCoordinatorState $journal, strin
         $token = basename($path);
         if (preg_match('/^[a-f0-9]{48}$/D', $token) && !isset($journal->state['attempts'][$token])) { $removeTree($path); }
     }
-    $revisions = []; $activeBatches = []; $inputs = []; $deletions = []; $inspections = []; $replications = [];
+    $revisions = []; $activeBatches = []; $inputs = []; $deletions = []; $inspections = []; $replications = []; $schedules = [];
     foreach ($journal->state['tasks'] as $task) {
+        if (!empty($task['parameters']['nativeSchedule'])) { $schedules[hash('sha256',$task['id'])]=true; }
         if (isset($task['parameters']['replication'])) { $replications[hash('sha256',$task['id'])] = true; }
         if (($task['parameters']['phase'] ?? '') === 'replication_inspect') { $inspections[hash('sha256',$task['id'])] = true; }
         if (isset($task['parameters']['deleteJob'])) {
@@ -41,6 +42,10 @@ function zfsas_coordinator_prune_artifacts(ZfsasCoordinatorState $journal, strin
     foreach (glob($root . '/attempt-inputs/*.replication.json') ?: [] as $path) {
         $id=basename($path,'.replication.json');
         if (preg_match('/^[a-f0-9]{64}$/D',$id) && !isset($replications[$id])) { @unlink($path); }
+    }
+    foreach (glob($root . '/attempt-inputs/*.schedule.json') ?: [] as $path) {
+        $id=basename($path,'.schedule.json');
+        if (preg_match('/^[a-f0-9]{64}$/D',$id) && !isset($schedules[$id])) { @unlink($path); }
     }
     foreach (glob($root . '/config/*') ?: [] as $path) {
         $revision = basename($path);

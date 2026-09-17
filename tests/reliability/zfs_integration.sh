@@ -64,6 +64,11 @@ zfs create -o mountpoint="$fixture/source" "$source_dataset"
   ! zfs list -H "$source_pool/intent/later@${job[SOURCE_SNAPSHOT_NAME]}" >/dev/null 2>&1
 )
 echo 'PASS: real ZFS creation intent, exact recursive targets, GUID manifest and fixed membership'
+zfs create "$source_pool/native-schedule"
+zfs create "$source_pool/native-schedule/child"
+zfs create "$source_pool/native-schedule/child/deep"
+php "$ROOT/tests/reliability/native_scheduled_replication.php" "$source_pool/native-schedule" "$target_pool/native-schedule"
+
 printf 'base content\n' > "$fixture/source/base.txt"
 zfs snapshot "$source_dataset@base"
 declare -A job=([SEND_TRANSPORT]=local)

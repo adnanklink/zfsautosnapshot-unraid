@@ -7,6 +7,7 @@ require_once __DIR__ . '/coordinator-auto-admission.php';
 require_once __DIR__ . '/coordinator-deletion.php';
 require_once __DIR__ . '/coordinator-replication-inspect.php';
 require_once __DIR__ . '/coordinator-replication.php';
+require_once __DIR__ . '/coordinator-scheduled-replication.php';
 require_once __DIR__ . '/coordinator-batch.php';
 require_once __DIR__ . '/schedule-spec.php';
 require_once __DIR__ . '/snapshot-manager-helpers.php';
@@ -47,6 +48,7 @@ $submitAuto = static function (string $commandId, bool $manual, ?int $occurrence
 };
 $command = static function (array $task) use ($root, $configDir, $journal, $deletion): ?array {
     if (is_file($configDir . '/maintenance')) { return null; }
+    if (in_array($task['parameters']['phase'] ?? '',['replication_schedule','replication_snapshot','replication_member','replication_run_verify'],true)) { return zfsas_coordinator_schedule_command($task,$journal,$root,zfsas_config_revision($configDir)); }
     if ($task['kind'] === 'delete') { return $deletion->command($task); }
     if ($task['kind'] === 'prepare' && ($task['parameters']['phase'] ?? '') === 'replication_inspect') {
         return zfsas_coordinator_replication_inspection_command($task, $root);
@@ -76,6 +78,7 @@ $command = static function (array $task) use ($root, $configDir, $journal, $dele
     return zfsas_coordinator_auto_command($journal, $task, $pair, $root);
 };
 $outcome = static function ($task, $code) use ($configDir, $journal): array {
+    if (!empty($task['parameters']['nativeSchedule'])) { return ['outcome'=>'transient_failure','message'=>'Scheduled task stopped without an explicit outcome.']; }
     if (in_array($task['kind'], ['send','finalize'],true)) { return ['outcome'=>'transient_failure','recoveryRequired'=>true,'message'=>'Native replication stopped without an explicit result.']; }
     if ($task['kind'] === 'prepare') { return ['outcome'=>'transient_failure','message'=>'Inspection stopped without an explicit result.']; }
     if ($task['kind'] === 'delete') { return ['outcome'=>'transient_failure', 'message'=>'Deletion attempt stopped without an explicit result.', 'exitCode'=>$code]; }
@@ -106,7 +109,8 @@ $handler = static function (array $request) use ($journal, $executor, $submitAut
         $runs = array_values($journal->state['runs']);
         usort($runs, static fn($a, $b) => $b['createdAt'] <=> $a['createdAt']);
         foreach ($runs as &$run) {
-            $run['canRetry'] = $run['manual'] && in_array($run['state'],['failed','canceled'],true) && !empty($journal->state['tasks'][$run['id'].':prepare']['parameters']['nativePlan']);
+            $run['canRetry'] = $run['manual'] && in_array($run['state'],['failed','canceled'],true) && !empty($journal->state['tasks'][$run['id'].':prepare']['parameters']['replication']);
+            $run['nativeReplication']=isset($journal->state['tasks'][$run['id'].':prepare']['parameters']['replication']) || !empty($journal->state['tasks'][$run['id'].':prepare']['parameters']['nativeSchedule']);
             $run['kinds'] = []; $run['taskStatus'] = []; $run['blockedReasons'] = []; $run['nextRetry'] = null; $run['recoveryRequired'] = false;
             foreach ($run['tasks'] as $id) {
                 $task = $journal->state['tasks'][$id];
@@ -135,6 +139,18 @@ $handler = static function (array $request) use ($journal, $executor, $submitAut
     if ($action === 'retry') {
         if (!$loadConfig()) { throw new InvalidArgumentException('Configuration save is in progress. Retry the same command.'); }
         return zfsas_coordinator_retry_replication($journal,(string)($request['runId'] ?? ''),$config['revision'],$config['send']);
+    }
+    if ($action === 'scheduled_replication') {
+        if (!$loadConfig()) { throw new InvalidArgumentException('Configuration save is in progress.'); }
+        $id=$request['scheduleId'] ?? '';
+        if (!is_string($id) || is_file(zfsas_ops_control_path('paused',$id))) { throw new InvalidArgumentException('Schedule is paused or invalid.'); }
+        foreach (zfsas_send_parse_jobs($config['send']['SEND_JOBS']) as $job) {
+            if ($job['id']!==$id) { continue; }
+            $command=$request['commandId'] ?? ''; $occurrence=$request['occurrence'] ?? null;
+            if (!is_string($command)||$command===''||!is_int($occurrence)) { throw new InvalidArgumentException('Stable command and occurrence required.'); }
+            return zfsas_coordinator_submit_schedule($journal,$job,$config,$occurrence,true,$command);
+        }
+        throw new InvalidArgumentException('Schedule no longer exists.');
     }
     if ($action === 'replication_receipt') { return zfsas_coordinator_replication_receipt($journal,$request); }
     if ($action === 'replication') {
@@ -165,13 +181,15 @@ $handler = static function (array $request) use ($journal, $executor, $submitAut
         $pauseAuto = false;
         foreach ($run['tasks'] as $taskId) {
             $kind = $journal->state['tasks'][$taskId]['kind'];
-            if (!in_array($kind, ['auto', 'batch'], true) && !isset($journal->state['tasks'][$taskId]['parameters']['replication'])) { throw new InvalidArgumentException('Cancel this task through its owning run.'); }
-            $pauseAuto = $pauseAuto || $kind === 'auto';
+            if (!in_array($kind, ['auto', 'batch'], true) && !isset($journal->state['tasks'][$taskId]['parameters']['replication']) && empty($journal->state['tasks'][$taskId]['parameters']['nativeSchedule'])) { throw new InvalidArgumentException('Cancel this task through its owning run.'); }
+            $pauseAuto = $pauseAuto || ($kind === 'auto' && empty($journal->state['tasks'][$taskId]['parameters']['nativeSchedule']));
         }
         if (!zfsas_ops_persist_control(zfsas_ops_control_path('cancelled', $runId), $runId)
             || ($pauseAuto && !zfsas_ops_persist_control(zfsas_ops_control_path('paused', 'auto'), $runId))) {
             throw new InvalidArgumentException('Cancellation could not be synchronized to flash. Retry cancellation after restoring writable control storage.');
         }
+        $scheduleId=$journal->state['tasks'][$runId.':prepare']['parameters']['job']['id'] ?? '';
+        if ($scheduleId!=='' && !zfsas_ops_persist_control(zfsas_ops_control_path('paused',$scheduleId),$runId)) { throw new InvalidArgumentException('Cannot persist schedule pause. Retry cancellation.'); }
         $executor->cancel($runId);
         return ['runId' => $runId, 'cancellationCommitted' => true, 'shutdownComplete' => ZfsasCoordinatorState::terminal($journal->state['runs'][$runId]['state'])];
     }
