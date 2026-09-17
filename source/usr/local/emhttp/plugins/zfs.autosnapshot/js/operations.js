@@ -88,6 +88,7 @@
   async function perform(op,action) {
     if(busy)return;
     if(action==='cancel' && !window.confirm('Cancel this whole run? Its schedule will remain paused until Resume.'))return;
+    if(action==='clear_failed' && op.recoveryRequired && !window.confirm('Clear this recovery record after reviewing the preserved snapshots? Clearing releases its cleanup protection; it does not verify or remove those snapshots.'))return;
     busy=true; $('operation-actions').querySelectorAll('button').forEach(button=>button.disabled=true);
     try {
       const coordinator=op.type==='auto';

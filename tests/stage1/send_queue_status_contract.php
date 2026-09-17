@@ -67,7 +67,16 @@ try {
     write_send_job(1000, 'send-pool-prep-backup-manual-1000', 'pool_prep', 'running', 'preparing', 'backup', 'backup', 'Running destination pool prep.');
     write_send_job(1001, 'finalize-feedfacecafe-manual-1001', 'finalize', 'failed', 'failed', 'source/data', 'backup/data', 'Finalizer failed.');
 
+    write_send_job(1002, 'ambiguous-intent', 'prepare', 'failed', 'failed', 'source/data', 'backup/data');
+    $intentPath = zfsas_ops_job_path('ambiguous-intent', 1002);
+    $intent = zfsas_ops_parse_job_file($intentPath);
+    $intent['RECOVERY_REQUIRED'] = '1';
+    assert_true(zfsas_ops_write_job_file($intentPath, $intent), 'unable to publish recovery fixture');
+    assert_true(!zfsas_ops_retry_send_job('ambiguous-intent', $retryError), 'ambiguous creation must not retry');
+    assert_true(strpos($retryError, 'evidence is incomplete') !== false, 'retry must explain recovery review');
     $payload = zfsas_ops_send_queue_status_payload(20);
+    $intentRows = array_values(array_filter($payload['jobs'], fn($row) => $row['id'] === 'ambiguous-intent'));
+    assert_true(count($intentRows) === 1 && $intentRows[0]['recoveryRequired'] && !$intentRows[0]['canRetry'], 'recovery status must disable retry');
     $ids = array_map(function ($row) { return $row['id']; }, $payload['jobs']);
 
     assert_true(in_array('send-child-feedfacecafe-manual-1000-0', $ids, true), 'active child send should remain visible in the queue');

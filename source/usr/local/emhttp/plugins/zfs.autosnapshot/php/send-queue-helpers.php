@@ -801,7 +801,8 @@ function zfsas_ops_send_queue_status_payload($limit = 120, $activityOrder = fals
             'stepCurrent' => (int) ($step['current'] ?? 0),
             'stepTotal' => (int) ($step['total'] ?? 0),
             'retryAt' => (string) ($job['RETRY_AT'] ?? '0'),
-            'canRetry' => ((string) ($job['STATE'] ?? '') === 'failed' && (string) ($job['CANCELLED_BY_USER'] ?? '0') !== '1'),
+            'recoveryRequired' => (string) ($job['RECOVERY_REQUIRED'] ?? '0') === '1',
+            'canRetry' => ((string) ($job['STATE'] ?? '') === 'failed' && (string) ($job['CANCELLED_BY_USER'] ?? '0') !== '1' && (string) ($job['RECOVERY_REQUIRED'] ?? '0') !== '1'),
             'canClear' => ((string) ($job['STATE'] ?? '') === 'failed'),
             'canCancel' => in_array((string) ($job['STATE'] ?? ''), ['queued', 'running', 'retry_wait'], true),
             'logDownloadUrl' => ((string) ($job['JOB_ID'] ?? '') !== '')
@@ -1327,6 +1328,7 @@ function zfsas_ops_retry_send_job($jobId, &$error = null)
             $error = 'Only failed send jobs can be retried.';
             return false;
         }
+        if (($job['RECOVERY_REQUIRED'] ?? '0') === '1') { $error = 'Snapshot creation evidence is incomplete. Review the preserved snapshots and submit a new run.'; return false; }
         if (zfsas_ops_run_canceled($job)) { $error = 'Canceled runs cannot be retried. Resume the schedule for a new run.'; return false; }
         $job['STATE'] = 'queued';
         $job['PHASE'] = 'queued';

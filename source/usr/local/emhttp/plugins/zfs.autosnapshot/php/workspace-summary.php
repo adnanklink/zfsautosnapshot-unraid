@@ -47,7 +47,7 @@ function zfsas_workspace_summary(): array
                 'state' => $job['stateLabel'] === 'Canceled' ? 'canceled' : $job['state'], 'stateLabel' => $job['stateLabel'],
                 'message' => $job['rawMessage'], 'createdAt' => strtotime($job['requestedAt']) ?: null,
                 'progress' => $job['progressVisible'] ? $job['progress'] : null, 'blocked' => [],
-                'retryAt' => (int) $job['retryAt'] ?: null, 'actions' => $actions,
+                'retryAt' => (int) $job['retryAt'] ?: null, 'actions' => $actions, 'recoveryRequired' => $job['recoveryRequired'],
                 'url' => '/Settings/ZFSAutoSnapshot?section=replication', 'logType' => 'replication', 'logDownloadUrl' => $job['logDownloadUrl']];
         }
     } catch (Throwable $error) { $result['sources']['replication'] = ['available' => false, 'message' => 'Replication runtime records are unavailable.']; }

@@ -3688,6 +3688,24 @@ function scheduled_send_job_zfs_actionable() {
 
 # A frozen preparation manifest prevents positional child IDs from acquiring new
 # meaning after a crash or a recursive dataset-tree change. All evidence is RAM.
+# The intent exists before snapshot creation. It records membership and dataset
+# identities without treating a snapshot name as proof of a completed create.
+send_snapshot_intent_digest() {
+  local -n intent="$1"
+  local count="${intent[MEMBER_COUNT]:-}" index key
+  [[ "${intent[SNAPSHOT_INTENT_VERSION]:-}" == 1 && "$count" =~ ^[1-9][0-9]*$ && ${#count} -le 6 ]] || return 1
+  {
+    for key in JOB_ID SEND_CONFIG_HASH SEND_TRANSPORT SOURCE_ROOT DESTINATION_ROOT SNAPSHOT_INTENT_NAME MEMBER_COUNT; do
+      printf '%s\0%s\0' "$key" "${intent[$key]:-}"
+    done
+    for ((index=0; index<count; index++)); do
+      for key in SOURCE DESTINATION SNAPSHOT DATASET_GUID; do
+        printf '%s\0' "${intent[MEMBER_${index}_${key}]:-}"
+      done
+    done
+  } | sha256sum | cut -d ' ' -f1
+}
+
 send_member_manifest_digest() {
   local -n manifest="$1"
   local count="${manifest[MEMBER_COUNT]:-}" index key
@@ -5151,7 +5169,7 @@ snapshot_delete_conflicts_with_send_jobs() {
     job_load "$file" pending_send || continue
     [[ "${pending_send[JOB_TYPE]:-}" == send ]] || continue
     state="${pending_send[STATE]:-}"
-    case "$state" in queued|running|retry_wait|canceling) ;; *) continue ;; esac
+    case "$state" in queued|running|retry_wait|canceling) ;; failed) [[ "${pending_send[RECOVERY_REQUIRED]:-0}" == 1 ]] || continue ;; *) continue ;; esac
     # Selected source identities are protected from submission. Planning publishes
     # exact base and receiver references while holding the shared dataset gates.
     # Waiting jobs retain these records, but no mutation/transfer locks.
@@ -5160,7 +5178,7 @@ snapshot_delete_conflicts_with_send_jobs() {
     done
     # A partially published fan-out still owns every selected source snapshot,
     # including members whose child job file does not exist yet.
-    if [[ -n "${pending_send[MEMBER_MANIFEST_HASH]:-}" ]]; then
+    if [[ -n "${pending_send[MEMBER_MANIFEST_HASH]:-}${pending_send[SNAPSHOT_INTENT_HASH]:-}" ]]; then
       for key in "${!pending_send[@]}"; do
         [[ "$key" =~ ^MEMBER_[0-9]+_SNAPSHOT$ ]] || continue
         [[ "$snapshot" == "${pending_send[$key]}" ]] && return 0

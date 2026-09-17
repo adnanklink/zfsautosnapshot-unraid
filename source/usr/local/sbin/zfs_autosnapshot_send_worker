@@ -731,6 +731,7 @@ freeze_current_send_manifest() {
     job[MEMBER_${index}_SNAPSHOT_GUID]="$guid"
     guid="$(zfs_guid_for_transport "$source")" || return 1
     [[ "$guid" =~ ^[0-9]+$ ]] || return 1
+    if [[ -n "${job[MEMBER_${index}_DATASET_GUID]:-}" && "${job[MEMBER_${index}_DATASET_GUID]}" != "$guid" ]]; then return 1; fi
     job[MEMBER_${index}_DATASET_GUID]="$guid"
   done
   job[SEND_CONFIG_HASH]="${job[SEND_CONFIG_HASH]:-${LOADED_SEND_CONFIG_HASH:-$(send_config_hash)}}"
@@ -741,7 +742,7 @@ freeze_current_send_manifest() {
 }
 
 prepare_scheduled_job_snapshot() {
-  local basename source_root destination_root include_children create_cmd previous_basename="" snapshot_error readiness_message send_transport
+  local basename source_root destination_root include_children previous_basename="" snapshot_error readiness_message send_transport
 
   if [[ -n "${job[MEMBER_MANIFEST_HASH]:-}" ]]; then
     send_member_manifest_valid job || { fail_current_job_final "Transfer manifest changed; review a new run."; return 1; }
@@ -768,38 +769,70 @@ prepare_scheduled_job_snapshot() {
     return 1
   fi
 
-  if [[ -n "$(job_get job SOURCE_SNAPSHOT)" ]]; then
-    if ! snapshot_exists "$(job_get job SOURCE_SNAPSHOT)"; then
-      fail_current_job_final "Scheduled send snapshot '$(job_get job SOURCE_SNAPSHOT)' is no longer available."
+  if [[ -n "$(job_get job SOURCE_SNAPSHOT)" && -z "${job[SNAPSHOT_INTENT_HASH]:-}" ]]; then
+    fail_current_job_final "Legacy prepared checkpoint has no frozen creation intent. Review a new run; existing snapshots were preserved."
+    return 1
+  fi
+
+  local index source snapshot guid digest nonce
+  local -a create_cmd=(zfs snapshot)
+  if [[ -z "${job[SNAPSHOT_INTENT_HASH]:-}" ]]; then
+    latest_checkpoint_basename_for_schedule "$(job_get job SCHEDULE_JOB_ID)" previous_basename
+    job[PREVIOUS_SNAPSHOT_NAME]="$previous_basename"
+    nonce="$(printf '%s' "${job[JOB_ID]}" | sha256sum | cut -c1-16)"
+    basename="$(job_get job SNAPSHOT_PREFIX)$(date +%Y-%m-%d_%H-%M-%S)-${nonce}"
+    build_members_for_job job "$basename"
+    [[ "${job[MEMBER_COUNT]:-0}" =~ ^[1-9][0-9]*$ ]] || { fail_current_job_final "No source members were found while recording snapshot intent."; return 1; }
+    for ((index=0; index<job[MEMBER_COUNT]; index++)); do
+      source="${job[MEMBER_${index}_SOURCE]}"
+      snapshot="${job[MEMBER_${index}_SNAPSHOT]}"
+      is_valid_dataset_name "$source" && is_valid_snapshot_name "$snapshot" || { fail_current_job_final "Invalid snapshot intent member."; return 1; }
+      guid="$(zfs_guid_for_transport "$source")" || { fail_current_job_final "Cannot verify source identity before snapshot creation."; return 1; }
+      [[ "$guid" =~ ^[0-9]+$ ]] || { fail_current_job_final "Incomplete source identity before snapshot creation."; return 1; }
+      job[MEMBER_${index}_DATASET_GUID]="$guid"
+      if snapshot_exists "$snapshot"; then
+        fail_current_job_final "Intended snapshot already exists without creation evidence. Review ${snapshot}; it was preserved."
+        return 1
+      fi
+    done
+    job[SNAPSHOT_INTENT_VERSION]=1
+    job[SNAPSHOT_INTENT_NAME]="$basename"
+    job[SNAPSHOT_INTENT_HASH]="$(send_snapshot_intent_digest job)" || return 1
+    persist_job || return 1
+  fi
+
+  digest="$(send_snapshot_intent_digest job)" || { fail_current_job_final "Snapshot creation intent is incomplete."; return 1; }
+  [[ "$digest" == "${job[SNAPSHOT_INTENT_HASH]}" ]] || { fail_current_job_final "Snapshot creation intent changed; review a new run."; return 1; }
+  basename="${job[SNAPSHOT_INTENT_NAME]}"
+  for ((index=0; index<job[MEMBER_COUNT]; index++)); do
+    source="${job[MEMBER_${index}_SOURCE]}"
+    snapshot="${job[MEMBER_${index}_SNAPSHOT]}"
+    guid="$(zfs_guid_for_transport "$source")" || { fail_current_job_final "Snapshot source identity is unavailable."; return 1; }
+    [[ "$guid" == "${job[MEMBER_${index}_DATASET_GUID]}" ]] || { fail_current_job_final "Source dataset identity changed after snapshot intent."; return 1; }
+    if snapshot_exists "$snapshot"; then
+      job[RECOVERY_REQUIRED]=1
+      fail_current_job_final "Snapshot creation was interrupted before GUID evidence was committed. Review ${snapshot}; no replacement snapshot was created."
       return 1
     fi
-    build_members_for_job job "$(job_get job SOURCE_SNAPSHOT_NAME)"
-    persist_job
-    return 0
-  fi
-
-  latest_checkpoint_basename_for_schedule "$(job_get job SCHEDULE_JOB_ID)" previous_basename
-  job[PREVIOUS_SNAPSHOT_NAME]="$previous_basename"
-
-  basename="$(job_get job SNAPSHOT_PREFIX)$(date +%Y-%m-%d_%H-%M-%S)"
-  if [[ "$include_children" == "1" ]]; then
-    create_cmd=(zfs snapshot -r "${source_root}@${basename}")
-  else
-    create_cmd=(zfs snapshot "${source_root}@${basename}")
-  fi
-
+    create_cmd+=("$snapshot")
+  done
+  # Explicit targets freeze recursive membership: children added after planning
+  # are not silently included by a later recursive snapshot command.
+  persist_job || return 1
   log "Creating scheduled send checkpoint ${source_root}@${basename}"
   if ! snapshot_error="$("${create_cmd[@]}" 2>&1)"; then
     [[ -n "$snapshot_error" ]] && log "Scheduled send checkpoint creation failed for ${source_root}@${basename}: ${snapshot_error}"
-    defer_current_job "Source dataset is not ready for scheduled send; waiting for ZFS import/mount." 15
-    return 2
+    fail_current_job "Snapshot creation failed. The committed intent will be revalidated before retry."
+    return 1
   fi
-
   job[SOURCE_SNAPSHOT]="${source_root}@${basename}"
   job[SOURCE_SNAPSHOT_NAME]="$basename"
   job[SOURCE_SNAPSHOT_EPOCH]="$(date +%s)"
-  build_members_for_job job "$basename"
-  persist_job
+  if ! freeze_current_send_manifest; then
+    job[RECOVERY_REQUIRED]=1
+    fail_current_job_final "Created checkpoint identities could not be committed. Review recovery before retrying."
+    return 1
+  fi
   return 0
 }
 
