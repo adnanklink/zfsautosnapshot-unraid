@@ -97,7 +97,29 @@ function zfsas_sm_start_batch_worker($dataset, $token)
     return $response['result'];
 }
 function zfsas_sm_dataset_gates($dataset) { return zfsas_ops_dataset_gates($dataset); }
+/** Called with the batch lock and dataset gates held by the granted worker. */
 function zfsas_sm_execute_item(array &$batch, array &$item, array $map)
+{
+    if (!in_array($item['state'], ['queued', 'running'], true)) { return; }
+    // An interrupted mutation has no committed outcome. In particular, repeating
+    // rollback could discard writes made after the first rollback. Deletion uses
+    // its own stable command ID and result evidence, so it can be reconciled.
+    if ($item['state'] === 'running' && $batch['action'] !== 'delete') {
+        $item['state'] = 'failed';
+        $item['recoveryRequired'] = true;
+        $item['error'] = 'Execution was interrupted before its result was saved. Review current ZFS state before approving a new batch.';
+        zfsas_sm_batch_store($batch);
+        return;
+    }
+    $item['state'] = 'running';
+    $item['executionStartedAt'] = time();
+    zfsas_sm_batch_store($batch); // Intent must be published before the operation.
+    zfsas_sm_execute_item_action($batch, $item, $map);
+    $item['executionFinishedAt'] = time();
+    zfsas_sm_batch_store($batch); // Never defer successful item evidence to chunk end.
+}
+
+function zfsas_sm_execute_item_action(array &$batch, array &$item, array $map)
 {
     $dataset = $batch['dataset']; $action = $batch['action'];
     $row = $map[$item['identity']] ?? null;

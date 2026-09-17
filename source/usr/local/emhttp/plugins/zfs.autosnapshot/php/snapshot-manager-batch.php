@@ -91,7 +91,7 @@ try {
             if ($error) { throw new RuntimeException($error); }
             $retry = zfsas_sm_new_batch($dataset, $batch['action']);
             $retry['items'] = array_values(array_filter($batch['items'], function ($item) { return $item['state'] === 'failed'; }));
-            foreach ($retry['items'] as &$item) { unset($item['deleteJobId'], $item['error']); } unset($item);
+            foreach ($retry['items'] as &$item) { unset($item['deleteJobId'], $item['error'], $item['recoveryRequired'], $item['executionStartedAt'], $item['executionFinishedAt']); } unset($item);
             foreach (['cleanupMode', 'managedOnly'] as $key) { if (isset($batch[$key])) { $retry[$key] = $batch[$key]; } }
             zfsas_sm_batch_review($retry, $rows);
             zfsas_sm_batch_store($retry); $batch = $retry;

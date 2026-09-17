@@ -12,6 +12,7 @@ bash tests/reliability/dependencies.sh
 bash tests/reliability/send_occurrences.sh
 php tests/reliability/settings_endpoints.php
 php tests/reliability/snapshots.php
+php tests/reliability/batch_item_recovery.php
 php tests/reliability/coordinator_state.php
 php tests/reliability/coordinator_worker_protocol.php
 php tests/reliability/coordinator_replan.php
