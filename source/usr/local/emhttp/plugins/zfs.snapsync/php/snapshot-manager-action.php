@@ -18,9 +18,9 @@ try {
         if (!$row || zfsas_sm_exclusion('send', $row) !== '') { throw new RuntimeException('Snapshot is not eligible for Send.'); }
         $destination = trim((string) ($_POST['destination'] ?? ''));
         if (!zfsas_sm_is_valid_dataset_name($destination) || strpos($destination, '/') === false || $destination === $dataset || strpos($destination, $dataset . '/') === 0 || strpos($dataset, $destination . '/') === 0) { throw new RuntimeException('Choose a destination outside the source tree.'); }
-        if (!zfsas_ops_enqueue_manual_send($dataset, $row['snapshot'], $row['snapshotName'], $destination, $row['createdEpoch'], $error)) { throw new RuntimeException($error); }
-        zfsas_ops_start_queue_kicker($error);
-        zfsas_emit_marked_json(['ok' => true, 'dataset' => $dataset, 'message' => 'Send queued.']);
+        require_once __DIR__ . '/replication-submit.php';
+        $receipt = zfsas_native_manual_send($row['snapshot'],(string)$row['guid'],$destination,(string)($_POST['command_id'] ?? ''));
+        zfsas_emit_marked_json(['ok' => true, 'dataset' => $dataset, 'message' => 'Send submitted. Follow preparation and transfer in Activity.'] + $receipt);
     }
     $batch = zfsas_sm_new_batch($dataset, $action);
     if ($action === 'take_snapshot') {

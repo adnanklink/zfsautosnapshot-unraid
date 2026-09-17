@@ -4,7 +4,7 @@ final class ZfsasReplicationInspection
 {
     public static function validate(array $request): void
     {
-        if (array_diff(array_keys($request), ['sourceSnapshot','sourceGuid','destination','destinationGuid','transport'])
+        if (array_diff(array_keys($request), ['sourceSnapshot','sourceGuid','destination','destinationGuid','destinationParentGuid','createDestination','transport'])
             || ($request['transport'] ?? 'local') !== 'local') {
             throw new InvalidArgumentException('This inspection phase requires a local receiver.');
         }
@@ -20,10 +20,28 @@ final class ZfsasReplicationInspection
             || str_starts_with($source[0], $request['destination'] . '/')) {
             throw new InvalidArgumentException('Source and destination trees overlap.');
         }
-        foreach (['sourceGuid','destinationGuid'] as $field) {
-            if (!isset($request[$field]) && $field === 'destinationGuid') { continue; }
+        foreach (['sourceGuid','destinationGuid','destinationParentGuid'] as $field) {
+            if (!isset($request[$field]) && $field !== 'sourceGuid') { continue; }
             if (!is_string($request[$field] ?? null) || !preg_match('/^[0-9]{1,20}$/D', $request[$field])) { throw new InvalidArgumentException('Invalid captured GUID.'); }
         }
+    }
+
+    private static function receiverAbsent(array $request, callable $read): bool
+    {
+        if (empty($request['createDestination'])) { return false; }
+        if ($request['createDestination'] !== true || isset($request['destinationGuid']) || !isset($request['destinationParentGuid'])
+            || !str_contains($request['destination'],'/')) { throw new InvalidArgumentException('New receiver requires an existing, captured parent dataset.'); }
+        $parent = substr($request['destination'],0,strrpos($request['destination'],'/'));
+        if (self::guid($read,$parent) !== $request['destinationParentGuid']) { throw new InvalidArgumentException('Receiver parent identity changed.'); }
+        $text = trim($read(['list','-H','-o','name','-r','-d','1','--',$parent]));
+        $names = $text === '' ? [] : explode("\n",$text);
+        if (!in_array($parent,$names,true) || count($names)>50000) { throw new RuntimeException('Incomplete receiver parent inventory.'); }
+        foreach ($names as $name) {
+            if ($name !== $parent && (!str_starts_with($name,$parent.'/') || str_contains(substr($name,strlen($parent)+1),'/'))) {
+                throw new RuntimeException('Unexpected receiver parent inventory.');
+            }
+        }
+        return !in_array($request['destination'],$names,true);
     }
 
     /** Each command is bounded and remains in the granted worker process group. */
@@ -83,7 +101,16 @@ final class ZfsasReplicationInspection
     {
         self::validate($request); $read ??= [self::class,'command'];
         $source = explode('@',$request['sourceSnapshot'])[0]; $destination = $request['destination'];
-        $sourceGuid = self::guid($read,$source); $destinationGuid = self::guid($read,$destination);
+        $sourceGuid = self::guid($read,$source);
+        if (self::receiverAbsent($request,$read)) {
+            if (self::guid($read,$request['sourceSnapshot']) !== $request['sourceGuid']) { throw new InvalidArgumentException('Selected source snapshot identity changed.'); }
+            if (!self::receiverAbsent($request,$read) || self::guid($read,$source) !== $sourceGuid) { throw new InvalidArgumentException('Replication identities changed during new receiver inspection.'); }
+            return ['outcome'=>'success','inspection'=>['mode'=>'full','sourceDatasetGuid'=>$sourceGuid,'destinationDatasetGuid'=>null,
+                'sourceSnapshot'=>$request['sourceSnapshot'],'sourceGuid'=>$request['sourceGuid'],'destinationSnapshot'=>$destination.'@'.explode('@',$request['sourceSnapshot'])[1],
+                'base'=>null,'sourceCount'=>1,'destinationCount'=>0,'resumeRequired'=>false,
+                'references'=>[['role'=>'source','endpoint'=>'local','dataset'=>$source,'datasetGuid'=>$sourceGuid,'snapshot'=>$request['sourceSnapshot'],'guid'=>$request['sourceGuid']]]]];
+        }
+        $destinationGuid = self::guid($read,$destination);
         if ($sourceGuid === $destinationGuid) { throw new InvalidArgumentException('Source and receiver identify the same dataset.'); }
         if (isset($request['destinationGuid']) && $request['destinationGuid'] !== $destinationGuid) { throw new InvalidArgumentException('Destination identity changed; review replication again.'); }
         $resume = trim($read(['get','-H','-o','value','receive_resume_token','--',$destination]));
@@ -118,6 +145,7 @@ final class ZfsasReplicationInspection
         if ($completed && $completed['guid'] !== $selected['guid']) {
             throw new InvalidArgumentException('Receiver snapshot name has a different GUID; automatic replacement is forbidden.');
         }
+        if (!empty($request['createDestination']) && !$completed) { throw new InvalidArgumentException('New receiver path is now occupied; existing datasets will not be replaced.'); }
         $latest = null;
         foreach ($destinations as $row) {
             if ($latest === null || self::compareDecimal($row['txg'],$latest['txg']) > 0) { $latest = $row; }

@@ -17,22 +17,23 @@ function zfsas_workspace_summary(): array
         $result['sources']['coordinator'] = ['available' => true];
         foreach ($response['result']['runs'] ?? [] as $run) {
             $kinds = $run['kinds'] ?? [];
-            if (!in_array('auto', $kinds, true) && !in_array('batch', $kinds, true)) { continue; }
+            $replication = in_array('send',$kinds,true) || in_array('prepare',$kinds,true) || in_array('finalize',$kinds,true);
+            if (!in_array('auto', $kinds, true) && !in_array('batch', $kinds, true) && !$replication) { continue; }
             $auto = in_array('auto', $kinds, true);
             $details = []; $datasets = [];
             foreach ($run['taskStatus'] ?? [] as $task) {
                 if (!empty($task['dataset'])) { $datasets[] = $task['dataset']; }
                 if (!empty($task['result']['message'])) { $details[] = $task['result']['message']; }
             }
-            $result['operations'][] = ['id' => 'coordinator:' . $run['id'], 'nativeId' => $run['id'], 'type' => $auto ? 'auto' : 'batch',
-                'title' => $auto ? 'Automatic snapshots' : 'Snapshot batch', 'source' => implode(', ', array_unique($datasets)),
+            $result['operations'][] = ['id' => 'coordinator:' . $run['id'], 'nativeId' => $run['id'], 'coordinator'=>true,'manual'=>$run['manual'] ?? false,'type' => $auto ? 'auto' : ($replication ? 'replication' : 'batch'),
+                'title' => $auto ? 'Automatic snapshots' : ($replication ? 'Replication' : 'Snapshot batch'), 'source' => implode(', ', array_unique($datasets)),
                 'destination' => '', 'state' => $run['state'], 'message' => implode(' ', array_unique($details)),
                 'createdAt' => $run['createdAt'], 'finishedAt' => $run['finishedAt'], 'progress' => null,
                 'blocked' => $run['blockedReasons'] ?? [], 'retryAt' => $run['nextRetry'] ?? null,
                 'recoveryRequired' => $run['recoveryRequired'] ?? false,
                 'actions' => !in_array($run['state'], array_merge($terminal, ['canceling']), true) ? ['cancel'] : [],
-                'url' => '/Settings/ZFSSnapSync?section=snapshots' . ($auto ? '&tab=automation' : ''),
-                'logType' => $auto ? 'auto' : 'batch'];
+                'url' => ($replication ? '/Settings/ZFSSnapSync?section=activity' : '/Settings/ZFSSnapSync?section=snapshots') . ($auto ? '&tab=automation' : ''),
+                'logType' => $auto ? 'auto' : ($replication ? 'replication' : 'batch')];
         }
     } catch (Throwable $error) { $result['sources']['coordinator'] = ['available' => false, 'message' => 'Coordinator unavailable. Its runtime status cannot currently be verified.']; }
     try {

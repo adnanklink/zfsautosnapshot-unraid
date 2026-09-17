@@ -75,6 +75,14 @@ final class ZfsasCoordinatorExecutor
         else { exec('/bin/kill -' . $signal . ' ' . $identity['pid'] . ' 2>/dev/null'); }
     }
 
+    public function setLimits(array $limits): void
+    {
+        foreach ($limits as $kind=>$limit) {
+            if (!isset($this->limits[$kind]) || !is_int($limit) || $limit < 1 || $limit > 256) { throw new InvalidArgumentException('Invalid concurrency limit.'); }
+        }
+        $this->limits = $limits + $this->limits;
+    }
+
     public function workerReport(array $request): array
     {
         return $this->journal->workerReport($request, $this->generation, time());

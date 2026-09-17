@@ -79,6 +79,11 @@ if ($result["outcome"]!=="success" || $result["inspection"]["base"]["snapshot"]!
     || count($result["inspection"]["references"])!==3) { fwrite(STDERR,json_encode($result)); exit(1); }
 echo "PASS: native read-only inspection selects GUID-matched base on real ZFS\n";
 ' "$ROOT/source/usr/local/emhttp/plugins/zfs.snapsync/php/replication-inspection.php" "$source_dataset" "$destination" "$(zfs get -H -p -o value guid "$source_dataset@next")"
+# Independently exercise the complete native local incremental task graph.
+zfs send "$source_dataset@base" | zfs receive -u "$target_pool/native"
+zfs snapshot "$target_pool@unrelated-native"
+php "$ROOT/tests/reliability/native_replication.php" "$source_dataset" "$target_pool/native" "$target_pool@unrelated-native"
+php "$ROOT/tests/reliability/native_replication.php" "$source_dataset" "$target_pool/native-full" "$target_pool@unrelated-native" full
 run_pipeline_with_status 'Real incremental transfer' "$source_dataset@base" "$source_dataset@next" "$destination"
 snapshots_have_same_guid "$source_dataset@next" "$destination@next" local
 # Native preparation proves completion without replay and rejects receiver divergence.

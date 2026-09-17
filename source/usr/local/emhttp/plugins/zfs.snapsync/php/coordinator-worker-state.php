@@ -157,7 +157,7 @@ trait ZfsasCoordinatorWorkerState
             self::identifier((string) $name);
             $id = $taskId . ':' . $name;
             if (strlen($id) > 320 || isset($this->state['tasks'][$id]) || !is_array($spec)
-                || !in_array($spec['kind'] ?? '', ['send', 'delete', 'finalize'], true)
+                || !in_array($spec['kind'] ?? '', ['prepare', 'send', 'delete', 'finalize'], true)
                 || !is_string($spec['dataset'] ?? null) || $spec['dataset'] === ''
                 || !is_array($spec['parameters'] ?? []) || !is_array($spec['references'] ?? [])
                 || !is_array($spec['dependencies'] ?? [])) {

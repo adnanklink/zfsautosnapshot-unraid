@@ -87,11 +87,11 @@
   function open(id,trigger) {const op=snapshot.operations.find(item=>item.id===id);if(!op)return;if(selected!==id)$('operation-detail-log')?.remove();selected=id;$('operation-action-message').textContent='';detail(op);ZfsasUI.open($('operation-detail'),trigger);}
   async function perform(op,action) {
     if(busy)return;
-    if(action==='cancel' && !window.confirm(op.type==='batch'?'Cancel this batch and its pending operations? Completed results will remain available.':'Cancel this whole run? Its schedule will remain paused until Resume.'))return;
+    if(action==='cancel' && !window.confirm(op.manual && op.type==='replication'?'Cancel this manual replication run? Completed receiver snapshots will be preserved.':op.type==='batch'?'Cancel this batch and its pending operations? Completed results will remain available.':'Cancel this whole run? Its schedule will remain paused until Resume.'))return;
     if(action==='clear_failed' && op.recoveryRequired && !window.confirm('Clear this recovery record after reviewing the preserved snapshots? Clearing releases its cleanup protection; it does not verify or remove those snapshots.'))return;
     busy=true; $('operation-actions').querySelectorAll('button').forEach(button=>button.disabled=true);
     try {
-      const coordinator=op.type==='auto'||op.type==='batch';
+      const coordinator=op.coordinator===true||op.type==='auto'||op.type==='batch';
       const data=await ZfsasRequests.request('operation-action',base+(coordinator?'coordinator-action.php':'send-queue-action.php'),coordinator?{action,run_id:op.nativeId}:{action,job_id:op.nativeId});
       $('operation-action-message').textContent=action==='cancel'?'Cancellation saved. Waiting for verified worker shutdown.':data.message||'Request accepted.';
     }catch(error){$('operation-action-message').textContent=error.message;}

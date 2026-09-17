@@ -187,6 +187,7 @@
     else $('filters').elements.origin.value = key;
     // The reset handler applies these values once, after reset completes.
   }));
+  const pendingSendCommands = new Map();
   $('snapshots').addEventListener('click', event => {
     const input = event.target.closest('[data-select]');
     if (input && !input.disabled) { selection.toggle(rows, Number(input.dataset.index), input.checked, event.shiftKey); selectedStatus(); }
@@ -197,8 +198,12 @@
       if (action === 'send') {
         const destination = window.prompt('Destination dataset for ' + row.snapshot + ':');
         if (!destination) return; data.destination = destination;
+        const key = row.snapshot + '#' + row.guid + '|' + destination;
+        if (!pendingSendCommands.has(key)) pendingSendCommands.set(key, 'manual-' + Array.from(crypto.getRandomValues(new Uint8Array(16)), value => value.toString(16).padStart(2, '0')).join(''));
+        data.command_id = pendingSendCommands.get(key);
       }
       const payload = await request('action', 'snapshot-manager-action.php', data, 'POST');
+      if (action === 'send') pendingSendCommands.delete(row.snapshot + '#' + row.guid + '|' + data.destination);
       if (!selection.accepts(stamp)) return;
       if (payload.token) renderBatch(payload); else { notice(payload.message); loadSnapshots(true); }
     });

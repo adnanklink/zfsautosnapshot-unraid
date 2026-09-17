@@ -6,6 +6,7 @@ require_once __DIR__ . '/coordinator-retention.php';
 require_once __DIR__ . '/coordinator-auto-admission.php';
 require_once __DIR__ . '/coordinator-deletion.php';
 require_once __DIR__ . '/coordinator-replication-inspect.php';
+require_once __DIR__ . '/coordinator-replication.php';
 require_once __DIR__ . '/coordinator-batch.php';
 require_once __DIR__ . '/schedule-spec.php';
 require_once __DIR__ . '/snapshot-manager-helpers.php';
@@ -50,6 +51,9 @@ $command = static function (array $task) use ($root, $configDir, $journal, $dele
     if ($task['kind'] === 'prepare' && ($task['parameters']['phase'] ?? '') === 'replication_inspect') {
         return zfsas_coordinator_replication_inspection_command($task, $root);
     }
+    if (in_array($task['parameters']['phase'] ?? '', ['replication_space','replication_transfer','replication_verify'],true)) {
+        return zfsas_coordinator_replication_command($task,$root,zfsas_config_revision($configDir),$journal);
+    }
     if ($task['kind'] === 'batch') {
         if (isset($task['items']) && ($task['parameters']['batch']['action'] ?? '') === 'delete') {
             $deletion->dispatchBatch($task);
@@ -72,6 +76,7 @@ $command = static function (array $task) use ($root, $configDir, $journal, $dele
     return zfsas_coordinator_auto_command($journal, $task, $pair, $root);
 };
 $outcome = static function ($task, $code) use ($configDir, $journal): array {
+    if (in_array($task['kind'], ['send','finalize'],true)) { return ['outcome'=>'transient_failure','recoveryRequired'=>true,'message'=>'Native replication stopped without an explicit result.']; }
     if ($task['kind'] === 'prepare') { return ['outcome'=>'transient_failure','message'=>'Inspection stopped without an explicit result.']; }
     if ($task['kind'] === 'delete') { return ['outcome'=>'transient_failure', 'message'=>'Deletion attempt stopped without an explicit result.', 'exitCode'=>$code]; }
     if ($task['kind'] === 'batch') {
@@ -124,6 +129,11 @@ $handler = static function (array $request) use ($journal, $executor, $submitAut
         if (!$loadConfig()) { throw new InvalidArgumentException('Configuration save is in progress. Retry with the same command ID.'); }
         return $submitAuto($id, true);
     }
+    if ($action === 'replication_receipt') { return zfsas_coordinator_replication_receipt($journal,$request); }
+    if ($action === 'replication') {
+        if (!$loadConfig()) { throw new InvalidArgumentException('Configuration save is in progress. Retry the same command.'); }
+        return zfsas_coordinator_submit_replication($journal,$request,$config['revision'],$config['send']);
+    }
     if ($action === 'delete') { return $deletion->request(); }
     if ($action === 'batch') {
         $token = $request['token'] ?? '';
@@ -148,7 +158,7 @@ $handler = static function (array $request) use ($journal, $executor, $submitAut
         $pauseAuto = false;
         foreach ($run['tasks'] as $taskId) {
             $kind = $journal->state['tasks'][$taskId]['kind'];
-            if (!in_array($kind, ['auto', 'batch'], true)) { throw new InvalidArgumentException('Cancel this task through its owning run.'); }
+            if (!in_array($kind, ['auto', 'batch'], true) && !isset($journal->state['tasks'][$taskId]['parameters']['replication'])) { throw new InvalidArgumentException('Cancel this task through its owning run.'); }
             $pauseAuto = $pauseAuto || $kind === 'auto';
         }
         if (!zfsas_ops_persist_control(zfsas_ops_control_path('cancelled', $runId), $runId)
@@ -169,6 +179,7 @@ $handler = static function (array $request) use ($journal, $executor, $submitAut
 $calendar = [];
 $tick = static function (float $now) use ($journal, $executor, $root, $loadConfig, $submitAuto, $deletion, &$config, &$nextConfigCheck, &$nextPrune, &$calendar): float {
     if ($now >= $nextConfigCheck) { $loadConfig(); $nextConfigCheck = $now + 30; }
+    $executor->setLimits(['send'=>max(1,(int)$config['send']['SEND_MAX_PARALLEL']),'prepare'=>max(1,(int)$config['send']['SEND_PREP_EXTRA_WORKERS'])]);
     $schedule = $config['schedule']; $zone = $config['timezone']; $wall = time();
     $key = $config['revision'] . $zone->getName();
     if (($calendar['key'] ?? '') !== $key || $wall < ($calendar['lastWall'] ?? 0) || $wall >= ($calendar['next'] ?? PHP_INT_MAX)) {
