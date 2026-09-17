@@ -156,3 +156,18 @@ routes batch Cancel to the coordinator. Fixtures cover live and queued children,
 decisions, no unrelated schedule pause and restart. Workspace browser coverage
 checks the request route and batch confirmation. Shared cleanup cancellation with
 multiple owners remains a separate, unfinished acceptance gate.
+
+Deletion approval is now captured from immutable journal items into
+`/tmp/zfs-autosnapshot-coordinator/attempt-inputs/*.job.approval.json`. These RAM
+artifacts contain the bound task/job identity, batch configuration and exact
+selected item; no new flash runtime writes are introduced. The deletion checker
+uses the capture, while status manifests and result files remain projections.
+Tests reject mismatched/missing captures and prove that stale compatibility results
+cannot fabricate completion. Capture retention follows journal task retention.
+Run `deletion_approval.php` in its own disposable container (also supported with
+read-only `/boot`); it deliberately creates fixture paths and a ZFS command stub.
+
+A `strace -f -e trace=%file` run of the isolated approval fixture with read-only
+`/boot` recorded 2,922 filesystem calls, 92 boot-path references and zero attempted
+boot writes or metadata mutations. This is scoped approval-path evidence, not the
+outstanding all-path flash-write certification.

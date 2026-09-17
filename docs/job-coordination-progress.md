@@ -553,3 +553,44 @@ workspace browser tests and temporary package verification pass.
 This ownership relation is exclusive. Shared prerequisite cleanup with multiple
 independently valid authorizations still needs its planned detach/retain semantics;
 this increment does not treat shared work as exclusively owned.
+
+## Ownership update: deletion approval and result authority
+
+Deletion attempts now receive a RAM approval artifact captured from the journal's
+immutable batch parameters and selected item. It is bound to the task, job, batch,
+snapshot and GUID. The operation-boundary checker validates this capture and the
+current configuration revision instead of using the mutable status manifest as
+approval. Missing, mismatched or symlinked captures fail closed. Pending legacy
+manual deletion records without journal-owned item approval require fresh review.
+Approval artifacts are pruned only after their journal tasks are removed.
+
+The granted adapter no longer accepts compatibility deletion-result files as proof
+of successful execution. Journal-owned batch projections and status reconciliation
+also preserve journal item states rather than replacing them with compatibility
+file contents. Legacy manifest recovery still reconciles its old committed result
+evidence before requiring fresh approval for unfinished items.
+
+The approval fixture covers missing captures, exact selection, task/job/version
+binding, configuration changes, symlinks and independence from status manifests;
+it passes with read-only `/boot`. Adapter coverage injects a stale result file and
+verifies explicit execution/outcome reporting. Journal-item tests verify that
+neither projection nor endpoint reconciliation fabricates completion from such a
+file. Retention tests cover captured approvals alongside active task inputs.
+
+Shared cleanup cancellation still needs the replication ownership handoff: legacy
+send producers currently provide schedule/configuration identity, not coordinator
+run authorization. Multiple independently valid owners must be registered before
+any cancel/detach behavior can safely retain another run's cleanup authority.
+
+The obsolete `snapshot-batch-worker.php` entry point is now retired: it returns a
+review-required error without loading manifests, acquiring worker locks or issuing
+ZFS commands. Existing launcher paths remain recognizable to installation/shutdown
+cleanup, but no environment flag or old grant can restore manifest-owned execution.
+The handoff fixture verifies this rejection and preservation of existing evidence.
+
+Verification for this authority increment: full reliability and stage-one suites,
+actual batch endpoints (including real retry deadlines and failed-only retry),
+batch crash recovery, batch cancellation, PHP parsing, ShellCheck and temporary
+package verification pass. The scoped approval-path syscall trace recorded zero
+attempted `/boot` mutations. Full replication and all-path flash certification
+remain separate unfinished gates.
