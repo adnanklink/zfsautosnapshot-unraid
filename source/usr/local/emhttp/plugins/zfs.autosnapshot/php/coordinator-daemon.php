@@ -47,17 +47,17 @@ $command = static function (array $task) use ($root, $configDir, $journal, $dele
     if (is_file($configDir . '/maintenance')) { return null; }
     if ($task['kind'] === 'delete') { return $deletion->command($task); }
     if ($task['kind'] === 'batch') {
+        if (isset($task['items']) && ($task['parameters']['batch']['action'] ?? '') === 'delete') {
+            $deletion->dispatchBatch($task);
+            $deletion->projectBatch($task['id']);
+            return null;
+        }
         if (isset($task['items'])) {
             zfsas_coordinator_project_batch($journal, $task['id']);
             return [PHP_BINARY, __DIR__ . '/coordinator-batch-worker.php'];
         }
-        $legacyBatch = zfsas_sm_read_json_file(zfsas_sm_batch_path($task['parameters']['token']));
-        if (($legacyBatch['action'] ?? '') !== 'delete' || ($task['parameters']['deleteProtocol'] ?? null) !== 3) {
-            return ['outcome'=>'validation_failure', 'reason'=>'recovery_required', 'recoveryRequired'=>true,
-                'message'=>'Batch execution ownership changed. Review and approve the unfinished selection again.'];
-        }
-        return ['/usr/bin/env', 'ZFSAS_COORDINATED=1', PHP_BINARY, __DIR__ . '/snapshot-batch-worker.php',
-            $task['dataset'], $task['parameters']['token']];
+        return ['outcome'=>'validation_failure', 'reason'=>'recovery_required', 'recoveryRequired'=>true,
+            'message'=>'Batch execution ownership changed. Review and approve the unfinished selection again.'];
     }
     if ($task['kind'] !== 'auto') { throw new RuntimeException('No execution adapter for task kind.'); }
     // Read both files under the shared nonblocking lock. A settings save must
@@ -71,31 +71,8 @@ $outcome = static function ($task, $code) use ($configDir, $journal): array {
     if ($task['kind'] === 'delete') { return ['outcome'=>'transient_failure', 'message'=>'Deletion attempt stopped without an explicit result.', 'exitCode'=>$code]; }
     if ($task['kind'] === 'batch') {
         if (isset($task['items'])) { return in_array($code, [0, 75], true) ? $journal->itemTaskOutcome($task['id']) : ['outcome'=>'transient_failure', 'exitCode'=>$code]; }
-        $path = zfsas_sm_batch_path($task['parameters']['token']);
-        $lock = @fopen($path . '.lock', 'c');
-        if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) {
-            if ($lock) { fclose($lock); }
-            return ['outcome' => 'wait', 'reason' => 'resource', 'delay' => 1];
-        }
-        try {
-            $batch = zfsas_sm_read_json_file($path);
-            if (!$batch || empty($batch['approvedAt'])) {
-                return ['outcome' => 'validation_failure', 'message' => 'Batch authority is unavailable; review a new selection.'];
-            }
-            $previous = $batch;
-            zfsas_sm_batch_reconcile($batch);
-            if ($batch !== $previous) { zfsas_sm_batch_store($batch); }
-            if ($batch['state'] === 'complete') {
-                $failed = array_filter($batch['items'], static fn($item) => $item['state'] === 'failed');
-                return ['outcome' => $failed ? 'validation_failure' : 'success',
-                    'recoveryRequired' => (bool) array_filter($batch['items'], static fn($item) => !empty($item['recoveryRequired'])),
-                    'message' => $failed ? 'Some items failed. Review a failed-only retry.' : 'All expected items reached a terminal result.'];
-            }
-            if ($code === 0 || $code === 75) {
-                return ['outcome' => 'wait', 'reason' => $code === 75 ? 'resource' : 'dependency', 'delay' => 1];
-            }
-            return ['outcome' => 'transient_failure', 'exitCode' => $code];
-        } finally { flock($lock, LOCK_UN); fclose($lock); }
+        return ['outcome'=>'validation_failure', 'recoveryRequired'=>true,
+            'message'=>'Legacy batch execution authority requires a fresh review.'];
     }
     if ($task['parameters']['revision'] !== zfsas_config_revision($configDir)) {
         return ['outcome' => 'validation_failure', 'reason' => 'configuration', 'message' => 'Configuration changed; review and submit a new run.'];
@@ -154,15 +131,10 @@ $handler = static function (array $request) use ($journal, $executor, $submitAut
         if (!$batch || empty($batch['approvedAt']) || !in_array($batch['state'], ['queued', 'running', 'complete'], true)
             || $batch['dataset'] !== ($request['dataset'] ?? '')) { throw new InvalidArgumentException('Review this selection before submitting.'); }
         if ($batch['configRevision'] !== zfsas_config_revision(zfsas_sm_plugin_config_dir())) { throw new InvalidArgumentException('Configuration changed. Review a new selection.'); }
-        if ($batch['action'] !== 'delete') {
-            $items = $batch['items']; unset($batch['items']);
-            return $journal->submit($id, ['manual'=>true, 'revision'=>$batch['configRevision'], 'tasks'=>[
-                'items'=>['kind'=>'batch', 'dataset'=>$batch['dataset'], 'items'=>$items,
-                    'parameters'=>['token'=>$token, 'revision'=>$batch['configRevision'], 'batch'=>$batch]]]], time());
-        }
-        return $journal->submit($id, ['manual' => true, 'revision' => $batch['configRevision'],
-            'tasks' => ['items' => ['kind' => 'batch', 'dataset' => $batch['dataset'],
-                'parameters' => ['token' => $token, 'revision' => $batch['configRevision'], 'deleteProtocol'=>3]]]], time());
+        $items = $batch['items']; unset($batch['items']);
+        return $journal->submit($id, ['manual'=>true, 'revision'=>$batch['configRevision'], 'tasks'=>[
+            'items'=>['kind'=>'batch', 'dataset'=>$batch['dataset'], 'items'=>$items,
+                'parameters'=>['token'=>$token, 'revision'=>$batch['configRevision'], 'batch'=>$batch]]]], time());
     }
     if ($action === 'cancel') {
         $runId = $request['runId'] ?? '';

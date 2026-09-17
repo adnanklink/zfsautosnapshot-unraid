@@ -37,6 +37,8 @@ trait ZfsasCoordinatorIndexes
         foreach ($task['dependencies'] as $dependency) {
             if (($this->state['tasks'][$dependency]['state'] ?? '') !== 'complete') { return; }
         }
+        if ($task['state'] === 'waiting' && $task['blocked'] === 'dependency'
+            && ($task['parameters']['batch']['action'] ?? '') === 'delete') { return; }
         $deadline = $task['retryMonotonic'] ?? 0;
         if ($deadline > 0) { $this->deadlines->insert(['id'=>$id, 'version'=>$version], -$deadline); }
         else { $this->readyTasks[$id] = true; }

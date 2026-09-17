@@ -5,6 +5,7 @@ final class ZfsasCoordinatorDeletion
     private ZfsasCoordinatorState $journal;
     private string $root;
     private array $active = [];
+    private array $batchProjections = [];
     private bool $dirty = true;
     private float $nextImport = 0;
     private const FIELDS = ['JOB_ID','REQUESTED_EPOCH','QUEUE_SORT','DATASET','SNAPSHOT','SNAPSHOT_NAME','SNAPSHOT_EPOCH','SNAPSHOT_GUID','SNAPSHOT_CREATETXG','DELETE_POOL','ESTIMATED_RECLAIM_BYTES','SEND_PROTECTED','DELETE_SCOPE','SEND_SCHEDULE_JOB_ID','SEND_CONFIG_HASH'];
@@ -23,6 +24,7 @@ final class ZfsasCoordinatorDeletion
         }
         foreach ($journal->state['tasks'] as $id => $task) {
             if ($task['kind'] === 'delete' && isset($task['parameters']['deleteJob'])) { $this->changed($id); }
+            if (($task['parameters']['batch']['action'] ?? '') === 'delete') { $this->batchProjections[$id] = true; }
         }
     }
 
@@ -47,7 +49,7 @@ final class ZfsasCoordinatorDeletion
         if (file_put_contents($path, substr($line, 0, 8192) . "\n", FILE_APPEND) === false) { throw new RuntimeException('Cannot retain rejected deletion evidence.'); }
     }
 
-    private function accept(string $line): ?string
+    private function accept(string $line, string $ownerItemId = ''): ?string
     {
         $parts = explode("\t", rtrim($line, "\r\n"));
         if (array_shift($parts) !== 'ENQUEUE3' || count($parts) !== count(self::FIELDS)) { $this->quarantine($line); return null; }
@@ -67,6 +69,14 @@ final class ZfsasCoordinatorDeletion
                 $this->quarantine($line); return null;
             }
             $owner = $run['id'];
+            foreach ($run['tasks'] as $taskId) {
+                if (!isset($this->journal->state['tasks'][$taskId]['items'])) { continue; }
+                $item = $this->journal->state['items'][$ownerItemId] ?? null;
+                if (!$item || $item['taskId'] !== $taskId || $item['state'] !== 'queued'
+                    || $item['spec']['snapshot'] !== $job['SNAPSHOT'] || $item['spec']['guid'] !== $job['SNAPSHOT_GUID']) {
+                    $this->quarantine($line); return null;
+                }
+            }
         } elseif (!preg_match('/^[a-f0-9]{64}$/D', $job['SEND_CONFIG_HASH'])) {
             $this->quarantine($line); return null;
         }
@@ -82,7 +92,7 @@ final class ZfsasCoordinatorDeletion
             return $receipt['runId'];
         }
         $receipt = $this->journal->submit($command, ['manual'=>false, 'tasks'=>['snapshot'=>[
-            'kind'=>'delete', 'dataset'=>$job['DATASET'], 'parameters'=>['deleteJob'=>$job, 'ownerRunId'=>$owner]]]], time());
+            'kind'=>'delete', 'dataset'=>$job['DATASET'], 'parameters'=>['deleteJob'=>$job, 'ownerRunId'=>$owner, 'ownerItemId'=>$ownerItemId]]]], time());
         $this->changed($receipt['runId'] . ':snapshot');
         return $receipt['runId'];
     }
@@ -97,6 +107,7 @@ final class ZfsasCoordinatorDeletion
     {
         if ($now >= $this->nextImport) { $more = $this->import(); $this->nextImport = $now + ($more ? .05 : 30); }
         if ($this->dirty) { $this->project(); }
+        foreach (array_keys($this->batchProjections) as $id) { $this->projectBatch($id); }
         return $this->nextImport;
     }
 
@@ -131,6 +142,46 @@ final class ZfsasCoordinatorDeletion
             if ($done) { unlink($spool); unlink($cursorPath); }
             return true; // Recheck once for submissions appended during draining.
         } finally { flock($lock, LOCK_UN); fclose($lock); }
+    }
+
+    /** Admit at most 50 captured items; no inventory or mutation runs here. */
+    public function dispatchBatch(array $task): void
+    {
+        $batch = $task['parameters']['batch']; $count = 0;
+        foreach ($task['items'] as $itemId) {
+            if ($this->journal->state['items'][$itemId]['state'] === 'deleting') { $count++; }
+        }
+        foreach ($task['items'] as $itemId) {
+            $item = $this->journal->state['items'][$itemId];
+            if ($item['state'] !== 'queued') { continue; }
+            if ($count++ >= 50) { break; }
+            $spec = $item['spec'];
+            $jobId = 'sm-' . $batch['token'] . '-' . substr(hash('sha256', $spec['identity']), 0, 16);
+            $job = array_fill_keys(self::FIELDS, '');
+            $job = array_replace($job, ['JOB_ID'=>$jobId, 'REQUESTED_EPOCH'=>(string) $batch['approvedAt'],
+                'QUEUE_SORT'=>(string) $count, 'DATASET'=>$batch['dataset'], 'SNAPSHOT'=>$spec['snapshot'],
+                'SNAPSHOT_NAME'=>substr($spec['snapshot'], strlen($batch['dataset']) + 1),
+                'SNAPSHOT_GUID'=>(string) $spec['guid'], 'SNAPSHOT_EPOCH'=>'0',
+                'DELETE_POOL'=>explode('/', $batch['dataset'])[0], 'ESTIMATED_RECLAIM_BYTES'=>'0',
+                'SEND_PROTECTED'=>'0', 'DELETE_SCOPE'=>'snapshot']);
+            $childRun = $this->accept(zfsas_ops_delete_queue_command_line($job), $itemId);
+            if ($childRun === null) {
+                $this->journal->state['items'][$itemId]['state'] = 'failed';
+                $this->journal->state['items'][$itemId]['result'] = ['state'=>'failed', 'error'=>'Captured deletion identity is invalid; review a new selection.'];
+                continue;
+            }
+            $childId = $childRun . ':snapshot';
+            $this->journal->state['items'][$itemId]['state'] = 'deleting';
+            $this->journal->state['items'][$itemId]['deletionTaskId'] = $childId;
+            $this->journal->state['items'][$itemId]['deleteJobId'] = $jobId;
+        }
+        $this->journal->refreshDeletionBatch($task['id'], time());
+    }
+
+    public function projectBatch(string $id): void
+    {
+        if (zfsas_coordinator_project_batch($this->journal, $id)) { unset($this->batchProjections[$id]); }
+        else { $this->batchProjections[$id] = true; }
     }
 
     public function command(array $task): array
@@ -168,6 +219,13 @@ final class ZfsasCoordinatorDeletion
             self::publish(zfsas_ops_status_dir() . '/delete-results/' . $task['parameters']['deleteJob']['JOB_ID'] . '.result',
                 $state . "\t" . str_replace(["\t","\r","\n"], ' ', $result['message'] ?? 'Deletion did not complete.') . "\n");
         } else { $this->active[$id] = true; }
+        $itemId = $task['parameters']['ownerItemId'] ?? '';
+        if ($itemId !== '' && ZfsasCoordinatorState::terminal($task['state']) && isset($this->journal->state['items'][$itemId])) {
+            $this->journal->deletionItemResult($itemId, ['state'=>$state,
+                'error'=>$state === 'completed' ? '' : ($result['message'] ?? 'Deletion did not complete.'),
+                'recoveryRequired'=>(bool) ($result['recoveryRequired'] ?? false)], time());
+            $this->projectBatch($this->journal->state['items'][$itemId]['taskId']);
+        }
         $this->dirty = true;
     }
 

@@ -84,12 +84,46 @@ trait ZfsasCoordinatorItems
         unset($item, $this->state['attempts'][$token]['activeItem']);
     }
 
+    /** Coordinator-only completion of a deletion dependency after verified shutdown. */
+    public function deletionItemResult(string $itemId, array $result, int $now): void
+    {
+        $item =& $this->state['items'][$itemId];
+        $task =& $this->state['tasks'][$item['taskId']];
+        if (($item['result'] ?? null) === $result && $item['state'] === $result['state']) { return; }
+        if (($task['parameters']['batch']['action'] ?? '') !== 'delete') { throw new InvalidArgumentException('Not a deletion batch.'); }
+        $item['state'] = $result['state']; $item['result'] = $result; $item['finishedAt'] = $now;
+        $this->refreshDeletionBatch($task['id'], $now);
+    }
+
+    public function refreshDeletionBatch(string $taskId, int $now): void
+    {
+        $task =& $this->state['tasks'][$taskId];
+        if (self::terminal($task['state'])) { $this->commit(); return; }
+        $queued = false; $waiting = false; $failed = false; $dependencies = [];
+        foreach ($task['items'] as $id) {
+            $state = $this->state['items'][$id]['state'];
+            $queued = $queued || $state === 'queued'; $waiting = $waiting || $state === 'deleting';
+            $failed = $failed || $state === 'failed';
+            if ($state === 'deleting') { $dependencies[] = $this->state['items'][$id]['deletionTaskId']; }
+        }
+        $task['dependencies'] = $dependencies;
+        $this->state['runs'][$task['runId']]['state'] = 'running';
+        $task['retryAt'] = null; $task['retryMonotonic'] = null;
+        $task['blocked'] = $waiting ? 'dependency' : '';
+        $task['state'] = $waiting ? 'waiting' : ($queued ? 'queued' : ($failed ? 'failed' : 'complete'));
+        if (!$waiting && !$queued) {
+            $task['result'] = $this->itemTaskOutcome($taskId);
+            $this->settle($task['runId'], $now);
+        }
+        $this->commit();
+    }
+
     public function itemTaskOutcome(string $taskId): array
     {
         $failed = false; $recovery = false;
         foreach ($this->state['tasks'][$taskId]['items'] ?? [] as $id) {
             $item = $this->state['items'][$id];
-            if (in_array($item['state'], ['queued', 'running'], true)) { return ['outcome'=>'wait', 'reason'=>'resource', 'delay'=>1]; }
+            if (in_array($item['state'], ['queued', 'running', 'deleting'], true)) { return ['outcome'=>'wait', 'reason'=>'resource', 'delay'=>1]; }
             $failed = $failed || $item['state'] === 'failed';
             $recovery = $recovery || !empty($item['result']['recoveryRequired']);
         }

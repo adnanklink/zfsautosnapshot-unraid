@@ -8,10 +8,19 @@ if (!$batch || empty($batch['approvedAt']) || $batch['configRevision'] !== zfsas
 $found = false;
 foreach ($batch['items'] as $item) { if ($item['snapshot'] === $snapshot && $item['guid'] === $guid && !empty($item['candidate'])) { $found = true; break; } }
 if (!$found) { echo 'Snapshot was not approved'; exit(1); }
-if (!isset($batch['cleanupMode'])) { exit(0); }
 $rows = zfsas_sm_dataset_snapshots($batch['dataset'], $error, true);
 if ($error) { echo $error; exit(1); }
 foreach ($rows as &$row) { zfsas_sm_ignore_owned_pending($row, $batch); } unset($row);
+$eligible = false;
+foreach ($rows as $row) {
+    if ($row['snapshot'] !== $snapshot || (string) $row['guid'] !== $guid) { continue; }
+    $row['activeTransfer'] = zfsas_sm_dataset_has_transfer($batch['dataset']);
+    $reason = zfsas_sm_exclusion('delete', $row);
+    if ($reason !== '') { echo $reason; exit(1); }
+    $eligible = true; break;
+}
+if (!$eligible) { echo 'Snapshot metadata changed before deletion'; exit(1); }
+if (!isset($batch['cleanupMode'])) { exit(0); }
 $config = zfsas_send_parse_config_file(zfsas_sm_plugin_config_dir() . '/zfs_autosnapshot.conf', zfsas_auto_defaults());
 $plan = zfsas_sm_cleanup_plan($rows, $batch['cleanupMode'], $config, time(), $batch['managedOnly']);
 foreach ($plan as $item) { if ($item['snapshot'] === $snapshot && $item['guid'] === $guid && $item['candidate']) { exit(0); } }
