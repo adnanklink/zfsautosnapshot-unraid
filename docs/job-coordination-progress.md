@@ -405,3 +405,23 @@ parsing and the item/coordinator runtime fixtures with read-only `/boot` pass.
 Still required: unified deletion execution, Auto Snapshot mutation authority,
 full replication phases and scheduling, shared cancellation, complete legacy
 installation handoff, configuration replanning and the remaining release gates.
+
+## Ownership update: single-deletion adapter foundation
+
+A granted single-deletion adapter now reuses the existing worker's safety checks
+without loading or flushing its internal queue. It verifies coordinator ownership
+through the worker socket before processing, takes the global deletion lock,
+returns array/resource waits immediately, and reports an explicit result. Local
+and remote destroy execution make one attempt; transient retries belong to the
+coordinator. It never publishes authoritative deletion result files.
+
+`coordinator_delete_adapter.php` uses the real socket, executor and adapter with
+mock ZFS. It verifies exact deletion, changed-GUID and held-snapshot exclusion,
+explicit outcomes, one failed destroy per grant and coordinator retry scheduling.
+Run it in a disposable container with the plugin and sbin source mounted at their
+production paths. ShellCheck error-level and readiness safety checks pass.
+
+This adapter is not yet selected by the production daemon. Deletion submission
+import, individual task/result projections and shared run ownership must be wired
+before replacing the existing deletion pump. The legacy worker remains executable
+and can now also be sourced by the adapter without starting its daemon loop.
