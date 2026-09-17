@@ -1,7 +1,9 @@
 <?php
+require_once __DIR__ . "/coordinator-worker-state.php";
 /** Single-writer, boot-local coordinator state. Never place this under /boot. */
 final class ZfsasCoordinatorState
 {
+    use ZfsasCoordinatorWorkerState;
     private string $root;
     private $lock;
     public array $state;
@@ -15,7 +17,7 @@ final class ZfsasCoordinatorState
         $this->root = $root;
         $this->lock = fopen($root . '/owner.lock', 'c');
         if (!$this->lock || !flock($this->lock, LOCK_EX | LOCK_NB)) { throw new RuntimeException('Coordinator already owns this journal.'); }
-        $this->state = ['version' => 1, 'sequence' => 0, 'commands' => [], 'schedules' => [], 'runs' => [], 'tasks' => [], 'attempts' => []];
+        $this->state = ['version' => 2, 'sequence' => 0, 'commands' => [], 'schedules' => [], 'runs' => [], 'tasks' => [], 'attempts' => []];
         $path = $root . '/checkpoint.json';
         if (is_file($path)) {
             $record = json_decode((string) file_get_contents($path), true, 512, JSON_THROW_ON_ERROR);
@@ -23,8 +25,10 @@ final class ZfsasCoordinatorState
                 throw new RuntimeException('Coordinator checkpoint is incomplete or corrupt; refusing recovery.');
             }
             $loaded = json_decode($record['payload'], true, 512, JSON_THROW_ON_ERROR);
-            if (($loaded['version'] ?? null) !== 1) { throw new RuntimeException('Unsupported coordinator journal version.'); }
+            if (!in_array($loaded['version'] ?? null, [1, 2], true)) { throw new RuntimeException('Unsupported coordinator journal version.'); }
             $this->state = $loaded;
+            // Existing grants are revoked by the executor before any recovery.
+            $this->state['version'] = 2;
         }
         // A .pending file is never an accepted command. Atomic rename is the
         // publication point; callers are acknowledged only after publication.
@@ -183,13 +187,13 @@ final class ZfsasCoordinatorState
         $this->commit();
     }
 
-    public function claim(string $taskId, float $monotonic, int $now): string
+    public function claim(string $taskId, float $monotonic, int $now, string $generation = ''): string
     {
         if (!in_array($taskId, $this->runnable($monotonic), true)) { throw new InvalidArgumentException('Task is not runnable.'); }
         $token = bin2hex(random_bytes(24));
         $task =& $this->state['tasks'][$taskId];
         $task['attempt'] = $token; $task['state'] = 'launching'; $task['blocked'] = '';
-        $this->state['attempts'][$token] = ['token' => $token, 'taskId' => $taskId, 'state' => 'launching', 'pid' => null, 'start' => null, 'createdAt' => $now];
+        $this->state['attempts'][$token] = ['token' => $token, 'taskId' => $taskId, 'state' => 'launching', 'pid' => null, 'start' => null, 'createdAt' => $now, 'generation' => $generation];
         $this->state['runs'][$task['runId']]['state'] = 'running';
         $this->commit();
         return $token;

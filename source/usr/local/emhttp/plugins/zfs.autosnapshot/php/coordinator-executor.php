@@ -70,6 +70,11 @@ final class ZfsasCoordinatorExecutor
         else { exec('/bin/kill -' . $signal . ' ' . $identity['pid'] . ' 2>/dev/null'); }
     }
 
+    public function workerReport(array $request): array
+    {
+        return $this->journal->workerReport($request, $this->generation, time());
+    }
+
     public function cancel(string $runId): void
     {
         foreach ($this->journal->cancel($runId, time()) as $token) {
@@ -132,7 +137,11 @@ final class ZfsasCoordinatorExecutor
                     $this->stopping[$token] = ['since' => $now, 'recovery' => true];
                     $this->journal->state['tasks'][$taskId]['state'] = 'stopping'; $this->journal->commit();
                 } else {
-                    $result = ($this->outcome)($task, $this->exitCodes[$token], $dir);
+                    $reported = $this->journal->state['attempts'][$token]['reportedResult'] ?? null;
+                    $result = $reported ?? ($this->outcome)($task, $this->exitCodes[$token], $dir);
+                    if ($reported !== null && $this->exitCodes[$token] !== 0 && $reported['outcome'] === 'success') {
+                        $result = ['outcome' => 'transient_failure', 'message' => 'Worker reported success but exited unsuccessfully.', 'exitCode' => $this->exitCodes[$token]];
+                    }
                     $this->journal->result($taskId, $token, $result, $now, time(), true);
                     unset($this->exitCodes[$token]);
                 }
@@ -155,9 +164,10 @@ final class ZfsasCoordinatorExecutor
                 $this->journal->rejectAdmission($taskId, $command, $now, time());
                 continue;
             }
-            $token = $this->journal->claim($taskId, $now, time());
+            $token = $this->journal->claim($taskId, $now, time(), $this->generation);
             $dir = $this->root . '/attempts/' . $token;
             if (!mkdir($dir, 0700, true)) { throw new RuntimeException('Cannot create attempt launch gate.'); }
+            self::publish($dir . '/task-id', $taskId);
             self::publish($dir . '/command.json', json_encode($command, JSON_THROW_ON_ERROR));
             $wrapper = __DIR__ . '/../scripts/coordinator-attempt.sh';
             $detach = __DIR__ . '/../scripts/detach-worker.sh';

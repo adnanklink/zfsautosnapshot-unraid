@@ -18,6 +18,16 @@ function drive($executor, $predicate, $timeout = 8): void {
 try {
     $receipt = $journal->submit('one', ['manual' => true, 'tasks' => ['one' => ['kind' => 'auto', 'parameters' => ['sleep' => '.05']]]], time());
     drive($executor, fn() => $journal->state['runs'][$receipt['runId']]['state'] === 'complete');
+    $receipt = $journal->submit('reported', ['tasks' => ['one' => ['kind'=>'auto', 'parameters'=>['sleep'=>'.2']]]], time());
+    $task = $receipt['runId'] . ':one';
+    drive($executor, fn() => $journal->state['tasks'][$task]['state'] === 'running');
+    $token = $journal->state['tasks'][$task]['attempt'];
+    $generation = $journal->state['attempts'][$token]['generation'];
+    $executor->workerReport(['taskId'=>$task,'token'=>$token,'generation'=>$generation,'type'=>'result','sequence'=>1,
+        'payload'=>['outcome'=>'validation_failure','message'=>'Reported validation failure']]);
+    check($journal->state['runs'][$receipt['runId']]['state']==='running','Report released running worker');
+    drive($executor, fn() => $journal->state['runs'][$receipt['runId']]['state'] === 'failed');
+    check($journal->state['tasks'][$task]['result']['message']==='Reported validation failure','Explicit worker result was ignored');
     $receipt = $journal->submit('cancel', ['manual' => true, 'tasks' => ['one' => ['kind' => 'auto', 'parameters' => ['sleep' => '60']]]], time());
     $task = $receipt['runId'] . ':one';
     drive($executor, fn() => $journal->state['tasks'][$task]['state'] === 'running');

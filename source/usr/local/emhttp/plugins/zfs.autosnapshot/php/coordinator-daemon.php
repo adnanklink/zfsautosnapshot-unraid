@@ -96,6 +96,7 @@ foreach ($journal->state['runs'] as $run) {
 }
 $handler = static function (array $request) use ($journal, $executor, $submitAuto, $loadConfig, &$config): array {
     $action = $request['action'] ?? '';
+    if ($action === 'worker_report') { return $executor->workerReport($request); }
     if ($action === 'status' || $action === 'watchdog') {
         $runs = array_values($journal->state['runs']);
         usort($runs, static fn($a, $b) => $b['createdAt'] <=> $a['createdAt']);
