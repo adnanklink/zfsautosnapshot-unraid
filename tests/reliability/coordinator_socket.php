@@ -45,6 +45,11 @@ try {
     $bad = zfsas_coordinator_request(['action' => 'unknown'], $root . '/control.sock');
     if ($bad['ok']) { throw new RuntimeException('Unknown command accepted.'); }
     $ticks = count(file($root . '/ticks'));
+    for ($poll = 0; $poll < 30; $poll++) {
+        if (!zfsas_coordinator_request(['action' => 'status'], $root . '/control.sock')['ok']) { throw new RuntimeException('Status failed.'); }
+        zfsas_coordinator_request(['action' => 'unknown'], $root . '/control.sock');
+    }
+    if (count(file($root . '/ticks')) !== $ticks) { throw new RuntimeException('Read-only or rejected requests woke admission scans.'); }
     usleep(200000);
     if (count(file($root . '/ticks')) > $ticks + 1) { throw new RuntimeException('Idle loop polls repeatedly.'); }
     echo "PASS: socket responsiveness with partial clients, read-only status, crash/restart duplicate submission, bounded idle deadlines\n";

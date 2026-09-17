@@ -80,7 +80,9 @@ final class ZfsasCoordinatorSocket
                 // Unexpected publication errors are fatal: never acknowledge
                 // further commands using state that may not have committed.
                 $this->clients[$id]['output'] = json_encode($response, JSON_THROW_ON_ERROR) . "\n";
-                $nextTick = 0; // Accepted commands wake admission immediately.
+                // UI reads and rejected requests must not turn idle waiting into
+                // repeated admission/recovery scans. The watchdog still wakes it.
+                if ($response['ok'] && ($request['action'] ?? '') !== 'status') { $nextTick = 0; }
             }
             foreach ($write as $stream) {
                 $id = (int) $stream;
