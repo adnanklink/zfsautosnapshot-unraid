@@ -1,0 +1,8 @@
+Menu="Utilities"
+Icon="zfs-snapsync.png"
+Title="ZFS SnapSync"
+---
+<?php
+$GLOBALS['zfsas_host_shell'] = true;
+include '/usr/local/emhttp/plugins/zfs.snapsync/php/workspace.php';
+?>

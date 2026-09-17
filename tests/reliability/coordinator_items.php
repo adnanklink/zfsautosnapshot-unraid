@@ -1,5 +1,5 @@
 <?php
-require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.autosnapshot/php/coordinator-state.php';
+require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.snapsync/php/coordinator-state.php';
 function check($ok, $message) { if (!$ok) { throw new RuntimeException($message); } }
 function rejected($fn) { try { $fn(); } catch (InvalidArgumentException $error) { return; } throw new RuntimeException('Unauthorized publication accepted'); }
 $root = '/tmp/coordinator-items-' . bin2hex(random_bytes(8));

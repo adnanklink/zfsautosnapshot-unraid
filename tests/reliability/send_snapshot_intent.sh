@@ -1,9 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 root="$(cd "$(dirname "$0")/../.." && pwd)"
-source "$root/source/usr/local/emhttp/plugins/zfs.autosnapshot/scripts/ops-queue-lib.sh"
+source "$root/source/usr/local/emhttp/plugins/zfs.snapsync/scripts/ops-queue-lib.sh"
 fixture="$(mktemp -d)"; trap 'rm -rf "$fixture"' EXIT
-worker="$root/source/usr/local/sbin/zfs_autosnapshot_send_worker"
+worker="$root/source/usr/local/sbin/zfs_snapsync_send_worker"
 for function in prepare_scheduled_job_snapshot freeze_current_send_manifest; do
   eval "$(sed -n "/^${function}() {/,/^}/p" "$worker")"
 done

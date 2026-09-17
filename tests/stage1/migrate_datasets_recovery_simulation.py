@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-WORKER = ROOT / "source/usr/local/sbin/zfs_autosnapshot_migrate_datasets"
+WORKER = ROOT / "source/usr/local/sbin/zfs_snapsync_migrate_datasets"
 
 
 def write_executable(path: Path, content: str) -> None:

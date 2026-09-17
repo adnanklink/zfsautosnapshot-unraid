@@ -1,5 +1,5 @@
 <?php
-require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.autosnapshot/php/coordinator-state.php';
+require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.snapsync/php/coordinator-state.php';
 function check($ok, $message) { if (!$ok) { throw new RuntimeException($message); } }
 function rejected($callback) { try { $callback(); } catch (InvalidArgumentException $error) { return; } throw new RuntimeException('Invalid plan publication accepted'); }
 function canonical(array $value): array { if (!array_is_list($value)) { ksort($value, SORT_STRING); } foreach ($value as &$item) { if (is_array($item)) { $item = canonical($item); } } return $value; }

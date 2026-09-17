@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-source "$ROOT/source/usr/local/emhttp/plugins/zfs.autosnapshot/scripts/ops-queue-lib.sh"
+source "$ROOT/source/usr/local/emhttp/plugins/zfs.snapsync/scripts/ops-queue-lib.sh"
 fixture="$(mktemp -d)"
 trap 'rm -rf "$fixture"' EXIT
 OPS_ROOT="$fixture/ops"; OPS_JOBS_DIR="$OPS_ROOT/jobs"; CONFIG_DIR="$fixture/config"; JOB_LOCKS_DIR="$fixture/claims"
@@ -16,7 +16,7 @@ printf '99999999\n' > "$JOB_LOCKS_DIR/job-stale.lockdir/pid"
 acquire_job_claim stale
 ! acquire_job_claim stale
 foreign_release="$fixture/foreign-release.sh"
-printf 'source %q\nJOB_LOCKS_DIR=%q\nrelease_job_claim stale\n' "$ROOT/source/usr/local/emhttp/plugins/zfs.autosnapshot/scripts/ops-queue-lib.sh" "$JOB_LOCKS_DIR" > "$foreign_release"
+printf 'source %q\nJOB_LOCKS_DIR=%q\nrelease_job_claim stale\n' "$ROOT/source/usr/local/emhttp/plugins/zfs.snapsync/scripts/ops-queue-lib.sh" "$JOB_LOCKS_DIR" > "$foreign_release"
 bash "$foreign_release"
 job_claim_active stale
 release_job_claim stale
@@ -32,7 +32,7 @@ job_write "$OPS_JOBS_DIR/child.job" child; job_write "$OPS_JOBS_DIR/final.job" f
 prune_old_jobs
 [[ -f "$OPS_JOBS_DIR/child.job" ]]
 # Exercise actual finalizer, with deterministic terminal side effects.
-eval "$(sed -n '/^process_finalize_job() {/,/^}/p' "$ROOT/source/usr/local/sbin/zfs_autosnapshot_send_worker")"
+eval "$(sed -n '/^process_finalize_job() {/,/^}/p' "$ROOT/source/usr/local/sbin/zfs_snapsync_send_worker")"
 complete_job() { result=complete; }; fail_current_job_final() { result=failed; }; defer_current_job() { result=deferred; }
 declare -A job=(); for key in "${!final[@]}"; do job[$key]="${final[$key]}"; done
 result=''; process_finalize_job; [[ "$result" == complete ]]
@@ -61,13 +61,13 @@ mkdir -p "$ZFSAS_MIGRATOR_PLUGIN_ROOT"
 for file in status.env folders.tsv containers.tsv; do printf 'active owner\n' > "$ZFSAS_MIGRATOR_PLUGIN_ROOT/$file"; done
 printf 'active log\n' > "$ZFSAS_MIGRATOR_LOG_FILE"
 exec 9>"$ZFSAS_MIGRATOR_LOCK_FILE"; flock 9
-! bash "$ROOT/source/usr/local/sbin/zfs_autosnapshot_migrate_datasets" --dataset tank/data > "$fixture/loser.log" 2>&1
+! bash "$ROOT/source/usr/local/sbin/zfs_snapsync_migrate_datasets" --dataset tank/data > "$fixture/loser.log" 2>&1
 for file in status.env folders.tsv containers.tsv; do [[ "$(cat "$ZFSAS_MIGRATOR_PLUGIN_ROOT/$file")" == 'active owner' ]]; done
 [[ "$(cat "$ZFSAS_MIGRATOR_LOG_FILE")" == 'active log' ]]
 flock -u 9; exec 9>&-
 # Migration and recovery share the exact gate namespace with other workers.
 export ZFSAS_OPS_ROOT="$OPS_ROOT"
-eval "$(sed -n '/^acquire_migration_gates() {/,/^}/p' "$ROOT/source/usr/local/sbin/zfs_autosnapshot_migrate_datasets")"
+eval "$(sed -n '/^acquire_migration_gates() {/,/^}/p' "$ROOT/source/usr/local/sbin/zfs_snapsync_migrate_datasets")"
 ensure_dir() { mkdir -p "$1"; }; apply_owner() { :; }
 ACTIVE_DATASET=tank/data/child
 acquire_dataset_gates -s tank/data
@@ -84,13 +84,13 @@ acquire_dataset_gates -s tank/data
 release_dataset_gates
 # Detached children cannot retain the parent's dataset/owner flock.
 exec 8>"$fixture/detach.lock"; flock 8
-"$ROOT/source/usr/local/emhttp/plugins/zfs.autosnapshot/scripts/detach-worker.sh" sleep 10 &
+"$ROOT/source/usr/local/emhttp/plugins/zfs.snapsync/scripts/detach-worker.sh" sleep 10 &
 detached=$!; sleep .1
 exec 8>&-
 flock -n "$fixture/detach.lock" true
 kill "$detached"; wait "$detached" 2>/dev/null || true
 # Installer signals only a matching worker identity and verifies all children stop.
-source "$ROOT/source/usr/local/emhttp/plugins/zfs.autosnapshot/scripts/worker-shutdown-lib.sh"
+source "$ROOT/source/usr/local/emhttp/plugins/zfs.snapsync/scripts/worker-shutdown-lib.sh"
 collect_pid_tree() { local child; while read -r child; do collect_pid_tree "$child"; done < <(pgrep -P "$1" || true); printf '%s\n' "$1"; }
 sleep 20 & unrelated=$!
 RUN_MATCH=zfsas-fixture-worker

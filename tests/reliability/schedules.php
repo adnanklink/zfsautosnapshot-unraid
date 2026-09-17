@@ -1,5 +1,5 @@
 <?php
-require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.autosnapshot/php/schedule-spec.php';
+require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.snapsync/php/schedule-spec.php';
 function check($value, $message) { if (!$value) { throw new RuntimeException($message); } }
 $utc = new DateTimeZone('UTC');
 foreach ([420, 18000] as $seconds) {

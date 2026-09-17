@@ -1,5 +1,5 @@
 <?php
-require_once __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.autosnapshot/php/send-queue-helpers.php';
+require_once __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.snapsync/php/send-queue-helpers.php';
 
 function assert_true($condition, $message) {
     if (!$condition) {

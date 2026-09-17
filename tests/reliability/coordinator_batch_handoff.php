@@ -1,6 +1,6 @@
 <?php
 if (!is_file('/.dockerenv')) { throw new RuntimeException('Requires disposable container.'); }
-$plugin = __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.autosnapshot/php/';
+$plugin = __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.snapsync/php/';
 require $plugin . 'snapshot-manager-helpers.php';
 require $plugin . 'coordinator-state.php';
 require $plugin . 'coordinator-batch.php';

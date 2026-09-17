@@ -1,0 +1,119 @@
+#!/bin/bash
+set -euo pipefail
+
+PLUGIN_NAME="${PLUGIN_NAME:-zfs.snapsync}"
+PLUGIN_DIR="${PLUGIN_DIR:-/usr/local/emhttp/plugins/${PLUGIN_NAME}}"
+BOOT_PLUGINS_ROOT="${BOOT_PLUGINS_ROOT:-/boot/config/plugins}"
+BOOT_PLUGIN_DIR="${BOOT_PLUGIN_DIR:-${BOOT_PLUGINS_ROOT}/${PLUGIN_NAME}}"
+DEFAULT_CFG="${DEFAULT_CFG:-${PLUGIN_DIR}/config/zfs_snapsync.conf.example}"
+TARGET_CFG="${TARGET_CFG:-${BOOT_PLUGIN_DIR}/zfs_snapsync.conf}"
+DEFAULT_SEND_CFG="${DEFAULT_SEND_CFG:-${PLUGIN_DIR}/config/zfs_send.conf.example}"
+TARGET_SEND_CFG="${TARGET_SEND_CFG:-${BOOT_PLUGIN_DIR}/zfs_send.conf}"
+SNAPSHOT_MANAGER_ROOT="${SNAPSHOT_MANAGER_ROOT:-/tmp/zfs-snapsync-snapshot-manager}"
+SNAPSHOT_MANAGER_QUEUE_DIR="${SNAPSHOT_MANAGER_QUEUE_DIR:-${SNAPSHOT_MANAGER_ROOT}/queues}"
+SNAPSHOT_MANAGER_STATUS_DIR="${SNAPSHOT_MANAGER_STATUS_DIR:-${SNAPSHOT_MANAGER_ROOT}/status}"
+FAILED_SEND_LOGS_DIR="${FAILED_SEND_LOGS_DIR:-/var/log/zfs-snapsync-failed-sends}"
+PERSISTED_QUEUE_DIR="${PERSISTED_QUEUE_DIR:-/tmp/zfs-snapsync-ops/runtime_queue}"
+RECOVERY_ROOT="${RECOVERY_ROOT:-${BOOT_PLUGIN_DIR}/recovery_tools}"
+RECOVERY_SCANS_DIR="${RECOVERY_SCANS_DIR:-${RECOVERY_ROOT}/scans}"
+MIGRATOR_ROOT="${MIGRATOR_ROOT:-/tmp/zfs-snapsync-migrator}"
+MIGRATOR_LOGS_DIR="${MIGRATOR_LOGS_DIR:-${MIGRATOR_ROOT}/logs}"
+WEBGUI_USER="${WEBGUI_USER:-nobody}"
+WEBGUI_GROUP="${WEBGUI_GROUP:-users}"
+
+have_user() {
+  id -u "$1" >/dev/null 2>&1
+}
+
+have_group() {
+  if command -v getent >/dev/null 2>&1; then
+    getent group "$1" >/dev/null 2>&1
+    return $?
+  fi
+
+  grep -q "^${1}:" /etc/group 2>/dev/null
+}
+
+apply_owner() {
+  local path="$1"
+
+  if have_user "$WEBGUI_USER"; then
+    chown "$WEBGUI_USER" "$path" >/dev/null 2>&1 || true
+  fi
+
+  if have_group "$WEBGUI_GROUP"; then
+    chgrp "$WEBGUI_GROUP" "$path" >/dev/null 2>&1 || true
+  fi
+}
+
+repair_system_log_dir_if_needed() {
+  local dir_path="$1"
+
+  [[ "$dir_path" == "/var/log" ]] || return 0
+  chmod 0755 "$dir_path" >/dev/null 2>&1 || true
+  chown root "$dir_path" >/dev/null 2>&1 || true
+  chgrp root "$dir_path" >/dev/null 2>&1 || true
+}
+
+ensure_dir() {
+  local dir_path="$1"
+
+  mkdir -p "$dir_path"
+  chmod 0775 "$dir_path" >/dev/null 2>&1 || true
+  apply_owner "$dir_path"
+}
+
+ensure_file() {
+  local file_path="$1"
+
+  [[ -e "$file_path" ]] || return 0
+
+  chmod 0644 "$file_path" >/dev/null 2>&1 || true
+  apply_owner "$file_path"
+}
+
+ensure_executable() {
+  local file_path="$1"
+
+  [[ -e "$file_path" ]] || return 0
+
+  chmod 0755 "$file_path" >/dev/null 2>&1 || true
+}
+
+ensure_dir "$BOOT_PLUGIN_DIR"
+ensure_dir "$SNAPSHOT_MANAGER_ROOT"
+ensure_dir "$SNAPSHOT_MANAGER_QUEUE_DIR"
+ensure_dir "$SNAPSHOT_MANAGER_STATUS_DIR"
+ensure_dir "$FAILED_SEND_LOGS_DIR"
+ensure_dir "$PERSISTED_QUEUE_DIR"
+ensure_dir "$RECOVERY_ROOT"
+ensure_dir "$RECOVERY_SCANS_DIR"
+ensure_dir "$MIGRATOR_ROOT"
+ensure_dir "$MIGRATOR_LOGS_DIR"
+
+if [[ ! -f "$TARGET_CFG" && -f "$DEFAULT_CFG" ]]; then
+  cp -f "$DEFAULT_CFG" "$TARGET_CFG"
+  echo "Installed default config: $TARGET_CFG"
+fi
+
+ensure_file "$TARGET_CFG"
+
+if [[ ! -f "$TARGET_SEND_CFG" && -f "$DEFAULT_SEND_CFG" ]]; then
+  cp -f "$DEFAULT_SEND_CFG" "$TARGET_SEND_CFG"
+  echo "Installed default config: $TARGET_SEND_CFG"
+fi
+
+ensure_file "$TARGET_SEND_CFG"
+
+ensure_executable "/usr/local/sbin/zfs_snapsync_coordinator"
+ensure_executable "/usr/local/sbin/zfs_snapsync"
+ensure_executable "/usr/local/sbin/zfs_snapsync_send"
+ensure_executable "/usr/local/sbin/zfs_snapsync_queue_kicker"
+ensure_executable "/usr/local/sbin/zfs_snapsync_queue_handler"
+ensure_executable "/usr/local/sbin/zfs_snapsync_send_worker"
+ensure_executable "/usr/local/sbin/zfs_snapsync_delete_worker"
+ensure_executable "/usr/local/sbin/zfs_snapsync_snapshot_manager_worker"
+ensure_executable "/usr/local/sbin/zfs_snapsync_migrate_datasets"
+repair_system_log_dir_if_needed "/var/log"
+
+echo "Normalized plugin config ownership and permissions under $BOOT_PLUGIN_DIR"

@@ -1,5 +1,5 @@
 <?php
-require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.autosnapshot/php/coordinator-executor.php';
+require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.snapsync/php/coordinator-executor.php';
 function check($ok, $message) { if (!$ok) { throw new RuntimeException($message); } }
 $root = '/tmp/owned-cancel-' . bin2hex(random_bytes(6));
 $journal = new ZfsasCoordinatorState($root); $transitions = [];

@@ -1,6 +1,6 @@
 <?php
 if (!is_file('/.dockerenv')) { throw new RuntimeException('Requires disposable container.'); }
-$plugin = __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.autosnapshot/php/';
+$plugin = __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.snapsync/php/';
 require $plugin . 'snapshot-manager-helpers.php';
 function check($ok, $message) { if (!$ok) { throw new RuntimeException($message); } }
 $fixture = '/tmp/delete-approval-fixture'; mkdir($fixture);
@@ -12,7 +12,7 @@ $task = 'run-fixture:delete'; putenv('ZFSAS_TASK_ID=' . $task);
 $batch = zfsas_sm_new_batch('tank/data', 'delete'); $batch['approvedAt'] = time();
 $item = ['identity'=>'tank/data@auto-test#123', 'snapshot'=>'tank/data@auto-test', 'guid'=>'123', 'candidate'=>true, 'state'=>'queued'];
 $job = 'sm-' . $batch['token'] . '-' . substr(hash('sha256', $item['identity']), 0, 16);
-$path = '/tmp/zfs-autosnapshot-coordinator/attempt-inputs/' . hash('sha256', $task) . '.job.approval.json';
+$path = '/tmp/zfs-snapsync-coordinator/attempt-inputs/' . hash('sha256', $task) . '.job.approval.json';
 mkdir(dirname($path), 0775, true); putenv('ZFSAS_DELETE_APPROVAL=' . $path);
 $approval = ['version'=>1, 'taskId'=>$task, 'jobId'=>$job, 'batch'=>$batch, 'item'=>$item];
 function probe($snapshot='tank/data@auto-test', $guid='123') {

@@ -1,0 +1,6 @@
+#!/bin/bash
+set -euo pipefail
+# Compatibility launcher: all new operations use reviewed batch manifests.
+# Legacy .op files lack approved GUIDs and must never be executed after upgrade.
+[[ "${1:-}" == --dataset && -n "${2:-}" ]] || exit 1
+exec php /usr/local/emhttp/plugins/zfs.snapsync/php/snapshot-batch-worker.php "$2"

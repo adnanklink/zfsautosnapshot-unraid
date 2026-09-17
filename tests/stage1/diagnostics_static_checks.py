@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-PLUGIN = ROOT / "source/usr/local/emhttp/plugins/zfs.autosnapshot"
+PLUGIN = ROOT / "source/usr/local/emhttp/plugins/zfs.snapsync"
 SETTINGS_PAGE = PLUGIN / "php/settings.php"
 DIAGNOSTICS_PAGE = PLUGIN / "php/diagnostics.php"
 
@@ -36,17 +36,17 @@ def main() -> int:
     )
     assert_contains(
         settings,
-        "https://github.com/adnanklink/zfsautosnapshot-unraid/issues",
+        "https://github.com/adnanklink/zfssnapsync-auto-unraid/issues",
         "Help tab must link to the repository's GitHub issues page",
     )
     assert_contains(
         settings,
-        "zfs_autosnapshot_diagnostics.zip",
+        "zfs_snapsync_diagnostics.zip",
         "Help tab must provide a diagnostics zip download button",
     )
     assert_contains(
         settings,
-        "/plugins/zfs.autosnapshot/php/diagnostics.php",
+        "/plugins/zfs.snapsync/php/diagnostics.php",
         "Help tab diagnostics button must call the diagnostics endpoint",
     )
 
@@ -68,22 +68,22 @@ def main() -> int:
     )
     assert_contains(
         diagnostics,
-        "/var/log/zfs_autosnapshot.log",
+        "/var/log/zfs_snapsync.log",
         "diagnostics archive must include the main plugin debug log when present",
     )
     assert_contains(
         diagnostics,
-        "/var/log/zfs_autosnapshot_send.log",
+        "/var/log/zfs_snapsync_send.log",
         "diagnostics archive must include the send log when present",
     )
     assert_contains(
         diagnostics,
-        "/boot/config/plugins/zfs.autosnapshot/zfs_autosnapshot.conf",
+        "/boot/config/plugins/zfs.snapsync/zfs_snapsync.conf",
         "diagnostics archive must include redacted auto-snapshot config when present",
     )
     assert_contains(
         diagnostics,
-        "/boot/config/plugins/zfs.autosnapshot/zfs_send.conf",
+        "/boot/config/plugins/zfs.snapsync/zfs_send.conf",
         "diagnostics archive must include redacted send config when present",
     )
     assert_contains(
@@ -142,7 +142,7 @@ def main() -> int:
     )
     assert_contains(
         diagnostics,
-        "'/boot/config/plugins/zfs.autosnapshot.plg'",
+        "'/boot/config/plugins/zfs.snapsync.plg'",
         "diagnostics safety allowlist must permit the boot plugin manifest path",
     )
     report_issue_block = extract_report_issue_block(settings)

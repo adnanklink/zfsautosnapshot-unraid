@@ -1,5 +1,5 @@
 <?php
-require_once __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.autosnapshot/php/send-helpers.php';
+require_once __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.snapsync/php/send-helpers.php';
 
 function assert_true($condition, $message) {
     if (!$condition) {
@@ -22,7 +22,7 @@ function make_sync_script($dir) {
 
 function base_post($transport) {
     return [
-        'send_snapshot_prefix' => 'zfs-send-',
+        'send_snapshot_prefix' => 'snapsync-send-',
         'send_max_parallel' => '1',
         'send_rate_limit' => '1M',
         'send_prep_extra_workers' => '16',
@@ -56,7 +56,7 @@ assert_error_contains($sshResult, 'SSH host is required when any ZFS send job us
 $spipedMissingEndpoint = base_post('spiped');
 $spipedMissingEndpoint['send_spiped_remote_host'] = '';
 $spipedMissingEndpoint['send_spiped_remote_port'] = '8023';
-$spipedMissingEndpoint['send_spiped_key_path'] = '/boot/config/plugins/zfs.autosnapshot/spiped/key.bin';
+$spipedMissingEndpoint['send_spiped_key_path'] = '/boot/config/plugins/zfs.snapsync/spiped/key.bin';
 $spipedEndpointResult = zfsas_send_handle_save_request($spipedMissingEndpoint, $configDir, $configFile, $syncScript, $config, '/Settings/ZFSSnapshots');
 assert_true(!$spipedEndpointResult['saved'], 'spiped jobs must not be saved without a configured remote receiver host.');
 assert_error_contains($spipedEndpointResult, 'spiped remote host is required when any ZFS send job uses spiped transport.', 'spiped missing-host validation should explain the required receiver endpoint.');

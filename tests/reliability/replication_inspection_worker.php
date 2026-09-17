@@ -1,12 +1,12 @@
 <?php
 if (!is_file('/.dockerenv')) { throw new RuntimeException('Requires isolated container.'); }
-$plugin=realpath(__DIR__.'/../../source/usr/local/emhttp/plugins/zfs.autosnapshot/php');
+$plugin=realpath(__DIR__.'/../../source/usr/local/emhttp/plugins/zfs.snapsync/php');
 require $plugin.'/coordinator-executor.php';require $plugin.'/coordinator-socket.php';require $plugin.'/coordinator-replication-inspect.php';
-$root='/tmp/zfs-autosnapshot-coordinator';
+$root='/tmp/zfs-snapsync-coordinator';
 if(($argv[1]??'')==='server'){
     $j=new ZfsasCoordinatorState($root);
     $e=new ZfsasCoordinatorExecutor($j,$root,$root.'/runtime',fn($task)=>zfsas_coordinator_replication_inspection_command($task,$root),fn()=>['outcome'=>'transient_failure']);
-    $s=new ZfsasCoordinatorSocket('/var/run/zfs-autosnapshot-coordinator/control.sock',function($r)use($j,$e){return match($r['action']){
+    $s=new ZfsasCoordinatorSocket('/var/run/zfs-snapsync-coordinator/control.sock',function($r)use($j,$e){return match($r['action']){
         'submit'=>$j->submit($r['commandId'],$r['spec'],time()),'status'=>$j->state,'worker_report'=>$e->workerReport($r),
         'cancel'=>(function()use($r,$e){$e->cancel($r['runId']);return [];})(),default=>throw new InvalidArgumentException('Unknown request')};},fn($now)=>$e->tick($now));
     $s->serve();exit;

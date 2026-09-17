@@ -1,12 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 root="$(cd "$(dirname "$0")/../.." && pwd)"
-source "$root/source/usr/local/emhttp/plugins/zfs.autosnapshot/scripts/ops-queue-lib.sh"
+source "$root/source/usr/local/emhttp/plugins/zfs.snapsync/scripts/ops-queue-lib.sh"
 fixture="$(mktemp -d)"; trap 'rm -rf "$fixture"' EXIT
 OPS_ROOT="$fixture/ops"; OPS_JOBS_DIR="$OPS_ROOT/jobs"; CONFIG_DIR="$fixture/config"
 mkdir -p "$OPS_JOBS_DIR" "$CONFIG_DIR"
 ops_apply_owner() { :; }; log() { :; }; send_config_hash() { printf config; }
-worker="$root/source/usr/local/sbin/zfs_autosnapshot_send_worker"
+worker="$root/source/usr/local/sbin/zfs_snapsync_send_worker"
 for function in schedule_run_base_sort send_member_sort_key finalize_sort_key load_existing_send_job_id_cache write_send_job_file ensure_send_job_file freeze_current_send_manifest prepare_scheduled_job_snapshot build_resume_members_for_current_job queue_child_send_jobs process_finalize_job; do
   eval "$(sed -n "/^${function}() {/,/^}/p" "$worker")"
 done

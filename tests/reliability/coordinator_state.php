@@ -1,5 +1,5 @@
 <?php
-require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.autosnapshot/php/coordinator-state.php';
+require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.snapsync/php/coordinator-state.php';
 function check($value, $message) { if (!$value) { throw new RuntimeException($message); } }
 $root = '/tmp/zfsas-coordinator-test-' . bin2hex(random_bytes(8));
 try {

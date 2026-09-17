@@ -1,11 +1,11 @@
 <?php
-require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.autosnapshot/php/response-helpers.php';
-require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.autosnapshot/php/send-helpers.php';
+require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.snapsync/php/response-helpers.php';
+require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.snapsync/php/send-helpers.php';
 // Run only in the disposable test container: endpoints intentionally use production paths.
 if (!file_exists('/.dockerenv')) { throw new RuntimeException('Run this endpoint test in a disposable container.'); }
-$dir = '/boot/config/plugins/zfs.autosnapshot';
+$dir = '/boot/config/plugins/zfs.snapsync';
 @mkdir($dir, 0775, true);
-$base = realpath(__DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.autosnapshot/php');
+$base = realpath(__DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.snapsync/php');
 $runner = tempnam('/tmp', 'endpoint-');
 file_put_contents($runner, '<?php $GLOBALS["csrf_token"]="fixture"; $_SERVER["REQUEST_METHOD"]="POST"; $_POST=json_decode(base64_decode($argv[2]),true); require $argv[1];');
 function start_endpoint($name, $post) {
@@ -27,7 +27,7 @@ function finish_endpoint($request) {
 function check($condition, $message) { if (!$condition) { throw new RuntimeException($message); } }
 function setup_prefixes($auto, $send) {
     global $dir;
-    file_put_contents($dir . '/zfs_autosnapshot.conf', 'PREFIX="' . $auto . '"' . "\n");
+    file_put_contents($dir . '/zfs_snapsync.conf', 'PREFIX="' . $auto . '"' . "\n");
     file_put_contents($dir . '/zfs_send.conf', 'SEND_SNAPSHOT_PREFIX="' . $send . '"' . "\n");
 }
 foreach ([['snap-', 'snap-'], ['snap-', 'snap-send-'], ['snap-send-', 'snap-']] as [$auto, $send]) {

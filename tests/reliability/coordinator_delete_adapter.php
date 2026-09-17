@@ -1,9 +1,9 @@
 <?php
 if (!is_file('/.dockerenv')) { throw new RuntimeException('Use a disposable container with plugin and sbin mounts.'); }
-$plugin=realpath(__DIR__.'/../../source/usr/local/emhttp/plugins/zfs.autosnapshot');
+$plugin=realpath(__DIR__.'/../../source/usr/local/emhttp/plugins/zfs.snapsync');
 require $plugin.'/php/coordinator-executor.php';require $plugin.'/php/coordinator-socket.php';
 require $plugin.'/php/send-queue-helpers.php';
-$root='/tmp/zfsas-delete-adapter';$socket='/var/run/zfs-autosnapshot-coordinator/control.sock';
+$root='/tmp/zfsas-delete-adapter';$socket='/var/run/zfs-snapsync-coordinator/control.sock';
 if(($argv[1]??'')==='server'){
     $journal=new ZfsasCoordinatorState($root);
     $executor=new ZfsasCoordinatorExecutor($journal,$root,$root.'/runtime',
@@ -23,8 +23,8 @@ function check($ok,$message){if(!$ok)throw new RuntimeException($message);}
 function rpc($request){$r=zfsas_coordinator_request($request);check($r['ok'],json_encode($r));return $r['result'];}
 function until($fn){$deadline=microtime(true)+8;do{if($fn())return;usleep(20000);}while(microtime(true)<$deadline);throw new RuntimeException('Timeout: '.@file_get_contents('/tmp/zfsas-delete-adapter/server.log'));}
 mkdir($root,0775,true);mkdir($root.'/bin');
-$config='/boot/config/plugins/zfs.autosnapshot';mkdir($config,0775,true);
-file_put_contents($config.'/zfs_autosnapshot.conf',"PREFIX=\"auto-\"\n");file_put_contents($config.'/zfs_send.conf',"SEND_SNAPSHOT_PREFIX=\"send-\"\n");
+$config='/boot/config/plugins/zfs.snapsync';mkdir($config,0775,true);
+file_put_contents($config.'/zfs_snapsync.conf',"PREFIX=\"auto-\"\n");file_put_contents($config.'/zfs_send.conf',"SEND_SNAPSHOT_PREFIX=\"send-\"\n");
 @mkdir('/var/local/emhttp',0775,true);file_put_contents('/var/local/emhttp/var.ini','mdState="STARTED"');
 file_put_contents($root.'/bin/zfs', <<<'PY'
 #!/usr/bin/python3
@@ -42,7 +42,7 @@ PY);
 chmod($root.'/bin/zfs',0755);putenv('PATH='.$root.'/bin:'.getenv('PATH'));
 $hash=trim(shell_exec('bash -c '.escapeshellarg('source '.$plugin.'/scripts/ops-queue-lib.sh; send_config_hash')));
 check((bool)preg_match('/^[a-f0-9]+$/',$hash),'No captured config hash');
-$inputs='/tmp/zfs-autosnapshot-coordinator/attempt-inputs';mkdir($inputs,0775,true);
+$inputs='/tmp/zfs-snapsync-coordinator/attempt-inputs';mkdir($inputs,0775,true);
 $proc=proc_open([PHP_BINARY,__FILE__,'server'],[0=>['file','/dev/null','r'],1=>['file',$root.'/server.log','a'],2=>['file',$root.'/server.log','a']],$pipes);
 try{
     until(function(){try{rpc(['action'=>'status']);return true;}catch(Throwable $e){return false;}});

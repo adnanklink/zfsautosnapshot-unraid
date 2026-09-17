@@ -1,5 +1,5 @@
 <?php
-require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.autosnapshot/php/coordinator-executor.php';
+require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.snapsync/php/coordinator-executor.php';
 function check($ok, $message) { if (!$ok) { throw new RuntimeException($message); } }
 function rejects($fn, $message) { try { $fn(); } catch (InvalidArgumentException $error) { return; } throw new RuntimeException($message); }
 $root = '/tmp/coordinator-references-' . bin2hex(random_bytes(6));

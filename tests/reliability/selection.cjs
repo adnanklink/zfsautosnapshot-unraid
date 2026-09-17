@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const Selection = require('../../source/usr/local/emhttp/plugins/zfs.autosnapshot/js/snapshot-selection.js');
+const Selection = require('../../source/usr/local/emhttp/plugins/zfs.snapsync/js/snapshot-selection.js');
 const s = new Selection(); s.context('tank/data');
 const rows = Array.from({length: 10000}, (_, i) => ({identity: 'tank/data@s' + i + '#' + i, guid: String(i), metadataComplete: true}));
 rows[3].pendingDelete = true;

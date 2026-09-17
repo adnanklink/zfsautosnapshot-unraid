@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SOURCE_SCRIPT="${ROOT_DIR}/source/usr/local/sbin/zfs_autosnapshot"
+SOURCE_SCRIPT="${ROOT_DIR}/source/usr/local/sbin/zfs_snapsync"
 TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/zfsas-stage1-tests.XXXXXX")"
 TEST_FAILED=0
 TEST_BASH_BIN="${TEST_BASH_BIN:-}"
@@ -74,9 +74,9 @@ write_test_script() {
     -e "s|^LOG_FILE=.*$|LOG_FILE=\"${log_dir}/debug.log\"|" \
     -e "s|^SUMMARY_LOG_FILE=.*$|SUMMARY_LOG_FILE=\"${log_dir}/summary.log\"|" \
     -e "s|^LEASE_STATE_FILE=.*$|LEASE_STATE_FILE=\"${lease_file}\"|" \
-    "${SOURCE_SCRIPT}" > "${case_dir}/zfs_autosnapshot"
+    "${SOURCE_SCRIPT}" > "${case_dir}/zfs_snapsync"
 
-  chmod +x "${case_dir}/zfs_autosnapshot"
+  chmod +x "${case_dir}/zfs_snapsync"
 }
 
 write_mock_date() {
@@ -413,9 +413,9 @@ write_config() {
   local case_dir="$1"
   local datasets="$2"
   local dry_run="${3:-0}"
-  cat > "${case_dir}/config/zfs_autosnapshot.conf" <<EOF
+  cat > "${case_dir}/config/zfs_snapsync.conf" <<EOF
 DATASETS="${datasets}"
-PREFIX="autosnapshot-"
+PREFIX="snapsync-auto-"
 DRY_RUN=${dry_run}
 KEEP_ALL_FOR_DAYS=14
 KEEP_DAILY_UNTIL_DAYS=30
@@ -438,7 +438,7 @@ run_case() {
     POST_DELETE_RECHECK_WAIT_SECONDS="${POST_DELETE_RECHECK_WAIT_SECONDS_OVERRIDE:-2}" \
     POST_DELETE_RECHECK_INTERVAL_SECONDS="${POST_DELETE_RECHECK_INTERVAL_SECONDS_OVERRIDE:-1}" \
     TZ=UTC \
-      "${case_dir}/zfs_autosnapshot" > "${case_dir}/stdout.log" 2>&1; then
+      "${case_dir}/zfs_snapsync" > "${case_dir}/stdout.log" 2>&1; then
     TEST_FAILED=1
     echo "Case failed: ${case_dir}" >&2
     sed -n '1,240p' "${case_dir}/stdout.log" >&2 || true
@@ -457,15 +457,15 @@ test_zero_change_housekeeping() {
 tank	500000000000	0	1000000000000	500000000000	50%	ONLINE
 EOF
   cat > "${case_dir}/state/snaps.tsv" <<'EOF'
-tank/data@autosnapshot-2026-01-03_00-00-00	tank/data	1999999980	0	0	0	0
-tank/data@autosnapshot-2026-01-02_00-00-00	tank/data	1999999970	0	0	0	0
-tank/data@autosnapshot-2026-01-01_00-00-00	tank/data	1999999960	50	10	0	50
+tank/data@snapsync-auto-2026-01-03_00-00-00	tank/data	1999999980	0	0	0	0
+tank/data@snapsync-auto-2026-01-02_00-00-00	tank/data	1999999970	0	0	0	0
+tank/data@snapsync-auto-2026-01-01_00-00-00	tank/data	1999999960	50	10	0	50
 EOF
 
   run_case "${case_dir}"
 
-  assert_snapshot_exists "${case_dir}" "tank/data@autosnapshot-2026-01-03_00-00-00"
-  assert_snapshot_missing "${case_dir}" "tank/data@autosnapshot-2026-01-02_00-00-00"
+  assert_snapshot_exists "${case_dir}" "tank/data@snapsync-auto-2026-01-03_00-00-00"
+  assert_snapshot_missing "${case_dir}" "tank/data@snapsync-auto-2026-01-02_00-00-00"
   assert_file_contains "${case_dir}/log/summary.log" "Deleted as zero-change housekeeping: 1"
 }
 
@@ -478,17 +478,17 @@ test_held_and_leased_snapshots_survive_time_cleanup() {
 tank	500000000000	0	1000000000000	500000000000	50%	ONLINE
 EOF
   cat > "${case_dir}/state/snaps.tsv" <<'EOF'
-tank/data@autosnapshot-held	tank/data	1980000000	25	10	1	25
-tank/data@autosnapshot-leased	tank/data	1970000000	30	12	0	30
+tank/data@snapsync-auto-held	tank/data	1980000000	25	10	1	25
+tank/data@snapsync-auto-leased	tank/data	1970000000	30	12	0	30
 EOF
-  printf 'tank/data@autosnapshot-leased\t2000003600\tactive\tlease\n' > "${case_dir}/config/snapshot_leases.tsv"
+  printf 'tank/data@snapsync-auto-leased\t2000003600\tactive\tlease\n' > "${case_dir}/config/snapshot_leases.tsv"
 
   run_case "${case_dir}"
 
-  assert_snapshot_exists "${case_dir}" "tank/data@autosnapshot-held"
-  assert_snapshot_exists "${case_dir}" "tank/data@autosnapshot-leased"
-  assert_file_contains "${case_dir}/stdout.log" "Keeping newest autosnapshot: tank/data@autosnapshot-held"
-  assert_file_contains "${case_dir}/stdout.log" "Keeping expired snapshot because it is leased by the snapshot manager: tank/data@autosnapshot-leased"
+  assert_snapshot_exists "${case_dir}" "tank/data@snapsync-auto-held"
+  assert_snapshot_exists "${case_dir}" "tank/data@snapsync-auto-leased"
+  assert_file_contains "${case_dir}/stdout.log" "Keeping newest autosnapshot: tank/data@snapsync-auto-held"
+  assert_file_contains "${case_dir}/stdout.log" "Keeping expired snapshot because it is leased by the snapshot manager: tank/data@snapsync-auto-leased"
   assert_file_contains "${case_dir}/log/summary.log" "Skipped because held or leased: 1"
 }
 
@@ -501,15 +501,15 @@ test_low_space_skips_non_reclaimable_snapshots() {
 tank	40000000000	1048576	1000000000000	40000000000	96%	ONLINE
 EOF
   cat > "${case_dir}/state/snaps.tsv" <<'EOF'
-tank/data@autosnapshot-a	tank/data	1999999000	0	10	0	0
-tank/data@autosnapshot-b	tank/data	1999998900	0	15	0	0
+tank/data@snapsync-auto-a	tank/data	1999999000	0	10	0	0
+tank/data@snapsync-auto-b	tank/data	1999998900	0	15	0	0
 EOF
 
   run_case "${case_dir}"
 
-  assert_snapshot_exists "${case_dir}" "tank/data@autosnapshot-a"
-  assert_snapshot_exists "${case_dir}" "tank/data@autosnapshot-b"
-  assert_file_contains "${case_dir}/stdout.log" "Keeping newest autosnapshot: tank/data@autosnapshot-a"
+  assert_snapshot_exists "${case_dir}" "tank/data@snapsync-auto-a"
+  assert_snapshot_exists "${case_dir}" "tank/data@snapsync-auto-b"
+  assert_file_contains "${case_dir}/stdout.log" "Keeping newest autosnapshot: tank/data@snapsync-auto-a"
   assert_file_contains "${case_dir}/log/summary.log" "Skipped because snapshot had no immediate reclaim path: 1"
   assert_file_contains "${case_dir}/log/summary.log" "Datasets left below target because reclaim is blocked: 1"
   assert_file_contains "${case_dir}/stdout.log" "Skipping snapshot create for tank/data because low-space dataset tank/data still cannot be helped by deleting any managed snapshots."
@@ -524,21 +524,21 @@ test_low_space_continues_across_pool_after_masked_reclaim() {
 tank	40000000000	0	1000000000000	40000000000	96%	ONLINE
 EOF
   cat > "${case_dir}/state/snaps.tsv" <<'EOF'
-tank/a@autosnapshot-a-old	tank/a	1999998700	126976	10	0	126976	0	33554432
-tank/a@autosnapshot-a-new	tank/a	1999999800	0	0	0	0	0	0
-tank/b@autosnapshot-b-old	tank/b	1999998800	70000000000	10	0	70000000000	0	0
-tank/b@autosnapshot-b-new	tank/b	1999999900	0	0	0	0	0	0
+tank/a@snapsync-auto-a-old	tank/a	1999998700	126976	10	0	126976	0	33554432
+tank/a@snapsync-auto-a-new	tank/a	1999999800	0	0	0	0	0	0
+tank/b@snapsync-auto-b-old	tank/b	1999998800	70000000000	10	0	70000000000	0	0
+tank/b@snapsync-auto-b-new	tank/b	1999999900	0	0	0	0	0	0
 EOF
 
   run_case "${case_dir}"
 
-  assert_snapshot_missing "${case_dir}" "tank/a@autosnapshot-a-old"
-  assert_snapshot_exists "${case_dir}" "tank/a@autosnapshot-a-new"
-  assert_snapshot_missing "${case_dir}" "tank/b@autosnapshot-b-old"
-  assert_snapshot_exists "${case_dir}" "tank/b@autosnapshot-b-new"
+  assert_snapshot_missing "${case_dir}" "tank/a@snapsync-auto-a-old"
+  assert_snapshot_exists "${case_dir}" "tank/a@snapsync-auto-a-new"
+  assert_snapshot_missing "${case_dir}" "tank/b@snapsync-auto-b-old"
+  assert_snapshot_exists "${case_dir}" "tank/b@snapsync-auto-b-new"
   assert_file_not_contains "${case_dir}/stdout.log" "waiting up to"
-  assert_file_contains "${case_dir}/stdout.log" "visible free space did not rise after deleting tank/a@autosnapshot-a-old"
-  assert_file_contains "${case_dir}/stdout.log" "deleting oldest eligible snapshot: tank/b@autosnapshot-b-old"
+  assert_file_contains "${case_dir}/stdout.log" "visible free space did not rise after deleting tank/a@snapsync-auto-a-old"
+  assert_file_contains "${case_dir}/stdout.log" "deleting oldest eligible snapshot: tank/b@snapsync-auto-b-old"
   assert_file_contains "${case_dir}/log/summary.log" "Datasets left below target because reclaim is blocked: 0"
 }
 
@@ -559,20 +559,20 @@ tank/isolated	500000000000	214748364800	0	1073741824	0
 tank/isolated/c	500000000000	0	0	0	0
 EOF
   cat > "${case_dir}/state/snaps.tsv" <<'EOF'
-tank/shared/a@autosnapshot-a-old	tank/shared/a	1999998700	5000000000	10	0	5000000000
-tank/shared/a@autosnapshot-a-new	tank/shared/a	1999999900	0	0	0	0
-tank/shared/b@autosnapshot-b-old	tank/shared/b	1999998800	4000000000	10	0	4000000000
-tank/shared/b@autosnapshot-b-new	tank/shared/b	1999999950	0	0	0	0
-tank/isolated/c@autosnapshot-c-old	tank/isolated/c	1999998600	9000000000	10	0	9000000000
-tank/isolated/c@autosnapshot-c-new	tank/isolated/c	1999999960	0	0	0	0
+tank/shared/a@snapsync-auto-a-old	tank/shared/a	1999998700	5000000000	10	0	5000000000
+tank/shared/a@snapsync-auto-a-new	tank/shared/a	1999999900	0	0	0	0
+tank/shared/b@snapsync-auto-b-old	tank/shared/b	1999998800	4000000000	10	0	4000000000
+tank/shared/b@snapsync-auto-b-new	tank/shared/b	1999999950	0	0	0	0
+tank/isolated/c@snapsync-auto-c-old	tank/isolated/c	1999998600	9000000000	10	0	9000000000
+tank/isolated/c@snapsync-auto-c-new	tank/isolated/c	1999999960	0	0	0	0
 EOF
 
   run_case "${case_dir}"
 
   assert_file_contains "${case_dir}/stdout.log" "Dataset tank/shared/b is below its free-space target"
   assert_file_contains "${case_dir}/stdout.log" "active_constraints=quota:tank/shared"
-  assert_file_contains "${case_dir}/stdout.log" "deleting oldest eligible snapshot: tank/shared/a@autosnapshot-a-old"
-  assert_file_not_contains "${case_dir}/stdout.log" "deleting oldest eligible snapshot: tank/isolated/c@autosnapshot-c-old"
+  assert_file_contains "${case_dir}/stdout.log" "deleting oldest eligible snapshot: tank/shared/a@snapsync-auto-a-old"
+  assert_file_not_contains "${case_dir}/stdout.log" "deleting oldest eligible snapshot: tank/isolated/c@snapsync-auto-c-old"
 }
 
 test_low_space_uses_pool_wide_candidates_when_pool_is_limiting() {
@@ -591,17 +591,17 @@ tank/isolated	40000000000	214748364800	0	2147483648	0
 tank/isolated/c	40000000000	0	0	0	0
 EOF
   cat > "${case_dir}/state/snaps.tsv" <<'EOF'
-tank/main/b@autosnapshot-b-old	tank/main/b	1999998800	4000000000	10	0	4000000000
-tank/main/b@autosnapshot-b-new	tank/main/b	1999999950	0	0	0	0
-tank/isolated/c@autosnapshot-c-old	tank/isolated/c	1999998700	9000000000	10	0	9000000000
-tank/isolated/c@autosnapshot-c-new	tank/isolated/c	1999999960	0	0	0	0
+tank/main/b@snapsync-auto-b-old	tank/main/b	1999998800	4000000000	10	0	4000000000
+tank/main/b@snapsync-auto-b-new	tank/main/b	1999999950	0	0	0	0
+tank/isolated/c@snapsync-auto-c-old	tank/isolated/c	1999998700	9000000000	10	0	9000000000
+tank/isolated/c@snapsync-auto-c-new	tank/isolated/c	1999999960	0	0	0	0
 EOF
 
   run_case "${case_dir}"
 
   assert_file_contains "${case_dir}/stdout.log" "Dataset tank/main/b is below its free-space target"
   assert_file_contains "${case_dir}/stdout.log" "active_constraints=pool:tank"
-  assert_file_contains "${case_dir}/stdout.log" "deleting oldest eligible snapshot: tank/isolated/c@autosnapshot-c-old"
+  assert_file_contains "${case_dir}/stdout.log" "deleting oldest eligible snapshot: tank/isolated/c@snapsync-auto-c-old"
 }
 
 test_low_space_does_not_retry_deleted_snapshot_from_overlapping_scope() {
@@ -613,16 +613,16 @@ test_low_space_does_not_retry_deleted_snapshot_from_overlapping_scope() {
 tank	40000000000	0	1000000000000	40000000000	96%	ONLINE
 EOF
   cat > "${case_dir}/state/snaps.tsv" <<'EOF'
-tank/root/child@autosnapshot-old	tank/root/child	1999998700	10000000000	10	0	10000000000
-tank/root/child@autosnapshot-new	tank/root/child	1999999900	0	0	0	0
+tank/root/child@snapsync-auto-old	tank/root/child	1999998700	10000000000	10	0	10000000000
+tank/root/child@snapsync-auto-new	tank/root/child	1999999900	0	0	0	0
 EOF
 
   run_case "${case_dir}"
 
-  assert_snapshot_missing "${case_dir}" "tank/root/child@autosnapshot-old"
-  assert_snapshot_exists "${case_dir}" "tank/root/child@autosnapshot-new"
-  assert_file_contains "${case_dir}/stdout.log" "deleting oldest eligible snapshot: tank/root/child@autosnapshot-old"
-  assert_file_not_contains "${case_dir}/stdout.log" "Snapshot destroy command failed for 'tank/root/child@autosnapshot-old'"
+  assert_snapshot_missing "${case_dir}" "tank/root/child@snapsync-auto-old"
+  assert_snapshot_exists "${case_dir}" "tank/root/child@snapsync-auto-new"
+  assert_file_contains "${case_dir}/stdout.log" "deleting oldest eligible snapshot: tank/root/child@snapsync-auto-old"
+  assert_file_not_contains "${case_dir}/stdout.log" "Snapshot destroy command failed for 'tank/root/child@snapsync-auto-old'"
   assert_file_contains "${case_dir}/log/summary.log" "Result: Success"
 }
 
@@ -635,19 +635,19 @@ test_low_space_deletes_zero_used_chain_leaders() {
 tank	40000000000	0	1000000000000	40000000000	96%	ONLINE
 EOF
   cat > "${case_dir}/state/snaps.tsv" <<'EOF'
-tank/data@autosnapshot-oldest	tank/data	1999998700	0	134217728	0	0
-tank/data@autosnapshot-middle	tank/data	1999998800	60000000000	67108864	0	60000000000
-tank/data@autosnapshot-newest	tank/data	1999999900	0	0	0	0
+tank/data@snapsync-auto-oldest	tank/data	1999998700	0	134217728	0	0
+tank/data@snapsync-auto-middle	tank/data	1999998800	60000000000	67108864	0	60000000000
+tank/data@snapsync-auto-newest	tank/data	1999999900	0	0	0	0
 EOF
 
   run_case "${case_dir}"
 
-  assert_snapshot_missing "${case_dir}" "tank/data@autosnapshot-oldest"
-  assert_snapshot_missing "${case_dir}" "tank/data@autosnapshot-middle"
-  assert_snapshot_exists "${case_dir}" "tank/data@autosnapshot-newest"
-  assert_file_contains "${case_dir}/stdout.log" "deleting oldest eligible snapshot: tank/data@autosnapshot-oldest"
-  assert_file_contains "${case_dir}/stdout.log" "deleting oldest eligible snapshot: tank/data@autosnapshot-middle"
-  assert_file_contains "${case_dir}/stdout.log" "snapshot currently shows no immediate reclaim: tank/data@autosnapshot-oldest"
+  assert_snapshot_missing "${case_dir}" "tank/data@snapsync-auto-oldest"
+  assert_snapshot_missing "${case_dir}" "tank/data@snapsync-auto-middle"
+  assert_snapshot_exists "${case_dir}" "tank/data@snapsync-auto-newest"
+  assert_file_contains "${case_dir}/stdout.log" "deleting oldest eligible snapshot: tank/data@snapsync-auto-oldest"
+  assert_file_contains "${case_dir}/stdout.log" "deleting oldest eligible snapshot: tank/data@snapsync-auto-middle"
+  assert_file_contains "${case_dir}/stdout.log" "snapshot currently shows no immediate reclaim: tank/data@snapsync-auto-oldest"
 }
 
 test_low_space_waits_for_delayed_reclaim_accounting() {
@@ -659,15 +659,15 @@ test_low_space_waits_for_delayed_reclaim_accounting() {
 tank	40000000000	0	1000000000000	40000000000	96%	ONLINE
 EOF
   cat > "${case_dir}/state/snaps.tsv" <<'EOF'
-tank/data@autosnapshot-old	tank/data	1999998800	70000000000	10	0	70000000000	2
-tank/data@autosnapshot-new	tank/data	1999999900	0	0	0	0	0
+tank/data@snapsync-auto-old	tank/data	1999998800	70000000000	10	0	70000000000	2
+tank/data@snapsync-auto-new	tank/data	1999999900	0	0	0	0	0
 EOF
 
   run_case "${case_dir}"
 
-  assert_snapshot_missing "${case_dir}" "tank/data@autosnapshot-old"
-  assert_snapshot_exists "${case_dir}" "tank/data@autosnapshot-new"
-  assert_file_contains "${case_dir}/stdout.log" "waiting up to 2s for free-space accounting to update after deleting tank/data@autosnapshot-old"
+  assert_snapshot_missing "${case_dir}" "tank/data@snapsync-auto-old"
+  assert_snapshot_exists "${case_dir}" "tank/data@snapsync-auto-new"
+  assert_file_contains "${case_dir}/stdout.log" "waiting up to 2s for free-space accounting to update after deleting tank/data@snapsync-auto-old"
   assert_file_contains "${case_dir}/log/summary.log" "Datasets left below target because reclaim is blocked: 0"
 }
 
@@ -680,15 +680,15 @@ test_low_space_never_deletes_newest_snapshot() {
 tank	40000000000	0	1000000000000	40000000000	96%	ONLINE
 EOF
   cat > "${case_dir}/state/snaps.tsv" <<'EOF'
-tank/data@autosnapshot-old	tank/data	1999998800	30000000000	10	0	30000000000
-tank/data@autosnapshot-new	tank/data	1999999900	70000000000	10	0	70000000000
+tank/data@snapsync-auto-old	tank/data	1999998800	30000000000	10	0	30000000000
+tank/data@snapsync-auto-new	tank/data	1999999900	70000000000	10	0	70000000000
 EOF
 
   run_case "${case_dir}"
 
-  assert_snapshot_missing "${case_dir}" "tank/data@autosnapshot-old"
-  assert_snapshot_exists "${case_dir}" "tank/data@autosnapshot-new"
-  assert_file_contains "${case_dir}/stdout.log" "Keeping newest autosnapshot: tank/data@autosnapshot-new"
+  assert_snapshot_missing "${case_dir}" "tank/data@snapsync-auto-old"
+  assert_snapshot_exists "${case_dir}" "tank/data@snapsync-auto-new"
+  assert_file_contains "${case_dir}/stdout.log" "Keeping newest autosnapshot: tank/data@snapsync-auto-new"
   assert_file_contains "${case_dir}/log/summary.log" "Datasets left below target because reclaim is blocked: 1"
 }
 
@@ -708,8 +708,8 @@ EOF
   run_case "${case_dir}"
 
   assert_file_contains "${case_dir}/stdout.log" "Configured dataset 'tank/missing' no longer exists; skipping it for this run."
-  assert_file_contains "${case_dir}/stdout.log" "Creating snapshot: tank/live@autosnapshot-"
-  assert_file_not_contains "${case_dir}/stdout.log" "Creating snapshot: tank/missing@autosnapshot-"
+  assert_file_contains "${case_dir}/stdout.log" "Creating snapshot: tank/live@snapsync-auto-"
+  assert_file_not_contains "${case_dir}/stdout.log" "Creating snapshot: tank/missing@snapsync-auto-"
   assert_file_contains "${case_dir}/log/summary.log" "Configured datasets skipped because missing: 1"
   assert_file_contains "${case_dir}/log/summary.log" "Result: Success"
 }
@@ -718,7 +718,7 @@ test_lock_loser_does_not_run_log_maintenance() {
   local case_dir path_prefix lock_file
   case_dir="$(new_case lock_loser_log_maintenance)"
   path_prefix="${case_dir}/mockbin"
-  lock_file="${case_dir}/run/zfs_autosnapshot.lock"
+  lock_file="${case_dir}/run/zfs_snapsync.lock"
 
   write_config "${case_dir}" "tank/data:100G"
   cat > "${case_dir}/state/pools.tsv" <<'EOF'
@@ -737,7 +737,7 @@ EOF
     MOCK_STATE_DIR="${case_dir}/state" \
     MOCK_NOW_EPOCH="${MOCK_NOW_EPOCH:-2000000000}" \
     TZ=UTC \
-      "${case_dir}/zfs_autosnapshot" >> "${case_dir}/log/debug.log" 2>&1
+      "${case_dir}/zfs_snapsync" >> "${case_dir}/log/debug.log" 2>&1
   flock -u 9
   exec 9>&-
   after_inode="$(stat -c '%i' "${case_dir}/log/debug.log")"

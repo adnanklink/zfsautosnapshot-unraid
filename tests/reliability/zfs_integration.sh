@@ -4,7 +4,7 @@
 set -euo pipefail
 [[ -f /.dockerenv && "${ZFSAS_DISPOSABLE_POOL_TEST:-}" == 1 ]] || { echo 'Requires the explicitly enabled disposable container test.' >&2; exit 77; }
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-source "$ROOT/source/usr/local/emhttp/plugins/zfs.autosnapshot/scripts/ops-queue-lib.sh"
+source "$ROOT/source/usr/local/emhttp/plugins/zfs.snapsync/scripts/ops-queue-lib.sh"
 fixture="$(mktemp -d "${ZFSAS_POOL_FIXTURE_ROOT:-/tmp}/zfsas-real.XXXXXXXX")"
 nonce="$(basename "$fixture" | tr -cd 'a-zA-Z0-9')"
 source_pool="zfsas_test_${nonce}_src"; target_pool="zfsas_test_${nonce}_dst"
@@ -37,7 +37,7 @@ zfs create -o mountpoint="$fixture/source" "$source_dataset"
 (
   zfs create -o mountpoint=none "$source_pool/intent"
   zfs create -o mountpoint=none "$source_pool/intent/child"
-  worker="$ROOT/source/usr/local/sbin/zfs_autosnapshot_send_worker"
+  worker="$ROOT/source/usr/local/sbin/zfs_snapsync_send_worker"
   for function in prepare_scheduled_job_snapshot freeze_current_send_manifest; do
     eval "$(sed -n "/^${function}() {/,/^}/p" "$worker")"
   done
@@ -78,7 +78,7 @@ $result=ZfsasReplicationInspection::inspect(["sourceSnapshot"=>$argv[2]."@next",
 if ($result["outcome"]!=="success" || $result["inspection"]["base"]["snapshot"]!==$argv[2]."@base"
     || count($result["inspection"]["references"])!==3) { fwrite(STDERR,json_encode($result)); exit(1); }
 echo "PASS: native read-only inspection selects GUID-matched base on real ZFS\n";
-' "$ROOT/source/usr/local/emhttp/plugins/zfs.autosnapshot/php/replication-inspection.php" "$source_dataset" "$destination" "$(zfs get -H -p -o value guid "$source_dataset@next")"
+' "$ROOT/source/usr/local/emhttp/plugins/zfs.snapsync/php/replication-inspection.php" "$source_dataset" "$destination" "$(zfs get -H -p -o value guid "$source_dataset@next")"
 run_pipeline_with_status 'Real incremental transfer' "$source_dataset@base" "$source_dataset@next" "$destination"
 snapshots_have_same_guid "$source_dataset@next" "$destination@next" local
 # Existing unrelated destination must survive both a full receive and a mismatched base.
@@ -101,7 +101,7 @@ PY
 cat > "$fixture/transfer.sh" <<'BASH'
 #!/bin/bash
 set -euo pipefail
-source "$1/source/usr/local/emhttp/plugins/zfs.autosnapshot/scripts/ops-queue-lib.sh"
+source "$1/source/usr/local/emhttp/plugins/zfs.snapsync/scripts/ops-queue-lib.sh"
 ensure_runtime_layout
 mkdir -p "$CONFIG_DIR"
 declare -A job=([JOB_ID]=integration-run [JOB_TYPE]=send [JOB_MODE]=scheduled [JOB_ACTION]=send_member [STATE]=running [PHASE]=sending [SCHEDULE_JOB_ID]=fixture [SOURCE_ROOT]="$2" [DESTINATION_ROOT]="$3" [WORKER_PID]="$$" [WORKER_PGID]="$$" [WORKER_START]="$(process_start_time $$)" [SEND_TRANSPORT]=local)
@@ -116,7 +116,7 @@ pipeline_group=$!
 for ((i=0;i<100;i++)); do [[ -f "$OPS_JOBS_DIR/integration.job" ]] && break; sleep .05; done
 pipeline_start="$(process_start_time "$pipeline_group")"
 sleep 2
-php -r 'require $argv[1]; if (!zfsas_ops_cancel_send_job("integration-run", $error)) { fwrite(STDERR,$error); exit(1); }' "$ROOT/source/usr/local/emhttp/plugins/zfs.autosnapshot/php/send-queue-helpers.php"
+php -r 'require $argv[1]; if (!zfsas_ops_cancel_send_job("integration-run", $error)) { fwrite(STDERR,$error); exit(1); }' "$ROOT/source/usr/local/emhttp/plugins/zfs.snapsync/php/send-queue-helpers.php"
 wait "$pipeline_group" 2>/dev/null || true
 [[ -z "$(send_group_members "$pipeline_group")" ]]
 [[ -f "$CONFIG_DIR/send-control/cancelled/integration-run" && -f "$CONFIG_DIR/send-control/paused/fixture" ]]
@@ -125,7 +125,7 @@ declare -A canceled=();job_load "$OPS_JOBS_DIR/integration.job" canceled
 token='';local_receive_resume_token "$target_pool/resumable" token
 [[ -n "$token" ]]
 if run_pipeline_with_status 'Reject wrong resume target' '' "$source_dataset@base" "$target_pool/resumable"; then exit 1; fi
-php -r 'require $argv[1]; if (!zfsas_ops_resume_schedule("fixture",$error)) { fwrite(STDERR,$error); exit(1); }' "$ROOT/source/usr/local/emhttp/plugins/zfs.autosnapshot/php/send-queue-helpers.php"
+php -r 'require $argv[1]; if (!zfsas_ops_resume_schedule("fixture",$error)) { fwrite(STDERR,$error); exit(1); }' "$ROOT/source/usr/local/emhttp/plugins/zfs.snapsync/php/send-queue-helpers.php"
 [[ ! -e "$CONFIG_DIR/send-control/paused/fixture" && -f "$CONFIG_DIR/send-control/cancelled/integration-run" ]]
 run_pipeline_with_status 'Resume real canceled receive' '' "$source_dataset@large" "$target_pool/resumable"
 snapshots_have_same_guid "$source_dataset@large" "$target_pool/resumable@large" local

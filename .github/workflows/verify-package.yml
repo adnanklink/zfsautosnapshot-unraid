@@ -5,7 +5,7 @@ on:
   push:
     paths-ignore:
       - 'dist/**'
-      - 'zfs.autosnapshot.plg'
+      - 'zfs.snapsync.plg'
 
 permissions:
   contents: read

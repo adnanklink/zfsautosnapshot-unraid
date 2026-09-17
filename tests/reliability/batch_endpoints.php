@@ -1,12 +1,12 @@
 <?php
 // Endpoints and background workers use their real paths inside a disposable container.
 if (!file_exists('/.dockerenv')) { throw new RuntimeException('Use the disposable test container.'); }
-$base = realpath(__DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.autosnapshot/php');
+$base = realpath(__DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.snapsync/php');
 require $base . '/snapshot-manager-helpers.php';
 require_once $base . '/coordinator-state.php';
 function check($ok, $message) { if (!$ok) { throw new RuntimeException($message); } }
-$dir = '/boot/config/plugins/zfs.autosnapshot'; @mkdir($dir, 0775, true);
-file_put_contents($dir . '/zfs_autosnapshot.conf', "PREFIX=\"auto-\"\nDATASETS=\"tank/data:10G\"\n");
+$dir = '/boot/config/plugins/zfs.snapsync'; @mkdir($dir, 0775, true);
+file_put_contents($dir . '/zfs_snapsync.conf', "PREFIX=\"auto-\"\nDATASETS=\"tank/data:10G\"\n");
 file_put_contents($dir . '/zfs_send.conf', "SEND_SNAPSHOT_PREFIX=\"send-\"\n");
 @mkdir('/tmp/batch-fixture/bin', 0775, true);
 $rows = [];
@@ -25,7 +25,7 @@ with open(root+'lock','a') as lock:
    if name==target or name.startswith(target+'@'): print('\t'.join(map(str,row)))
  elif args[0]=='holds':
   for name in args[1:]:
-   if name in rows and rows[name][4]: print(name+'\tzfsas-manual\tdate')
+   if name in rows and rows[name][4]: print(name+'\tsnapsync-manual\tdate')
  elif args[0] in ('hold','release','destroy'):
   if os.path.exists(root+'fail') and open(root+'fail').read()==target: sys.exit('injected failure')
   if target not in rows: sys.exit('missing snapshot')
@@ -61,7 +61,7 @@ function capture($action,$items) {
 function wait_batch($token) {
     $until=microtime(true)+420;
     do { usleep(100000); $r=endpoint(['action'=>'status','token'=>$token]); check($r['ok'],'Status failed'); if ($r['state']==='complete') return $r; } while(microtime(true)<$until);
-    throw new RuntimeException('Batch did not complete: '.json_encode($r).' '.@file_get_contents('/var/log/zfs_autosnapshot_snapshot_manager.log'));
+    throw new RuntimeException('Batch did not complete: '.json_encode($r).' '.@file_get_contents('/var/log/zfs_snapsync_snapshot_manager.log'));
 }
 $items=array_map(fn($r)=>['snapshot'=>$r[0],'guid'=>$r[5]],array_values($rows));
 $over=endpoint(['action'=>'capture','operation'=>'hold','dataset'=>'tank/data','items'=>json_encode($items),'seal'=>'1']);check(!$over['ok'],'Explicit request limit bypassed');
@@ -76,7 +76,7 @@ check(count(file('/tmp/batch-fixture/actions'))===600,'Duplicate actions repeate
 $path=zfsas_sm_batch_path($token); $before=file_get_contents($path); $stat=stat($path);
 for($poll=0;$poll<3;$poll++) { check(endpoint(['action'=>'status','token'=>$token])['ok'],'Read-only poll failed'); }
 clearstatcache(true,$path); check(file_get_contents($path)===$before && stat($path)['ino']===$stat['ino'],'Polling republished runtime state');
-$journal=ZfsasCoordinatorState::readCommitted('/tmp/zfs-autosnapshot-coordinator'); $taskId=$journal['runs'][$submitted['runId']]['tasks'][0];
+$journal=ZfsasCoordinatorState::readCommitted('/tmp/zfs-snapsync-coordinator'); $taskId=$journal['runs'][$submitted['runId']]['tasks'][0];
 $attempts=array_filter($journal['attempts'],fn($attempt)=>$attempt['taskId']===$taskId);
 check(count($attempts)>=13,'Coordinator did not bound 601-item work into chunks of 50');
 unlink('/tmp/batch-fixture/fail');

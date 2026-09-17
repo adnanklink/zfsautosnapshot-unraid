@@ -1,0 +1,77 @@
+# -----------------------------------------------------------------------------
+# ZFS send replication config for ZFS SnapSync
+# Path: /boot/config/plugins/zfs.snapsync/zfs_send.conf
+# -----------------------------------------------------------------------------
+
+# SEND_SNAPSHOT_PREFIX
+# Base prefix namespace for send/receive snapshots. The script appends a per-job
+# id automatically, so each replication job keeps an isolated snapshot chain.
+SEND_SNAPSHOT_PREFIX="snapsync-send-"
+
+# SEND_MAX_PARALLEL
+# Number of queued send jobs allowed to run at once. Snapshot deletions still
+# run one at a time globally so they do not pile onto the system.
+SEND_MAX_PARALLEL=1
+
+# SEND_RATE_LIMIT
+# Maximum outbound ZFS stream rate applied through mbuffer before the receiver.
+# Use bytes/sec with an optional b, k, M, or G suffix (for example 8M). Set to
+# 0 to disable throttling. Configure a non-zero value before enabling SSH jobs
+# on an Internet-constrained link.
+SEND_RATE_LIMIT=0
+
+# SEND_PREP_EXTRA_WORKERS
+# Extra queue worker processes allowed to prepare snapshots, estimate needed
+# destination space, and wait before real send transfer slots open.
+SEND_PREP_EXTRA_WORKERS=16
+
+# SEND_KEEP_ALL_FOR_DAYS / SEND_KEEP_DAILY_UNTIL_DAYS / SEND_KEEP_WEEKLY_UNTIL_DAYS
+# Scheduled-send retention windows for snapshots stored on the destination tree.
+# The newest successful send checkpoint is always protected even if it falls
+# outside these windows so the next incremental send can still build from it.
+SEND_KEEP_ALL_FOR_DAYS=14
+SEND_KEEP_DAILY_UNTIL_DAYS=30
+SEND_KEEP_WEEKLY_UNTIL_DAYS=183
+
+# SEND_SSH_HOST / SEND_SSH_PORT / SEND_SSH_USER / SEND_SSH_KEY_PATH
+# SSH transport receiver connection settings. SSH sends use keys or other
+# preconfigured non-interactive auth; this config stores only connection metadata
+# and an optional local key path, not raw passwords or private-key contents.
+SEND_SSH_HOST=""
+SEND_SSH_PORT="22"
+SEND_SSH_USER="root"
+SEND_SSH_KEY_PATH=""
+
+# SEND_SPIPED_LISTEN_HOST / SEND_SPIPED_PORT / SEND_SPIPED_REMOTE_HOST / SEND_SPIPED_REMOTE_PORT / SEND_SPIPED_KEY_PATH
+# spiped receiver/listener and sender target settings. spiped uses a shared
+# symmetric key file on both sending and receiving sides; this config stores only
+# the local key path, not raw key material. Sender pipelines use spipe -t against
+# SEND_SPIPED_REMOTE_HOST:SEND_SPIPED_REMOTE_PORT.
+SEND_SPIPED_LISTEN_HOST="0.0.0.0"
+SEND_SPIPED_PORT="8023"
+SEND_SPIPED_REMOTE_HOST=""
+SEND_SPIPED_REMOTE_PORT="8023"
+SEND_SPIPED_KEY_PATH=""
+
+# SEND_JOBS
+# Semicolon-separated entries encoded as:
+#   jobid|source|destination|frequency|threshold|children|transport
+#
+# Example:
+#   SEND_JOBS="1a2b3c4d5e6f|tank/appdata|backup/appdata|6h|200G|0|local"
+#
+# frequency values:
+#   6h, 12h, 1d, 7d
+# transport values:
+#   local, ssh, spiped
+#   SSH transports actively run zfs send through non-interactive ssh using the
+#   receiver settings above; remote inventory/retention checks also use ssh.
+#   spiped transports fail closed until receiver-side snapshot inventory and
+#   receive verification are implemented. Use ssh for active network sends until
+#   spiped receiver coordination is safe.
+#
+# threshold = minimum effective free space that must remain on the destination
+# dataset's active pool/quota constraints before a send run proceeds.
+# children = 1 to send the entire source subtree under the chosen destination
+# root, 0 to send only the selected dataset itself.
+SEND_JOBS=""

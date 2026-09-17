@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
-PLUGIN = ROOT / "source/usr/local/emhttp/plugins/zfs.autosnapshot"
+PLUGIN = ROOT / "source/usr/local/emhttp/plugins/zfs.snapsync"
 SETTINGS = PLUGIN / "php/settings.php"
 PACKAGE_SOURCE = ROOT / "source"
 
@@ -15,7 +15,7 @@ REMOVED_PATHS = [
     PLUGIN / "php/recovery-status.php",
     PLUGIN / "php/recovery-action.php",
     PLUGIN / "php/recovery-helpers.php",
-    ROOT / "source/usr/local/sbin/zfs_autosnapshot_recovery_scan",
+    ROOT / "source/usr/local/sbin/zfs_snapsync_recovery_scan",
 ]
 
 FORBIDDEN_SETTINGS_SNIPPETS = [
@@ -45,11 +45,11 @@ def main() -> int:
 
     post_install = PLUGIN.joinpath("scripts/post-install.sh").read_text(encoding="utf-8")
     for stale_path in [
-        "/usr/local/emhttp/plugins/zfs.autosnapshot/php/recovery-tools.php",
-        "/usr/local/emhttp/plugins/zfs.autosnapshot/php/recovery-status.php",
-        "/usr/local/emhttp/plugins/zfs.autosnapshot/php/recovery-action.php",
-        "/usr/local/emhttp/plugins/zfs.autosnapshot/php/recovery-helpers.php",
-        "/usr/local/sbin/zfs_autosnapshot_recovery_scan",
+        "/usr/local/emhttp/plugins/zfs.snapsync/php/recovery-tools.php",
+        "/usr/local/emhttp/plugins/zfs.snapsync/php/recovery-status.php",
+        "/usr/local/emhttp/plugins/zfs.snapsync/php/recovery-action.php",
+        "/usr/local/emhttp/plugins/zfs.snapsync/php/recovery-helpers.php",
+        "/usr/local/sbin/zfs_snapsync_recovery_scan",
     ]:
         if f"rm -f {stale_path}" not in post_install:
             fail(f"post-install does not delete stale removed tool file: {stale_path}")

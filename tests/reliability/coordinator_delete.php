@@ -1,11 +1,11 @@
 <?php
 if (!is_file('/.dockerenv')) { throw new RuntimeException('Requires disposable container.'); }
-$plugin=realpath(__DIR__.'/../../source/usr/local/emhttp/plugins/zfs.autosnapshot');
+$plugin=realpath(__DIR__.'/../../source/usr/local/emhttp/plugins/zfs.snapsync');
 require $plugin.'/php/snapshot-manager-helpers.php';
 require $plugin.'/php/coordinator-state.php';
 require $plugin.'/php/coordinator-deletion.php';
 function check($ok,$message){if(!$ok)throw new RuntimeException($message);}
-$root='/tmp/zfs-autosnapshot-coordinator';
+$root='/tmp/zfs-snapsync-coordinator';
 $journal=new ZfsasCoordinatorState($root);
 zfsas_ops_ensure_storage_dirs();
 $legacy = "PENDING_COUNT=1\nJOB\tlegacy-unapproved\n";

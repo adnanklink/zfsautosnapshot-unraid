@@ -1,5 +1,5 @@
 <?php
-require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.autosnapshot/php/coordinator-socket.php';
+require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.snapsync/php/coordinator-socket.php';
 if (($argv[1] ?? '') === '--server') {
     $root = $argv[2];
     $journal = new ZfsasCoordinatorState($root);

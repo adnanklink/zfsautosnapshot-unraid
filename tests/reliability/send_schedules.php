@@ -1,5 +1,5 @@
 <?php
-require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.autosnapshot/php/send-helpers.php';
+require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.snapsync/php/send-helpers.php';
 function check($condition,$message) { if (!$condition) { throw new RuntimeException($message); } }
 $zone=new DateTimeZone('America/New_York'); $now=1793491200;
 $job=['id'=>'abcdef123456','frequency'=>'7d'];

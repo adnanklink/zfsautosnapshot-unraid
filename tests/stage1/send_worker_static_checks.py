@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-WORKER = ROOT / "source/usr/local/sbin/zfs_autosnapshot_send_worker"
-OPS_LIB = ROOT / "source/usr/local/emhttp/plugins/zfs.autosnapshot/scripts/ops-queue-lib.sh"
+WORKER = ROOT / "source/usr/local/sbin/zfs_snapsync_send_worker"
+OPS_LIB = ROOT / "source/usr/local/emhttp/plugins/zfs.snapsync/scripts/ops-queue-lib.sh"
 
 
 def assert_contains(text: str, needle: str, message: str) -> None:

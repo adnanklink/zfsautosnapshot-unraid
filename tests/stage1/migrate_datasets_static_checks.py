@@ -4,8 +4,8 @@ from pathlib import Path
 import re
 
 ROOT = Path(__file__).resolve().parents[2]
-PAGE = ROOT / "source/usr/local/emhttp/plugins/zfs.autosnapshot/php/migrate-datasets.php"
-STATUS_ENDPOINT = ROOT / "source/usr/local/emhttp/plugins/zfs.autosnapshot/php/migrate-datasets-status.php"
+PAGE = ROOT / "source/usr/local/emhttp/plugins/zfs.snapsync/php/migrate-datasets.php"
+STATUS_ENDPOINT = ROOT / "source/usr/local/emhttp/plugins/zfs.snapsync/php/migrate-datasets-status.php"
 text = PAGE.read_text(encoding="utf-8") + (PAGE.parent / "views/migration.php").read_text() + (PAGE.parent.parent / "js/migration.js").read_text()
 status_endpoint_text = STATUS_ENDPOINT.read_text(encoding="utf-8")
 
@@ -139,7 +139,7 @@ require(
 # worker must therefore perform a space wait/check before stop_container_batch()
 # in the main batch loop, not only inside migrate_one_directory() after Docker
 # has already been touched.
-WORKER = ROOT / "source/usr/local/sbin/zfs_autosnapshot_migrate_datasets"
+WORKER = ROOT / "source/usr/local/sbin/zfs_snapsync_migrate_datasets"
 worker_text = WORKER.read_text(encoding="utf-8")
 require_worker = lambda pattern, message: (_ for _ in ()).throw(AssertionError(message)) if not re.search(pattern, worker_text, re.S) else None
 require_worker(
@@ -190,9 +190,9 @@ require_worker(
     "Worker must expose a --recover-pending mode for the boot hook.",
 )
 
-EVENT = ROOT / "source/usr/local/emhttp/plugins/zfs.autosnapshot/event/disks_mounted"
+EVENT = ROOT / "source/usr/local/emhttp/plugins/zfs.snapsync/event/disks_mounted"
 event_text = EVENT.read_text(encoding="utf-8")
-if not re.search(r'(?:zfs_autosnapshot_migrate_datasets|\$MIGRATOR_WORKER)"?\s+--recover-pending', event_text, re.S):
+if not re.search(r'(?:zfs_snapsync_migrate_datasets|\$MIGRATOR_WORKER)"?\s+--recover-pending', event_text, re.S):
     raise AssertionError("disks_mounted must launch delayed Dataset Migrator recovery after boot when recovery.env exists.")
 
 print("PASS: Dataset Migrator static UI, worker, and recovery contracts")

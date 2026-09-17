@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-OPS_LIB="${ROOT_DIR}/source/usr/local/emhttp/plugins/zfs.autosnapshot/scripts/ops-queue-lib.sh"
+OPS_LIB="${ROOT_DIR}/source/usr/local/emhttp/plugins/zfs.snapsync/scripts/ops-queue-lib.sh"
 TEST_ROOT="$(mktemp -d)"
 trap 'rm -rf "${TEST_ROOT}"' EXIT
 
@@ -43,10 +43,10 @@ zfs_guid_for_transport() { [[ -n "${SNAP_GUID[$1]:-}" ]] && printf '%s' "${SNAP_
 dataset_exists() { [[ -n "${DATASET_EXISTS[$1]:-}" ]]; }
 snapshot_exists() { [[ -n "${SNAP_CREATION[$1]:-}" ]]; }
 list_tree_datasets() { printf '%s\n' "$1"; }
-job_prefix_for_schedule() { printf 'zfs-send-%s-' "$1"; }
+job_prefix_for_schedule() { printf 'snapsync-send-%s-' "$1"; }
 parse_send_checkpoint_schedule_id() {
   local base="$1"
-  [[ "$base" == zfs-send-job1-* ]] || return 1
+  [[ "$base" == snapsync-send-job1-* ]] || return 1
   printf 'job1'
 }
 send_retention_keep_all_seconds() { printf '1'; }
@@ -108,26 +108,26 @@ mock_add_dataset 'tank/src'
 mock_add_dataset 'backup/src'
 
 for ds in tank/src backup/src; do
-  mock_add_snapshot "${ds}@zfs-send-job1-old" 100 1024
-  mock_add_snapshot "${ds}@zfs-send-job1-prev" 200 0
-  mock_add_snapshot "${ds}@zfs-send-job1-current" 300 0
+  mock_add_snapshot "${ds}@snapsync-send-job1-old" 100 1024
+  mock_add_snapshot "${ds}@snapsync-send-job1-prev" 200 0
+  mock_add_snapshot "${ds}@snapsync-send-job1-current" 300 0
 done
 
 latest=''
 latest_checkpoint_basename_for_schedule job1 latest
 printf 'latest_common_before=%s\n' "$latest"
-[[ "$latest" == 'zfs-send-job1-current' ]]
+[[ "$latest" == 'snapsync-send-job1-current' ]]
 
 : > "${TEST_ROOT}/queued.tsv"
-queue_schedule_zero_change_cleanup_for_dataset job1 backup/src zfs-send-job1-current
+queue_schedule_zero_change_cleanup_for_dataset job1 backup/src snapsync-send-job1-current
 printf 'queued_after_zero_change:\n'
 cat "${TEST_ROOT}/queued.tsv"
 
-if grep -q $'checkpoint\tjob1\tzfs-send-job1-current' "${TEST_ROOT}/queued.tsv"; then
+if grep -q $'checkpoint\tjob1\tsnapsync-send-job1-current' "${TEST_ROOT}/queued.tsv"; then
   printf 'FAIL: zero-change cleanup queued current latest common checkpoint\n' >&2
   exit 1
 fi
-if grep -q $'checkpoint\tjob1\tzfs-send-job1-prev' "${TEST_ROOT}/queued.tsv"; then
+if grep -q $'checkpoint\tjob1\tsnapsync-send-job1-prev' "${TEST_ROOT}/queued.tsv"; then
   printf 'FAIL: zero-change cleanup queued older send checkpoint instead of leaving checkpoint deletion to retention cleanup\n' >&2
   exit 1
 fi
@@ -140,21 +140,21 @@ SCHEDULE_INCLUDE_CHILDREN[job1]='1'
 list_tree_datasets() { printf '%s\n' 'tank/src' 'tank/src/child'; }
 mock_add_dataset 'tank/src/child'
 mock_add_dataset 'backup/src/child'
-mock_add_snapshot 'tank/src/child@zfs-send-job1-old' 100 1024
-mock_add_snapshot 'backup/src/child@zfs-send-job1-old' 100 1024
-mock_add_snapshot 'tank/src/child@zfs-send-job1-prev' 200 0
-mock_add_snapshot 'backup/src/child@zfs-send-job1-prev' 200 0
-mock_add_snapshot 'tank/src/child@zfs-send-job1-current' 300 0
+mock_add_snapshot 'tank/src/child@snapsync-send-job1-old' 100 1024
+mock_add_snapshot 'backup/src/child@snapsync-send-job1-old' 100 1024
+mock_add_snapshot 'tank/src/child@snapsync-send-job1-prev' 200 0
+mock_add_snapshot 'backup/src/child@snapsync-send-job1-prev' 200 0
+mock_add_snapshot 'tank/src/child@snapsync-send-job1-current' 300 0
 # Deliberately do NOT add backup/src/child@current.
 
 : > "${TEST_ROOT}/queued.tsv"
 latest=''
 latest_checkpoint_basename_for_schedule job1 latest
 printf 'latest_common_with_incomplete_child=%s\n' "$latest"
-queue_schedule_zero_change_cleanup_for_dataset job1 backup/src zfs-send-job1-current
+queue_schedule_zero_change_cleanup_for_dataset job1 backup/src snapsync-send-job1-current
 printf 'queued_with_incomplete_child:\n'
 cat "${TEST_ROOT}/queued.tsv"
-if grep -q $'checkpoint\tjob1\tzfs-send-job1-prev' "${TEST_ROOT}/queued.tsv"; then
+if grep -q $'checkpoint\tjob1\tsnapsync-send-job1-prev' "${TEST_ROOT}/queued.tsv"; then
   printf 'FAIL: zero-change cleanup queued prev even though another member still needs it as latest common\n' >&2
   exit 1
 fi
@@ -168,17 +168,17 @@ clear_send_cleanup_caches
 SCHEDULE_INCLUDE_CHILDREN[job1]='0'
 list_tree_datasets() { printf '%s\n' "$1"; }
 : > "${TEST_ROOT}/queued.tsv"
-queue_snapshot_delete_job backup/src backup/src@zfs-send-job1-current 300 'loaded schedule should skip latest common' job1 checkpoint || true
-if grep -q $'checkpoint\tjob1\tzfs-send-job1-current' "${TEST_ROOT}/queued.tsv"; then
+queue_snapshot_delete_job backup/src backup/src@snapsync-send-job1-current 300 'loaded schedule should skip latest common' job1 checkpoint || true
+if grep -q $'checkpoint\tjob1\tsnapsync-send-job1-current' "${TEST_ROOT}/queued.tsv"; then
   printf 'FAIL: loaded schedule queued latest common checkpoint\n' >&2
   exit 1
 fi
 unset 'SCHEDULE_SOURCE_ROOT[job1]' 'SCHEDULE_DEST_ROOT[job1]' 'SCHEDULE_INCLUDE_CHILDREN[job1]'
 clear_send_cleanup_caches
-queue_snapshot_delete_job backup/src backup/src@zfs-send-job1-current 300 'missing schedule must fail closed' job1 checkpoint || true
+queue_snapshot_delete_job backup/src backup/src@snapsync-send-job1-current 300 'missing schedule must fail closed' job1 checkpoint || true
 printf 'queued_with_missing_schedule_table:\n'
 cat "${TEST_ROOT}/queued.tsv"
-if grep -q $'checkpoint\tjob1\tzfs-send-job1-current' "${TEST_ROOT}/queued.tsv"; then
+if grep -q $'checkpoint\tjob1\tsnapsync-send-job1-current' "${TEST_ROOT}/queued.tsv"; then
   printf 'FAIL: missing/stale schedule table queued latest-common checkpoint instead of failing closed\n' >&2
   exit 1
 fi

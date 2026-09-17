@@ -1,6 +1,6 @@
 <?php
 $root = dirname(__DIR__, 2);
-require_once $root . '/source/usr/local/emhttp/plugins/zfs.autosnapshot/php/snapshot-manager-helpers.php';
+require_once $root . '/source/usr/local/emhttp/plugins/zfs.snapsync/php/snapshot-manager-helpers.php';
 
 function fail_contract($message)
 {
@@ -52,7 +52,7 @@ if ((int) $skippedRelease !== 2) {
     fail_contract('server-side release filtering must report skipped ineligible rows');
 }
 
-$actionPhp = file_get_contents($root . '/source/usr/local/emhttp/plugins/zfs.autosnapshot/php/snapshot-manager-action.php');
+$actionPhp = file_get_contents($root . '/source/usr/local/emhttp/plugins/zfs.snapsync/php/snapshot-manager-action.php');
 if (strpos($actionPhp, 'zfsas_sm_batch_review($batch, $rows)') === false) {
     fail_contract('snapshot-manager-action.php must apply server-side eligibility before queueing operations');
 }

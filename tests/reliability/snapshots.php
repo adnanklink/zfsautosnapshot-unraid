@@ -1,5 +1,5 @@
 <?php
-require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.autosnapshot/php/snapshot-manager-helpers.php';
+require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.snapsync/php/snapshot-manager-helpers.php';
 function check($condition, $message) { if (!$condition) throw new RuntimeException($message); }
 $lines = [];
 for ($i = 0; $i < 10000; $i++) { $lines[] = 'tank/data@auto-' . sprintf('%05d', $i) . "\t" . (2000000000 + intdiv($i, 2)) . "\t" . ($i % 3 ? 0 : 1024) . "\t" . ($i % 7 ? 0 : 4096) . "\t0\t" . (100000 + $i) . "\t" . (20000 + $i) . "\t-"; }

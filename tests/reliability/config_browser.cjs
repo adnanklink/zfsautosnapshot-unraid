@@ -3,7 +3,7 @@ const {execFileSync} = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
-const plugin = path.resolve(__dirname, '../../source/usr/local/emhttp/plugins/zfs.autosnapshot');
+const plugin = path.resolve(__dirname, '../../source/usr/local/emhttp/plugins/zfs.snapsync');
 (async () => {
  const browser = await chromium.launch({executablePath:'/usr/bin/chromium',args:['--no-sandbox']});
  try {

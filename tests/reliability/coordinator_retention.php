@@ -1,6 +1,6 @@
 <?php
-require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.autosnapshot/php/coordinator-state.php';
-require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.autosnapshot/php/coordinator-retention.php';
+require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.snapsync/php/coordinator-state.php';
+require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.snapsync/php/coordinator-retention.php';
 $root = '/tmp/coordinator-retention-' . bin2hex(random_bytes(6));
 $state = new ZfsasCoordinatorState($root);
 $now = time(); $old = $now - 31 * 86400;

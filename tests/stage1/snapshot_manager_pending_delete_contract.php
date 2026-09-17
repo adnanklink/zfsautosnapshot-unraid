@@ -1,6 +1,6 @@
 <?php
 $root = dirname(__DIR__, 2);
-require_once $root . '/source/usr/local/emhttp/plugins/zfs.autosnapshot/php/snapshot-manager-helpers.php';
+require_once $root . '/source/usr/local/emhttp/plugins/zfs.snapsync/php/snapshot-manager-helpers.php';
 
 function fail_contract($message)
 {
@@ -10,7 +10,7 @@ function fail_contract($message)
 
 $tmp = sys_get_temp_dir() . '/zfsas_sm_pending_delete_' . getmypid();
 $bin = $tmp . '/bin';
-$opsRoot = '/tmp/zfs-autosnapshot-ops';
+$opsRoot = '/tmp/zfs-snapsync-ops';
 $dataset = 'tank/appdata';
 $snapshot = $dataset . '@autosnap_2026-05-20_0700';
 $snapshotName = 'autosnap_2026-05-20_0700';

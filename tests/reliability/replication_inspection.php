@@ -1,5 +1,5 @@
 <?php
-require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.autosnapshot/php/replication-inspection.php';
+require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.snapsync/php/replication-inspection.php';
 function check($ok,$message){if(!$ok)throw new RuntimeException($message);}
 function reject($callback){try{$callback();}catch(InvalidArgumentException|RuntimeException $error){return;}throw new RuntimeException('Unsafe inspection accepted');}
 $request=['sourceSnapshot'=>'tank/source@new','sourceGuid'=>'300','destination'=>'backup/target'];

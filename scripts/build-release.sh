@@ -44,13 +44,13 @@ fi
 
 SRC_DIR="$ROOT_DIR/source"
 DIST_DIR="$ROOT_DIR/dist"
-TEMPLATE="$ROOT_DIR/zfs.autosnapshot.plg.in"
+TEMPLATE="$ROOT_DIR/zfs.snapsync.plg.in"
 
-PKG_FILE="zfs-autosnapshot-${VERSION}-noarch-1.txz"
+PKG_FILE="zfs-snapsync-${VERSION}-noarch-1.txz"
 PKG_PATH="$DIST_DIR/$PKG_FILE"
-PLG_PATH="$DIST_DIR/zfs.autosnapshot.plg"
-ICON_SRC="$SRC_DIR/usr/local/emhttp/plugins/zfs.autosnapshot/images/zfs-autosnapshot.png"
-ICON_DIST_PATH="$DIST_DIR/zfs-autosnapshot.png"
+PLG_PATH="$DIST_DIR/zfs.snapsync.plg"
+ICON_SRC="$SRC_DIR/usr/local/emhttp/plugins/zfs.snapsync/images/zfs-snapsync.png"
+ICON_DIST_PATH="$DIST_DIR/zfs-snapsync.png"
 
 mkdir -p "$DIST_DIR"
 
@@ -130,7 +130,7 @@ sed \
   -e "s|__BUILD_DATE__|$BUILD_DATE|g" \
   "$TEMPLATE" > "$PLG_PATH"
 
-cp -f "$PLG_PATH" "$ROOT_DIR/zfs.autosnapshot.plg"
+cp -f "$PLG_PATH" "$ROOT_DIR/zfs.snapsync.plg"
 cp -f "$ICON_SRC" "$ICON_DIST_PATH"
 
 cat <<MSG
@@ -138,7 +138,7 @@ Built release artifacts:
   $PKG_PATH
   $PLG_PATH
   $ICON_DIST_PATH
-  $ROOT_DIR/zfs.autosnapshot.plg
+  $ROOT_DIR/zfs.snapsync.plg
 
 Package MD5:
   $PKG_MD5

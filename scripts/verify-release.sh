@@ -61,4 +61,20 @@ if tar -tJf "$PKG_PATH" | grep -E '(^|/)(\._[^/]*|\.DS_Store|\.AppleDouble)(/|$)
   exit 1
 fi
 
+# A standalone release must never install or operate through the original identity.
+if grep -E 'zfs[._-]autosnapshot|ZFSAutoSnapshot' "$PKG_LIST" >/dev/null; then
+  echo "Release package contains original-plugin installation paths." >&2
+  exit 1
+fi
+if grep -RIE 'zfs[._-]autosnapshot|ZFSAutoSnapshot' "$SRC_DIR" >/dev/null; then
+  echo "Source still references original-plugin runtime or installation identity." >&2
+  exit 1
+fi
+TEMPLATE="$ROOT_DIR/zfs.snapsync.plg.in"
+if [[ ! -f "$TEMPLATE" ]] || ! grep -F 'name="zfs.snapsync"' "$TEMPLATE" >/dev/null \
+  || ! grep -F 'pluginURL="__BASE_URL__/zfs.snapsync.plg"' "$TEMPLATE" >/dev/null; then
+  echo "Standalone manifest identity and update URL must match ZFS SnapSync." >&2
+  exit 1
+fi
+
 echo "Verified release package contents against source tree: $PKG_PATH"

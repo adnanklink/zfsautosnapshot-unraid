@@ -3,7 +3,7 @@
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-WORKER = ROOT / "source/usr/local/sbin/zfs_autosnapshot_send_worker"
+WORKER = ROOT / "source/usr/local/sbin/zfs_snapsync_send_worker"
 text = WORKER.read_text()
 
 preflight_branch = """if preflight_only_worker; then

@@ -1,5 +1,5 @@
 <?php
-require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.autosnapshot/php/coordinator-executor.php';
+require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.snapsync/php/coordinator-executor.php';
 function check($condition, $message) { if (!$condition) { throw new RuntimeException($message); } }
 $root = '/tmp/zfsas-executor-test-' . bin2hex(random_bytes(8));
 mkdir($root);

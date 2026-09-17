@@ -1,7 +1,7 @@
 <?php
 // Disposable container only; can run with /boot mounted read-only.
 if (!is_file('/.dockerenv')) { throw new RuntimeException('Requires disposable isolation.'); }
-$plugin = realpath(__DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.autosnapshot');
+$plugin = realpath(__DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.snapsync');
 require $plugin . '/php/workspace-summary.php';
 function check_ui($condition, $message) { if (!$condition) { throw new RuntimeException($message); } }
 function ui_endpoint($name, $query = '') {
@@ -27,7 +27,7 @@ check_ui(str_contains(ui_endpoint('workspace.php', 'section=../../bad'), '<h1>Ov
 check_ui(str_contains(ui_endpoint('workspace.php', 'section=main'), 'id="zfsas_settings_form"'), 'Legacy main alias');
 $summary = ui_json('workspace-summary.php');
 check_ui($summary['ok'] && !$summary['sources']['coordinator']['available'], 'Unavailable coordinator must be explicit');
-check_ui(!is_dir('/var/run/zfs-autosnapshot-coordinator'), 'Read-only summary started coordinator');
+check_ui(!is_dir('/var/run/zfs-snapsync-coordinator'), 'Read-only summary started coordinator');
 zfsas_ops_ensure_storage_dirs();
 $job = ['JOB_ID'=>'ui-fixture','JOB_TYPE'=>'send','STATE'=>'failed','PARENT_RUN_ID'=>'parent','SCHEDULE_JOB_ID'=>'schedule','SOURCE_ROOT'=>'tank/source','DESTINATION_ROOT'=>'tank/target','LAST_ERROR'=>'Receiver unavailable','REQUESTED_AT'=>gmdate('c')];
 zfsas_ops_write_job_file_unlocked(zfsas_ops_jobs_dir() . '/ui-fixture.job', $job);
@@ -54,7 +54,7 @@ check_ui(count($bounded['operations']) <= 120, 'Summary exceeded response bound'
 check_ui(in_array('replication:active-old', array_column($bounded['operations'], 'id'), true), 'Old active work was hidden by completed records');
 $unknown = ui_json('workspace-log.php', 'type=../../boot/config/super.dat');
 check_ui(!$unknown['ok'], 'Log path allowlist bypass');
-file_put_contents('/var/log/zfs_autosnapshot.last.log', str_repeat("bounded log\n", 10000));
+file_put_contents('/var/log/zfs_snapsync.last.log', str_repeat("bounded log\n", 10000));
 $log = ui_json('workspace-log.php');
 check_ui($log['ok'] && strlen($log['content']) <= 131072 && substr_count($log['content'], "\n") <= 200, 'Log response is not bounded');
 echo "PASS: legacy routes, allowlisted shell/logs, unavailable sources, send identities, stale migration, read-only runtime polling and bounded logs\n";

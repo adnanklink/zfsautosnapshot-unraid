@@ -1,7 +1,7 @@
 <?php
 // Real daemon with a harmless worker; production paths require isolation.
 if (!is_file('/.dockerenv')) { throw new RuntimeException('Requires disposable container.'); }
-$plugin = realpath(__DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.autosnapshot');
+$plugin = realpath(__DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.snapsync');
 require_once $plugin . '/php/coordinator-socket.php';
 require_once $plugin . '/php/coordinator-state.php';
 require_once $plugin . '/php/schedule-spec.php';
@@ -16,24 +16,24 @@ function until($predicate): void {
     for ($i = 0; $i < 300; $i++) { if ($predicate()) { return; } usleep(20000); }
     throw new RuntimeException('Daemon fixture timed out: ' . @file_get_contents('/tmp/replan-daemon.log'));
 }
-$dir = '/boot/config/plugins/zfs.autosnapshot'; mkdir($dir, 0775, true);
+$dir = '/boot/config/plugins/zfs.snapsync'; mkdir($dir, 0775, true);
 $old = "DATASETS=\"tank/old:1G\"\nPREFIX=\"auto-\"\nSCHEDULE_MODE=\"hourly\"\n";
-file_put_contents($dir . '/zfs_autosnapshot.conf', $old);
+file_put_contents($dir . '/zfs_snapsync.conf', $old);
 file_put_contents($dir . '/zfs_send.conf', "SEND_SNAPSHOT_PREFIX=\"send-\"\n");
 $config = zfsas_config_read_pair($dir);
 $schedule = ZfsasSchedule::autoConfig($config['auto']);
 $occurrence = ZfsasSchedule::occurrence($schedule, time(), ZfsasSchedule::hostTimezone(), false);
-$journal = new ZfsasCoordinatorState('/tmp/zfs-autosnapshot-coordinator');
+$journal = new ZfsasCoordinatorState('/tmp/zfs-snapsync-coordinator');
 $receipt = $journal->submit('auto-occurrence-' . $occurrence, ['schedule' => 'auto', 'occurrence' => $occurrence,
     'revision' => $config['revision'], 'tasks' => ['snapshot' => ['kind' => 'auto', 'parameters' => [
         'revision' => $config['revision'], 'autoConfig' => $config['rawAuto'], 'sendConfig' => $config['rawSend'],
         'prefixHistory' => $config['prefixHistory'], 'scheduleSpec' => $schedule]]]], time());
 unset($journal);
 $new = str_replace('tank/old', 'tank/new', $old);
-file_put_contents($dir . '/zfs_autosnapshot.conf', $new);
+file_put_contents($dir . '/zfs_snapsync.conf', $new);
 @mkdir('/usr/local/sbin', 0755, true);
-file_put_contents('/usr/local/sbin/zfs_autosnapshot', '#!/bin/bash' . "\n" . 'cat "$CONFIG_FILE" >> /tmp/replan-executed' . "\n");
-chmod('/usr/local/sbin/zfs_autosnapshot', 0755);
+file_put_contents('/usr/local/sbin/zfs_snapsync', '#!/bin/bash' . "\n" . 'cat "$CONFIG_FILE" >> /tmp/replan-executed' . "\n");
+chmod('/usr/local/sbin/zfs_snapsync', 0755);
 $process = proc_open([PHP_BINARY, $plugin . '/php/coordinator-daemon.php'], [0 => ['file', '/dev/null', 'r'],
     1 => ['file', '/tmp/replan-daemon.log', 'a'], 2 => ['file', '/tmp/replan-daemon.log', 'a']], $pipes);
 try {
@@ -49,9 +49,9 @@ try {
     // Hold admission while accepting a manual request, then change its settings.
     file_put_contents($dir . '/maintenance', 'test');
     $manual = request('auto', ['commandId' => 'manual-before-save']);
-    file_put_contents($dir . '/zfs_autosnapshot.conf', str_replace('tank/new', 'tank/third', $new));
+    file_put_contents($dir . '/zfs_snapsync.conf', str_replace('tank/new', 'tank/third', $new));
     request('reload');
-    $lock = fopen('/tmp/zfs-autosnapshot-config-locks/' . hash('sha256', $dir) . '.lock', 'c');
+    $lock = fopen('/tmp/zfs-snapsync-config-locks/' . hash('sha256', $dir) . '.lock', 'c');
     flock($lock, LOCK_EX);
     unlink($dir . '/maintenance');
     $start = microtime(true);

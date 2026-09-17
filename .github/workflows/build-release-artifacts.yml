@@ -7,7 +7,7 @@ on:
       - testing
     paths-ignore:
       - 'dist/**'
-      - 'zfs.autosnapshot.plg'
+      - 'zfs.snapsync.plg'
   workflow_dispatch:
 
 permissions:
@@ -39,11 +39,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          CURRENT_PACKAGE="dist/zfs-autosnapshot-${VERSION}-noarch-1.txz"
+          CURRENT_PACKAGE="dist/zfs-snapsync-${VERSION}-noarch-1.txz"
 
           if git ls-files --error-unmatch "$CURRENT_PACKAGE" >/dev/null 2>&1; then
             echo "Release package ${CURRENT_PACKAGE} already exists in the branch." >&2
-            echo "Bump VERSION, CHANGELOG.md, and zfs.autosnapshot.plg.in before publishing a new build." >&2
+            echo "Bump VERSION, CHANGELOG.md, and zfs.snapsync.plg.in before publishing a new build." >&2
             exit 1
           fi
 
@@ -56,12 +56,12 @@ jobs:
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: zfs-autosnapshot-${{ env.VERSION }}
+          name: zfs-snapsync-${{ env.VERSION }}
           path: |
-            dist/zfs-autosnapshot-${{ env.VERSION }}-noarch-1.txz
-            dist/zfs.autosnapshot.plg
-            dist/zfs-autosnapshot.png
-            zfs.autosnapshot.plg
+            dist/zfs-snapsync-${{ env.VERSION }}-noarch-1.txz
+            dist/zfs.snapsync.plg
+            dist/zfs-snapsync.png
+            zfs.snapsync.plg
 
       - name: Commit generated artifacts
         shell: bash
@@ -70,10 +70,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add \
-            "dist/zfs-autosnapshot-${VERSION}-noarch-1.txz" \
-            "dist/zfs.autosnapshot.plg" \
-            "dist/zfs-autosnapshot.png" \
-            "zfs.autosnapshot.plg"
+            "dist/zfs-snapsync-${VERSION}-noarch-1.txz" \
+            "dist/zfs.snapsync.plg" \
+            "dist/zfs-snapsync.png" \
+            "zfs.snapsync.plg"
 
           if git diff --cached --quiet; then
             echo "No generated artifact changes to commit."

@@ -1,7 +1,7 @@
 <?php
 // Real RAM manifest publication and an actual SIGKILL at the ZFS boundary.
 if (!is_file('/.dockerenv')) { throw new RuntimeException('Use the disposable test container.'); }
-require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.autosnapshot/php/snapshot-manager-helpers.php';
+require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.snapsync/php/snapshot-manager-helpers.php';
 function check($ok, $message) { if (!$ok) { throw new RuntimeException($message); } }
 if (($argv[1] ?? '') === 'attempt') {
     $batch = zfsas_sm_read_json_file(zfsas_sm_batch_path($argv[2]));

@@ -1,12 +1,12 @@
 <?php
 // Run with a read-only /boot fixture. Never create configuration here.
 if (!is_file('/.dockerenv')) { throw new RuntimeException('Requires disposable container.'); }
-$plugin = realpath(__DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.autosnapshot');
+$plugin = realpath(__DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.snapsync');
 require $plugin . '/php/coordinator-socket.php';
 require $plugin . '/php/snapshot-manager-helpers.php';
 @mkdir('/usr/local/sbin', 0755, true);
-file_put_contents('/usr/local/sbin/zfs_autosnapshot', "#!/bin/bash\nprintf 'run\\n' >> /tmp/flash-auto-runs\n");
-chmod('/usr/local/sbin/zfs_autosnapshot', 0755);
+file_put_contents('/usr/local/sbin/zfs_snapsync', "#!/bin/bash\nprintf 'run\\n' >> /tmp/flash-auto-runs\n");
+chmod('/usr/local/sbin/zfs_snapsync', 0755);
 $proc = proc_open([PHP_BINARY, $plugin . '/php/coordinator-daemon.php'], [0 => ['file','/dev/null','r'], 1 => ['file','/tmp/flash-coordinator.log','a'], 2 => ['file','/tmp/flash-coordinator.log','a']], $pipes);
 function rpc($request) {
     $reply = zfsas_coordinator_request($request);

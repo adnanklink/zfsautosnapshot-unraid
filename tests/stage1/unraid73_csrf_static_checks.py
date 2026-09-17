@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-PLUGIN = ROOT / "source/usr/local/emhttp/plugins/zfs.autosnapshot"
+PLUGIN = ROOT / "source/usr/local/emhttp/plugins/zfs.snapsync"
 RESPONSE_HELPERS = PLUGIN / "php/response-helpers.php"
 SETTINGS_PAGE = PLUGIN / "php/settings.php"
 SEND_SETTINGS_PAGE = PLUGIN / "php/send-settings.php"

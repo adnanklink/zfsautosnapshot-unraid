@@ -5,9 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-LIB = ROOT / "source/usr/local/emhttp/plugins/zfs.autosnapshot/scripts/ops-queue-lib.sh"
-WORKER = ROOT / "source/usr/local/sbin/zfs_autosnapshot_send_worker"
-KICKER = ROOT / "source/usr/local/sbin/zfs_autosnapshot_queue_kicker"
+LIB = ROOT / "source/usr/local/emhttp/plugins/zfs.snapsync/scripts/ops-queue-lib.sh"
+WORKER = ROOT / "source/usr/local/sbin/zfs_snapsync_send_worker"
+KICKER = ROOT / "source/usr/local/sbin/zfs_snapsync_queue_kicker"
 
 
 def assert_contains(text: str, needle: str, message: str) -> None:
@@ -263,7 +263,7 @@ def main() -> int:
         "defer_current_job \"Waiting for destination space approval.\"",
         "worker without pre-approved reservation should publish estimate and wait for queue-manager approval",
     )
-    queue_handler = Path(ROOT / "source/usr/local/sbin/zfs_autosnapshot_queue_handler").read_text()
+    queue_handler = Path(ROOT / "source/usr/local/sbin/zfs_snapsync_queue_handler").read_text()
     assert_contains(
         queue_handler,
         "approve_send_job_space_for_launch \"$job_path\" \"$$\" || {",
@@ -325,7 +325,7 @@ def main() -> int:
         '"Queued by scheduled-send daily retention cleanup." "$snapshot_schedule_job_id" "destination_checkpoint"',
         "destination daily retention must not use cross-tree checkpoint cleanup for destination snapshots",
     )
-    delete_worker = Path(ROOT / "source/usr/local/sbin/zfs_autosnapshot_delete_worker").read_text()
+    delete_worker = Path(ROOT / "source/usr/local/sbin/zfs_snapsync_delete_worker").read_text()
     assert_contains(
         delete_worker,
         'if [[ "$delete_scope" == "destination_checkpoint" ]]; then',

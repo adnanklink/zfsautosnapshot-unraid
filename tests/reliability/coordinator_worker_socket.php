@@ -1,8 +1,8 @@
 <?php
 if (!is_file('/.dockerenv')) { throw new RuntimeException('Use the disposable test container.'); }
-require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.autosnapshot/php/coordinator-executor.php';
-require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.autosnapshot/php/coordinator-socket.php';
-$socket = '/var/run/zfs-autosnapshot-coordinator/control.sock';
+require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.snapsync/php/coordinator-executor.php';
+require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.snapsync/php/coordinator-socket.php';
+$socket = '/var/run/zfs-snapsync-coordinator/control.sock';
 if (($argv[1] ?? '') === 'server') {
     $root = $argv[2];
     $journal = new ZfsasCoordinatorState($root);
@@ -20,7 +20,7 @@ if (($argv[1] ?? '') === 'server') {
     $server->serve(); exit;
 }
 if (($argv[1] ?? '') === 'worker') {
-    require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.autosnapshot/php/coordinator-worker-client.php';
+    require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.snapsync/php/coordinator-worker-client.php';
     [$mode, $kind, $scenario, $root] = array_slice($argv, 1);
     $sequence = 1;
     $progress = ['phase' => 'preparing', 'message' => 'Fixture inspection', 'percent' => 0];

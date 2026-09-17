@@ -1,6 +1,6 @@
 <?php
-require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.autosnapshot/php/coordinator-executor.php';
-require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.autosnapshot/php/coordinator-auto-admission.php';
+require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.snapsync/php/coordinator-executor.php';
+require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.snapsync/php/coordinator-auto-admission.php';
 function check($value, $message) { if (!$value) { throw new RuntimeException($message); } }
 $root = '/tmp/zfsas-replan-' . bin2hex(random_bytes(8));
 $journal = new ZfsasCoordinatorState($root);
@@ -19,11 +19,11 @@ try {
     check($journal->state['runs'][$run]['replannedFrom'] === 'old', 'Replan lost original revision');
     check($journal->state['schedules']['auto']['accepted'] === 520, 'Replan moved occurrence');
     check($journal->submit('scheduled', $spec, 530) === $receipt, 'Replan changed command receipt');
-    check(file_get_contents($root . '/config/new/zfs_autosnapshot.conf') === $config['rawAuto'], 'Replan captured old configuration');
-    file_put_contents($root . '/config/new/zfs_autosnapshot.conf', 'partial');
+    check(file_get_contents($root . '/config/new/zfs_snapsync.conf') === $config['rawAuto'], 'Replan captured old configuration');
+    file_put_contents($root . '/config/new/zfs_snapsync.conf', 'partial');
     $sequence = $journal->state['sequence'];
     zfsas_coordinator_auto_command($journal, $journal->state['tasks'][$id], $config, $root);
-    check(file_get_contents($root . '/config/new/zfs_autosnapshot.conf') === $config['rawAuto'], 'Partial capture was reused');
+    check(file_get_contents($root . '/config/new/zfs_snapsync.conf') === $config['rawAuto'], 'Partial capture was reused');
     check($journal->state['sequence'] === $sequence, 'Unchanged admission rewrote journal');
     unset($journal);
     $journal = new ZfsasCoordinatorState($root);

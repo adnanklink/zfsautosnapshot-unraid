@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-source "$ROOT/source/usr/local/emhttp/plugins/zfs.autosnapshot/scripts/ops-queue-lib.sh"
+source "$ROOT/source/usr/local/emhttp/plugins/zfs.snapsync/scripts/ops-queue-lib.sh"
 fixture="$(mktemp -d)"
 trap 'rm -rf "$fixture"' EXIT
 OPS_ROOT="$fixture/ops"; OPS_STATUS_DIR="$OPS_ROOT/status"; OPS_JOBS_DIR="$OPS_ROOT/jobs"; CONFIG_DIR="$fixture/config"

@@ -5,9 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-SEND_HELPERS = ROOT / "source/usr/local/emhttp/plugins/zfs.autosnapshot/php/send-helpers.php"
-SEND_SETTINGS = ROOT / "source/usr/local/emhttp/plugins/zfs.autosnapshot/php/send-settings.php"
-SEND_EXAMPLE = ROOT / "source/usr/local/emhttp/plugins/zfs.autosnapshot/config/zfs_send.conf.example"
+SEND_HELPERS = ROOT / "source/usr/local/emhttp/plugins/zfs.snapsync/php/send-helpers.php"
+SEND_SETTINGS = ROOT / "source/usr/local/emhttp/plugins/zfs.snapsync/php/send-settings.php"
+SEND_EXAMPLE = ROOT / "source/usr/local/emhttp/plugins/zfs.snapsync/config/zfs_send.conf.example"
 README = ROOT / "README.md"
 
 
