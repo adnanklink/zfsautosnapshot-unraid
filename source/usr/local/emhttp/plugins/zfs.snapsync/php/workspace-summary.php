@@ -31,7 +31,7 @@ function zfsas_workspace_summary(): array
                 'createdAt' => $run['createdAt'], 'finishedAt' => $run['finishedAt'], 'progress' => null,
                 'blocked' => $run['blockedReasons'] ?? [], 'retryAt' => $run['nextRetry'] ?? null,
                 'recoveryRequired' => $run['recoveryRequired'] ?? false,
-                'actions' => !in_array($run['state'], array_merge($terminal, ['canceling']), true) ? ['cancel'] : [],
+                'actions' => !in_array($run['state'], array_merge($terminal, ['canceling']), true) ? ['cancel'] : (!empty($run['canRetry']) ? ['retry'] : []),
                 'url' => ($replication ? '/Settings/ZFSSnapSync?section=activity' : '/Settings/ZFSSnapSync?section=snapshots') . ($auto ? '&tab=automation' : ''),
                 'logType' => $auto ? 'auto' : ($replication ? 'replication' : 'batch')];
         }

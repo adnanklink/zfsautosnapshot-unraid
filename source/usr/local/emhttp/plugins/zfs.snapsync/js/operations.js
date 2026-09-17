@@ -88,6 +88,7 @@
   async function perform(op,action) {
     if(busy)return;
     if(action==='cancel' && !window.confirm(op.manual && op.type==='replication'?'Cancel this manual replication run? Completed receiver snapshots will be preserved.':op.type==='batch'?'Cancel this batch and its pending operations? Completed results will remain available.':'Cancel this whole run? Its schedule will remain paused until Resume.'))return;
+    if(action==='retry' && op.coordinator===true && !window.confirm('Retry this captured snapshot and destination? Any interrupted receive will be validated before resuming.'))return;
     if(action==='clear_failed' && op.recoveryRequired && !window.confirm('Clear this recovery record after reviewing the preserved snapshots? Clearing releases its cleanup protection; it does not verify or remove those snapshots.'))return;
     busy=true; $('operation-actions').querySelectorAll('button').forEach(button=>button.disabled=true);
     try {

@@ -12,21 +12,28 @@ file_put_contents($config.'/zfs_snapsync.conf',"DATASETS=\"\"\nPREFIX=\"snapsync
 file_put_contents($config.'/zfs_send.conf',"SEND_SNAPSHOT_PREFIX=\"snapsync-send-\"\n");
 @mkdir('/var/local/emhttp',0770,true);file_put_contents('/var/local/emhttp/var.ini','mdState="STARTED"');
 $read=fn($name)=>trim(ZfsasReplicationInspection::command(['get','-H','-p','-o','value','guid','--',$name]));
+$selectedName=($argv[4]??'')==='resume' ? 'large' : 'next';
 $request=['action'=>'replication','commandId'=>'native-real-send-'.substr(hash('sha256',$argv[2]),0,12),'revision'=>zfsas_config_revision($config),
- 'sourceDatasetGuid'=>$read($argv[1]),'replication'=>['sourceSnapshot'=>$argv[1].'@next','sourceGuid'=>$read($argv[1].'@next'),
+ 'sourceDatasetGuid'=>$read($argv[1]),'replication'=>['sourceSnapshot'=>$argv[1].'@'.$selectedName,'sourceGuid'=>$read($argv[1].'@'.$selectedName),
  'destination'=>$argv[2]]];
 if (($argv[4]??'')==='full') { $request['replication'] += ['createDestination'=>true,'destinationParentGuid'=>$read(substr($argv[2],0,strrpos($argv[2],'/')))]; }
 else { $request['replication']['destinationGuid']=$read($argv[2]); }
 $daemon=proc_open([PHP_BINARY,$plugin.'/coordinator-daemon.php'],[1=>['file','/tmp/snapsync-native-daemon.log','a'],2=>['file','/tmp/snapsync-native-daemon.log','a']],$pipes);
 try{
  until(function(){try{return rpc(['action'=>'status']);}catch(Throwable $e){return false;}});
- $receipt=rpc($request);check(rpc($request)===$receipt,'Duplicate submission changed operation');
+ $receipt=rpc($request);$submittedReceipt=$receipt;check(rpc($request)===$receipt,'Duplicate submission changed operation');
  $run=until(function()use($receipt){foreach(rpc(['action'=>'status'])['runs'] as $run){if($run['id']===$receipt['runId'] && ZfsasCoordinatorState::terminal($run['state']))return $run;}return false;});
+ if (($argv[4]??'')==='resume') {
+  check($run['state']==='failed' && $run['recoveryRequired'],'Interrupted receiver resumed without explicit Retry');
+  $original=$receipt['runId'];$retry=['action'=>'retry','runId'=>$original];$receipt=rpc($retry);check(rpc($retry)===$receipt,'Retry duplicated its successor');
+  $run=until(function()use($receipt){foreach(rpc(['action'=>'status'])['runs'] as $run){if($run['id']===$receipt['runId'] && ZfsasCoordinatorState::terminal($run['state']))return $run;}return false;});
+  foreach(rpc(['action'=>'status'])['runs'] as $prior){if($prior['id']===$original)check(!$prior['recoveryRequired'],'Verified successor retained stale recovery protection');}
+ }
  check($run['state']==='complete',json_encode($run));
- check(zfsas_native_manual_send($request['replication']['sourceSnapshot'],$request['replication']['sourceGuid'],$argv[2],$request['commandId'])===$receipt,'UI retry after receiver creation duplicated or rejected the accepted command');
+ check(zfsas_native_manual_send($request['replication']['sourceSnapshot'],$request['replication']['sourceGuid'],$argv[2],$request['commandId'])===$submittedReceipt,'UI retry after receiver creation duplicated or rejected the accepted command');
  check(count($run['taskStatus'])===4,'Native graph omitted a phase');
  foreach($run['taskStatus'] as $task){check($task['state']==='complete' && $task['result']['outcome']==='success','Child completion lacks explicit success');}
- check($read($argv[2].'@next')===$request['replication']['sourceGuid'],'Native transfer checkpoint differs');
+ check($read($argv[2].'@'.$selectedName)===$request['replication']['sourceGuid'],'Native transfer checkpoint differs');
  check($read($argv[3])!=='' ,'Unrelated receiver snapshot disappeared');
  $request['commandId'].='-already';$receipt=rpc($request);
  $run=until(function()use($receipt){foreach(rpc(['action'=>'status'])['runs'] as $run){if($run['id']===$receipt['runId'] && ZfsasCoordinatorState::terminal($run['state']))return $run;}return false;});

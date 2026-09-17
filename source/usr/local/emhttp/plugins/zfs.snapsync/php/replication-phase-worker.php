@@ -34,9 +34,10 @@ try {
                     zfsas_coordinator_worker_report('progress',3,['phase'=>'transfer','message'=>'Transferring the verified incremental snapshot.']);
                     $sequence = 4;
                     $request = $parameters['replication'];
+                    $resumeToken = $parameters['inspection']['mode'] === 'resume' ? zfsas_replication_resume_token($parameters) : '';
                     $process = proc_open(['/bin/bash','-o','pipefail','-c',
-                        'if [[ -n "$1" ]]; then zfs send -i "$1" "$2"; else zfs send "$2"; fi | { if [[ "$4" == 0 ]]; then cat; else mbuffer -q -R "$4"; fi; } | zfs receive -s -u -- "$3"','snapsync-transfer',
-                        $parameters['inspection']['base']['snapshot'] ?? '',$request['sourceSnapshot'],$request['destination'],$rate],
+                        'if [[ -n "$5" ]]; then zfs send -t "$5"; elif [[ -n "$1" ]]; then zfs send -i "$1" "$2"; else zfs send "$2"; fi | { if [[ "$4" == 0 ]]; then cat; else mbuffer -q -R "$4"; fi; } | zfs receive -s -u -- "$3"','snapsync-transfer',
+                        $parameters['inspection']['base']['snapshot'] ?? '',$request['sourceSnapshot'],$request['destination'],$rate,$resumeToken],
                         [0=>['file','/dev/null','r'],1=>['file','/dev/null','w'],2=>['pipe','w']],$pipes);
                     if (!is_resource($process)) { throw new RuntimeException('Cannot launch replication pipeline.'); }
                     // Drain diagnostics without retaining unbounded output or any

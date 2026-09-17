@@ -90,7 +90,7 @@ $outcome = static function ($task, $code) use ($configDir, $journal): array {
     return ['outcome' => $code === 0 ? 'success' : 'transient_failure', 'exitCode' => $code];
 };
 $executor = new ZfsasCoordinatorExecutor($journal, $root, $runtime, $command, $outcome, [],
-    static function($taskId) use ($journal, $deletion) { zfsas_coordinator_project_batch($journal, $taskId); $deletion->changed($taskId); });
+    static function($taskId) use ($journal, $deletion) { $journal->resolveReplicationRecovery($journal->state['tasks'][$taskId]['runId']); zfsas_coordinator_project_batch($journal, $taskId); $deletion->changed($taskId); });
 // Replay persistent decisions before allowing recovery to admit another attempt.
 foreach ($journal->state['runs'] as $run) {
     if (is_file(zfsas_ops_control_path('cancelled', $run['id'])) && !ZfsasCoordinatorState::terminal($run['state'])) { $executor->cancel($run['id']); }
@@ -106,6 +106,7 @@ $handler = static function (array $request) use ($journal, $executor, $submitAut
         $runs = array_values($journal->state['runs']);
         usort($runs, static fn($a, $b) => $b['createdAt'] <=> $a['createdAt']);
         foreach ($runs as &$run) {
+            $run['canRetry'] = $run['manual'] && in_array($run['state'],['failed','canceled'],true) && !empty($journal->state['tasks'][$run['id'].':prepare']['parameters']['nativePlan']);
             $run['kinds'] = []; $run['taskStatus'] = []; $run['blockedReasons'] = []; $run['nextRetry'] = null; $run['recoveryRequired'] = false;
             foreach ($run['tasks'] as $id) {
                 $task = $journal->state['tasks'][$id];
@@ -115,6 +116,8 @@ $handler = static function (array $request) use ($journal, $executor, $submitAut
                 if ($task['retryAt'] !== null) { $run['nextRetry'] = min($run['nextRetry'] ?? PHP_INT_MAX, $task['retryAt']); }
                 $run['recoveryRequired'] = $run['recoveryRequired'] || $task['blocked'] === 'recovery_required' || !empty($task['result']['recoveryRequired']);
             }
+            $run['recoveryRequired']=$journal->runRequiresReview($run['id']);
+            if (isset($run['recoveryResolvedBy'])) { $run['canRetry']=false; }
             $run['kinds'] = array_values(array_unique($run['kinds']));
             $run['blockedReasons'] = array_values(array_unique($run['blockedReasons']));
         } unset($run);
@@ -128,6 +131,10 @@ $handler = static function (array $request) use ($journal, $executor, $submitAut
         if (!is_string($id) || $id === '') { throw new InvalidArgumentException('Stable commandId is required.'); }
         if (!$loadConfig()) { throw new InvalidArgumentException('Configuration save is in progress. Retry with the same command ID.'); }
         return $submitAuto($id, true);
+    }
+    if ($action === 'retry') {
+        if (!$loadConfig()) { throw new InvalidArgumentException('Configuration save is in progress. Retry the same command.'); }
+        return zfsas_coordinator_retry_replication($journal,(string)($request['runId'] ?? ''),$config['revision'],$config['send']);
     }
     if ($action === 'replication_receipt') { return zfsas_coordinator_replication_receipt($journal,$request); }
     if ($action === 'replication') {

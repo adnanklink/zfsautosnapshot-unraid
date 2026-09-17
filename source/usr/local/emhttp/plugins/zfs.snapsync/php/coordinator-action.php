@@ -5,7 +5,7 @@ if (strtoupper($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') { zfsas_emit_marked
 $error = null;
 if (!zfsas_validate_csrf_token($error)) { zfsas_emit_marked_json(['ok' => false, 'error' => $error], 403); }
 $action = $_POST['action'] ?? '';
-if (!in_array($action, ['cancel', 'resume'], true)) { zfsas_emit_marked_json(['ok' => false, 'error' => 'Invalid action.'], 400); }
+if (!in_array($action, ['cancel', 'resume', 'retry'], true)) { zfsas_emit_marked_json(['ok' => false, 'error' => 'Invalid action.'], 400); }
 try {
     zfsas_coordinator_ensure();
     $response = zfsas_coordinator_request(['action' => $action, 'runId' => (string) ($_POST['run_id'] ?? '')]);

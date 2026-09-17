@@ -3,6 +3,7 @@ const {execFileSync}=require('node:child_process');
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const plugin=path.resolve(__dirname,'../../source/usr/local/emhttp/plugins/zfs.snapsync');
 const summary={ok:true,generatedAt:1700000000,timezone:'UTC',sources:{configuration:{available:true},coordinator:{available:true}},operations:[{id:'coordinator:batch',nativeId:'batch-run',type:'batch',title:'Snapshot batch',state:'running',createdAt:1699999999,actions:['cancel'],url:'?section=snapshots',logType:'batch'},{id:'coordinator:example',nativeId:'example',type:'auto',title:'Automatic snapshots',state:'running',createdAt:1700000000,actions:['cancel'],url:'?section=snapshots&tab=automation',logType:'auto'},{id:'replication:recovery',nativeId:'recovery',type:'replication',title:'Interrupted snapshot creation',state:'failed',createdAt:1700000000,recoveryRequired:true,actions:['clear_failed'],url:'?section=replication',logType:'replication'}],schedules:[],pausedSchedules:[]};
+summary.operations.push({id:'coordinator:native',nativeId:'native-run',type:'replication',coordinator:true,manual:true,title:'Native replication',state:'failed',createdAt:1700000000,recoveryRequired:true,actions:['retry'],url:'?section=activity'});
 (async()=>{const browser=await chromium.launch({executablePath:'/usr/bin/chromium',args:['--no-sandbox']});try{
  for(const query of ['section=overview','section=snapshots','section=snapshots&tab=automation','section=replication','section=activity','section=tools','section=tools&tab=migrator','section=help']){
  const html=execFileSync('php',['-r','parse_str($argv[1],$_GET); require $argv[2];',query,plugin+'/php/workspace.php'],{encoding:'utf8'});
@@ -21,6 +22,11 @@ const summary={ok:true,generatedAt:1700000000,timezone:'UTC',sources:{configurat
  if(query==='section=overview'){const button=page.getByRole('button',{name:'Details',exact:true}).first();await button.click();await page.getByRole('button',{name:'Show available log'}).click();await page.waitForTimeout(2300);assert.match(await page.locator('#operation-detail-log').textContent(),/Test log/);await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.getElementById('operation-detail').open);assert(await button.evaluate(el=>el===document.activeElement));
  await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));});const previous=summaryRequests;await page.waitForTimeout(2200);assert.equal(summaryRequests,previous,'Hidden Overview polled');await page.evaluate(()=>{delete document.hidden;document.dispatchEvent(new Event('visibilitychange'));});}
  if(query==='section=activity'){
+ await page.locator('[data-operation="coordinator:native"] button').click();
+ page.once('dialog',async dialog=>{assert.match(dialog.message(),/validated before resuming/);await dialog.accept();});
+ const [nativeRequest]=await Promise.all([page.waitForRequest(request=>request.url().endsWith('coordinator-action.php')),page.getByRole('button',{name:'Retry',exact:true}).click()]);
+ assert.match(nativeRequest.postData(),/action=retry/);assert.match(nativeRequest.postData(),/run_id=native-run/);
+ await page.keyboard.press('Escape');
  await page.locator('[data-operation="replication:recovery"] button').click();
  assert.match(await page.locator('#operation-body').textContent(),/Recovery requires review/);
  assert.equal(await page.getByRole('button',{name:'Retry',exact:true}).count(),0);

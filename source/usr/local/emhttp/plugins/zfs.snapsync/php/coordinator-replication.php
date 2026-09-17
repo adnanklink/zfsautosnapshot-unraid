@@ -42,11 +42,11 @@ function zfsas_coordinator_submit_replication(ZfsasCoordinatorState $journal, ar
     }
     $rateLimit = (string)($sendConfig['SEND_RATE_LIMIT'] ?? '0');
     $prior = $journal->state['commands'][$request['commandId'] ?? '']['runId'] ?? null;
-    if ($prior !== null) { $rateLimit = $journal->state['tasks'][$prior.':prepare']['parameters']['rateLimit'] ?? '0'; }
+    if ($prior !== null) { $rateLimit = $journal->state['commands'][$request['commandId']]['context']['rateLimit'] ?? '0'; }
     $source = explode('@',$replication['sourceSnapshot'])[0];
-    $spec = ['manual'=>true,'revision'=>$request['revision'],'tasks'=>['prepare'=>[
+    $spec = ['receiptData'=>['replicationSelection'=>zfsas_replication_selection_digest($replication),'rateLimit'=>$rateLimit],'manual'=>true,'revision'=>$request['revision'],'tasks'=>['prepare'=>[
         'kind'=>'prepare','dataset'=>$source,'parameters'=>['phase'=>'replication_inspect','nativePlan'=>true,
-            'allowDynamicPlan'=>true,'rateLimit'=>$rateLimit,'revision'=>$request['revision'],'replication'=>$replication,'sourceDatasetGuid'=>$sourceDatasetGuid],
+            'allowDynamicPlan'=>true,'retryOf'=>$request['retryOf'] ?? '', 'rateLimit'=>$rateLimit,'revision'=>$request['revision'],'replication'=>$replication,'sourceDatasetGuid'=>$sourceDatasetGuid],
         'references'=>[['role'=>'source','endpoint'=>'local','dataset'=>$source,'datasetGuid'=>$sourceDatasetGuid,
             'snapshot'=>$replication['sourceSnapshot'],'guid'=>$replication['sourceGuid']]]]]];
     $command = $request['commandId'] ?? '';
@@ -63,10 +63,27 @@ function zfsas_coordinator_replication_receipt(ZfsasCoordinatorState $journal, a
     if (!is_string($command)) { throw new InvalidArgumentException('Invalid command ID.'); }
     $receipt = $journal->state['commands'][$command] ?? null;
     if ($receipt === null) { return ['found'=>false]; }
-    $captured = $journal->state['tasks'][$receipt['runId'].':prepare']['parameters']['replication'] ?? null;
-    if (!$captured) { throw new InvalidArgumentException('Command belongs to another operation.'); }
-    foreach (['sourceSnapshot','sourceGuid','destination'] as $field) {
-        if (($request[$field] ?? null) !== $captured[$field]) { throw new InvalidArgumentException('Command ID already has a different selection.'); }
+    if (!hash_equals($receipt['context']['replicationSelection'] ?? '',zfsas_replication_selection_digest($request))) {
+        throw new InvalidArgumentException('Command ID already has a different selection.');
     }
     return ['found'=>true,'receipt'=>$receipt];
+}
+
+function zfsas_replication_selection_digest(array $request): string
+{
+    return hash('sha256',json_encode([$request['sourceSnapshot'] ?? null,$request['sourceGuid'] ?? null,$request['destination'] ?? null],JSON_THROW_ON_ERROR));
+}
+
+function zfsas_coordinator_retry_replication(ZfsasCoordinatorState $journal, string $runId, string $revision, array $sendConfig): array
+{
+    $run=$journal->state['runs'][$runId] ?? null;
+    $parameters=$journal->state['tasks'][$runId.':prepare']['parameters'] ?? [];
+    if (!$run || !$run['manual'] || !in_array($run['state'],['failed','canceled'],true) || empty($parameters['nativePlan'])) {
+        throw new InvalidArgumentException('Retry requires a stopped native manual replication run. Review a new Send after reboot or history expiry.');
+    }
+    if ($run['revision'] !== $revision) { throw new InvalidArgumentException('Configuration changed; review and submit a new Send.'); }
+    $request=['commandId'=>'retry-'.$runId,'revision'=>$revision,'sourceDatasetGuid'=>$parameters['sourceDatasetGuid'],
+        'replication'=>$parameters['replication'],'retryOf'=>$runId];
+    $request['replication']['allowResume']=true;
+    return zfsas_coordinator_submit_replication($journal,$request,$revision,$sendConfig);
 }

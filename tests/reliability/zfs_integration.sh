@@ -151,7 +151,7 @@ token='';local_receive_resume_token "$target_pool/resumable" token
 if run_pipeline_with_status 'Reject wrong resume target' '' "$source_dataset@base" "$target_pool/resumable"; then exit 1; fi
 php -r 'require $argv[1]; if (!zfsas_ops_resume_schedule("fixture",$error)) { fwrite(STDERR,$error); exit(1); }' "$ROOT/source/usr/local/emhttp/plugins/zfs.snapsync/php/send-queue-helpers.php"
 [[ ! -e "$CONFIG_DIR/send-control/paused/fixture" && -f "$CONFIG_DIR/send-control/cancelled/integration-run" ]]
-run_pipeline_with_status 'Resume real canceled receive' '' "$source_dataset@large" "$target_pool/resumable"
+php "$ROOT/tests/reliability/native_replication.php" "$source_dataset" "$target_pool/resumable" "$target_pool@unrelated-native" resume
 snapshots_have_same_guid "$source_dataset@large" "$target_pool/resumable@large" local
 [[ "$(zfs get -H -o value receive_resume_token "$target_pool/resumable")" == '-' ]]
 zfs set mountpoint="$fixture/resumed" "$target_pool/resumable"

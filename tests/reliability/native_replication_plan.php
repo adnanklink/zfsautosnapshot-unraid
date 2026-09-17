@@ -17,6 +17,7 @@ $checkpoint=['role'=>'checkpoint','endpoint'=>'local','dataset'=>'backup/target'
 $inspection=['mode'=>'incremental','sourceDatasetGuid'=>'10','destinationDatasetGuid'=>'20','references'=>[$source,$checkpoint],
  'base'=>['snapshot'=>'tank/source@base','guid'=>'200','txg'=>'2','destinationSnapshot'=>'backup/target@base']];
 $plan=zfsas_replication_plan($request['replication'],$inspection,$revision,'20M');
+reject(fn()=>$j->workerReport(['taskId'=>$id,'token'=>$token,'generation'=>'generation','sequence'=>1,'type'=>'result','payload'=>['outcome'=>'success']],'generation',1));
 $publication=['taskId'=>$id,'token'=>$token,'generation'=>'generation','sequence'=>1,'type'=>'plan','payload'=>$plan];
 $j->workerReport($publication,'generation',1);$j->workerReport($publication,'generation',1);
 check($j->deletionReferenceOwners('backup/target@base','200')===[$receipt['runId']],'Published plan checkpoint is unprotected');
@@ -30,4 +31,9 @@ check(!$j->deletionReferenceOwners('backup/target@base','200'),'Canceled queued 
 $bad=$inspection;$bad['mode']='full_requires_receiver_approval';reject(fn()=>zfsas_replication_plan($request['replication'],$bad,$revision));
 $done=$inspection;$done['mode']='already_received';
 check(count(zfsas_replication_plan($request['replication'],$done,$revision)['tasks'])===1,'Proven completion creates a transfer');
+$j->prune(time()+32*86400);
+check(!isset($j->state['runs'][$receipt['runId']]),'Expired terminal details were not pruned');
+$lookup=zfsas_coordinator_replication_receipt($j,['commandId'=>'native']+$request['replication']);
+check($lookup['found'] && $lookup['receipt']===$receipt,'Pruning lost submission idempotency context');
+check(zfsas_coordinator_submit_replication($j,$request,$revision,['SEND_RATE_LIMIT'=>'40M'])===$receipt,'Pruning recreated accepted operation');
 echo "PASS: native manual admission pins selection, immutable settings and receipts, atomic checkpoint publication, ordered space/transfer graph and cancellation fencing\n";

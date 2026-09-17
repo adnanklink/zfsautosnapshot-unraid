@@ -62,6 +62,7 @@ final class ZfsasCoordinatorState
             }
         }
         if (empty($spec['tasks']) || !is_array($spec['tasks'])) { throw new InvalidArgumentException('A run requires tasks.'); }
+        if (isset($spec['receiptData']) && (!is_array($spec['receiptData']) || strlen(json_encode($spec['receiptData'],JSON_THROW_ON_ERROR)) > 4096)) { throw new InvalidArgumentException('Invalid receipt context.'); }
         $runId = 'run-' . bin2hex(random_bytes(12));
         $tasks = [];
         foreach ($spec['tasks'] as $name => $task) {
@@ -101,6 +102,7 @@ final class ZfsasCoordinatorState
             'manual' => (bool) ($spec['manual'] ?? false), 'createdAt' => $now, 'finishedAt' => null,
             'state' => 'queued', 'tasks' => $ids];
         $receipt = ['runId' => $runId, 'commandId' => $command, 'fingerprint' => $fingerprint];
+        if (isset($spec['receiptData'])) { $receipt['context']=$spec['receiptData']; }
         $this->state['commands'][$command] = $receipt;
         if ($schedule !== '') { $this->state['schedules'][$schedule] = ['accepted' => $spec['occurrence'], 'runId' => $runId]; }
         $this->commit();
@@ -302,6 +304,7 @@ final class ZfsasCoordinatorState
                     'error'=>'Canceled before execution. Review a new selection to retry.'];
             }
             if (in_array($task['state'], ['launching', 'running', 'stopping'], true)) {
+                if (($task['parameters']['phase'] ?? '') === 'replication_transfer') { $task['result']=['outcome'=>'validation_failure','recoveryRequired'=>true,'message'=>'Transfer canceled; explicit validated Retry is required for any interrupted receive.']; }
                 $task['state'] = 'stopping'; $tokens[] = $task['attempt'];
             } elseif (!self::terminal($task['state'])) { $task['state'] = 'canceled'; }
         }
@@ -333,8 +336,24 @@ final class ZfsasCoordinatorState
         $this->commit();
     }
 
+    public function resolveReplicationRecovery(string $successor): void
+    {
+        $run=$this->state['runs'][$successor] ?? null;
+        if (!$run || $run['state'] !== 'complete') { return; }
+        $parameters=$this->state['tasks'][$successor.':prepare']['parameters'] ?? [];
+        $original=$parameters['retryOf'] ?? ''; $prior=$this->state['runs'][$original] ?? null;
+        if (!$prior || !self::terminal($prior['state']) || isset($prior['recoveryResolvedBy'])) { return; }
+        $old=$this->state['tasks'][$original.':prepare']['parameters']['replication'] ?? [];
+        foreach (['sourceSnapshot','sourceGuid','destination'] as $field) {
+            if (!isset($old[$field]) || $old[$field] !== ($parameters['replication'][$field] ?? null)) { throw new InvalidArgumentException('Recovery successor has a different selection.'); }
+        }
+        $this->state['runs'][$original]['recoveryResolvedBy']=$successor;
+        $this->commit();
+    }
+
     public function runRequiresReview(string $runId): bool
     {
+        if (isset($this->state['runs'][$runId]['recoveryResolvedBy'])) { return false; }
         foreach ($this->state['runs'][$runId]['tasks'] as $id) {
             $task = $this->state['tasks'][$id];
             if (!empty($task['result']['recoveryRequired']) || $task['blocked'] === 'recovery_required') { return true; }

@@ -62,6 +62,7 @@ trait ZfsasCoordinatorWorkerState
             $this->state['tasks'][$taskId]['progress'] = $payload;
         } elseif ($type === 'result') {
             self::checkedWorkerOutcome($payload);
+            if (($payload['outcome'] ?? '') === 'success' && !empty($this->state['tasks'][$taskId]['parameters']['nativePlan']) && !isset($this->state['tasks'][$taskId]['planFingerprint'])) { throw new InvalidArgumentException('Native preparation cannot succeed without its expected child plan.'); }
             if (!empty($attempt['activeItem'])) { throw new InvalidArgumentException('Commit the active item outcome before finishing the attempt.'); }
             if (($payload['outcome'] ?? '') === 'success' && isset($this->state['plans'][$taskId])
                 && empty($this->state['plans'][$taskId]['sealed'])) {

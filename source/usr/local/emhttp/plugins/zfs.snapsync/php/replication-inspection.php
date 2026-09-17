@@ -4,7 +4,7 @@ final class ZfsasReplicationInspection
 {
     public static function validate(array $request): void
     {
-        if (array_diff(array_keys($request), ['sourceSnapshot','sourceGuid','destination','destinationGuid','destinationParentGuid','createDestination','transport'])
+        if (array_diff(array_keys($request), ['sourceSnapshot','sourceGuid','destination','destinationGuid','destinationParentGuid','createDestination','allowResume','transport'])
             || ($request['transport'] ?? 'local') !== 'local') {
             throw new InvalidArgumentException('This inspection phase requires a local receiver.');
         }
@@ -69,7 +69,7 @@ final class ZfsasReplicationInspection
             $output .= stream_get_contents($pipes[1]); $error .= stream_get_contents($pipes[2]);
             if (strlen($output) > 8 * 1048576 || strlen($error) > 65536) { throw new RuntimeException('Inspection output exceeds the bounded inventory limit.'); }
             if ($exit !== 0) { throw new RuntimeException(in_array($exit,[124,137],true) ? 'ZFS inspection timed out.' : 'ZFS inspection failed; receiver or dataset metadata is unavailable.'); }
-            return $output;
+            return in_array('-nvt',$arguments,true) ? $output . $error : $output;
         } finally { foreach ($pipes as $pipe) { fclose($pipe); } proc_close($process); }
     }
 
@@ -97,6 +97,65 @@ final class ZfsasReplicationInspection
         return $rows;
     }
 
+    private static function tokenGuid(string $value): string
+    {
+        if (preg_match('/^[0-9]{1,20}$/D',$value)) { return ltrim($value,'0') ?: '0'; }
+        if (!preg_match('/^0x[0-9a-fA-F]{1,16}$/D',$value)) { throw new InvalidArgumentException('Incomplete resume GUID metadata.'); }
+        $decimal = '0';
+        foreach (str_split(substr($value,2)) as $digit) {
+            $carry = hexdec($digit); $next = '';
+            for ($i=strlen($decimal)-1;$i>=0;$i--) { $n=(int)$decimal[$i]*16+$carry; $next=($n%10).$next; $carry=intdiv($n,10); }
+            $decimal=($carry ? (string)$carry : '').$next;
+        }
+        return ltrim($decimal,'0') ?: '0';
+    }
+
+    private static function inspectResume(array $request, callable $read, string $token, string $sourceGuid, string $destinationGuid): array
+    {
+        if (($request['allowResume'] ?? false) !== true) {
+            return ['outcome'=>'validation_failure','recoveryRequired'=>true,
+                'message'=>'Receiver has an interrupted transfer. Explicit validated Retry is required.',
+                'inspection'=>['sourceDatasetGuid'=>$sourceGuid,'destinationDatasetGuid'=>$destinationGuid,'resumeRequired'=>true]];
+        }
+        $metadata = $read(['send','-nvt',$token]); $fields = [];
+        foreach (explode("\n",$metadata) as $line) {
+            if (preg_match('/^\s*(toname|toguid|fromguid)\s*=\s*(\S+)\s*$/D',$line,$match)) {
+                if (isset($fields[$match[1]])) { throw new InvalidArgumentException('Conflicting resume metadata.'); }
+                $fields[$match[1]]=$match[2];
+            }
+        }
+        if (($fields['toname'] ?? '') !== $request['sourceSnapshot'] || self::tokenGuid($fields['toguid'] ?? '') !== $request['sourceGuid']) {
+            throw new InvalidArgumentException('Resume token targets a different snapshot identity.');
+        }
+        $source=explode('@',$request['sourceSnapshot'])[0]; $destination=$request['destination'];
+        if (self::guid($read,$request['sourceSnapshot']) !== $request['sourceGuid']) { throw new InvalidArgumentException('Resume source snapshot identity changed.'); }
+        $reference = static fn($role,$dataset,$datasetGuid,$snapshot,$guid)=>compact('role','dataset','datasetGuid','snapshot','guid')+['endpoint'=>'local'];
+        $references=[$reference('source',$source,$sourceGuid,$request['sourceSnapshot'],$request['sourceGuid'])];
+        $from=self::tokenGuid($fields['fromguid'] ?? '0'); $base=null;
+        if ($from !== '0') {
+            $sources=self::inventory($read,$source); $destinations=self::inventory($read,$destination);
+            foreach ($sources as $row) {
+                if ($row['guid'] !== $from) { continue; }
+                $target=$destination.'@'.explode('@',$row['snapshot'])[1];
+                if (($destinations[$target]['guid'] ?? '') !== $from) { continue; }
+                $base=$row+['destinationSnapshot'=>$target]; break;
+            }
+            if (!$base || self::guid($read,$base['snapshot']) !== $from || self::guid($read,$base['destinationSnapshot']) !== $from) {
+                throw new InvalidArgumentException('Resume base is absent or its source/receiver GUID differs.');
+            }
+            $references[]=$reference('base',$source,$sourceGuid,$base['snapshot'],$from);
+            $references[]=$reference('resume',$destination,$destinationGuid,$base['destinationSnapshot'],$from);
+        }
+        if (self::guid($read,$source) !== $sourceGuid || self::guid($read,$destination) !== $destinationGuid
+            || trim($read(['get','-H','-o','value','receive_resume_token','--',$destination])) !== $token) {
+            throw new InvalidArgumentException('Resume identities changed during validation.');
+        }
+        return ['outcome'=>'success','inspection'=>['mode'=>'resume','sourceDatasetGuid'=>$sourceGuid,'destinationDatasetGuid'=>$destinationGuid,
+            'sourceSnapshot'=>$request['sourceSnapshot'],'sourceGuid'=>$request['sourceGuid'],'base'=>$base,
+            'destinationSnapshot'=>$destination.'@'.explode('@',$request['sourceSnapshot'])[1],
+            'resumeRequired'=>true,'resumeHash'=>hash('sha256',$token),'references'=>$references]];
+    }
+
     public static function inspect(array $request, ?callable $read = null): array
     {
         self::validate($request); $read ??= [self::class,'command'];
@@ -116,9 +175,7 @@ final class ZfsasReplicationInspection
         $resume = trim($read(['get','-H','-o','value','receive_resume_token','--',$destination]));
         if ($resume === '') { throw new RuntimeException('Incomplete receiver resume metadata.'); }
         if ($resume !== '-') {
-            return ['outcome'=>'validation_failure','recoveryRequired'=>true,
-                'message'=>'Receiver has an interrupted transfer. Explicit validated Retry is required.',
-                'inspection'=>['sourceDatasetGuid'=>$sourceGuid,'destinationDatasetGuid'=>$destinationGuid,'resumeRequired'=>true]];
+            return self::inspectResume($request,$read,$resume,$sourceGuid,$destinationGuid);
         }
         $sources = self::inventory($read,$source); $destinations = self::inventory($read,$destination);
         $selected = $sources[$request['sourceSnapshot']] ?? null;
