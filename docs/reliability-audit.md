@@ -193,3 +193,15 @@ The phase does not grant transfer permission; SSH, new receivers, complete nativ
 planning/transfer/finalization and shared cleanup ownership remain outstanding.
 Standalone packaging will use a new identity once a name is chosen; legacy queue
 migration is no longer a release requirement.
+
+### ZFS SnapSync identity verification
+
+The standalone source uses `zfs.snapsync` and separate snapshot-prefix/hold defaults.
+Reliability, stage-one, cancellation endpoint, inspection worker, browser, PHP lint,
+ShellCheck error-level checks and a temporary package build pass after renaming.
+Disposable-pool transfer, cancellation, explicit recovery and low-space cleanup
+regressions also pass. Package verification now rejects original-plugin paths and
+checks the standalone update identity. No new release was published; existing
+tracked manifests remain historical original-identity artifacts. These checks do
+not certify concurrent old/new schedulers on the same datasets or completion of
+the native replication pipeline.

@@ -4,13 +4,14 @@ The plugin will become a separately named standalone project. Compatibility with
 the original plugin's runtime queues and an automatic upgrade bridge are no longer
 delivery requirements. Existing ZFS data-safety checks remain requirements. A
 configuration importer, if useful later, must be an explicit reviewed operation.
-The working name and installation identity are still undecided.
+The chosen name is **ZFS SnapSync**, plugin ID `zfs.snapsync`.
 
-The current source still uses the original plugin ID and paths. Renaming a page
-or repository does not provide coexistence: packaging must assign independent
-configuration, runtime, service, cron, UI and update identities before a standalone
-release can be installed alongside the original. Both plugins operating on the
-same datasets would still require resource coordination or one scheduler disabled.
+Source packaging now assigns independent configuration, runtime, service, cron,
+UI and update identities. Default snapshot prefixes and manual hold tags are also
+independent. Existing release artifacts still belong to the original plugin; the
+standalone package has not been published. Both plugins operating on the same
+datasets still require one scheduler disabled; namespace isolation does not
+provide shared ZFS resource coordination.
 
 The implementation order is:
 

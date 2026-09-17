@@ -671,3 +671,28 @@ read-only `/boot`. The disposable real-ZFS suite verifies native base inspection
 alongside existing transfer, low-space, cancellation and resume protections. Full
 reliability, stage-one, PHP/ShellCheck and temporary package verification pass.
 These tests do not certify an end-to-end native coordinator replication pipeline.
+
+## Standalone source identity: ZFS SnapSync
+
+Applied plugin ID `zfs.snapsync` across configuration, RAM directories, logs,
+commands, lifecycle hooks, cron, WebGUI routes, package names and update manifests.
+Default snapshot namespaces are `snapsync-auto-` and `snapsync-send-`; the manual
+hold tag is `snapsync-manual`. No original-plugin configuration or execution
+approval is imported. Release verification rejects original installation/runtime
+identities and requires the matching SnapSync update manifest.
+
+Verification: complete reliability and stage-one suites; actual batch cancellation
+endpoint; granted inspection worker responsiveness, cancellation and timeout retry;
+workspace browser suite; all PHP lint and shell-script ShellCheck error checks;
+temporary package build and source-content verification. Disposable ZFS pools
+passed full/incremental transfer, GUID mismatch rejection, cancellation and pipeline
+shutdown, explicit resume, prerequisite low-space cleanup and unrelated snapshot
+preservation. These exercise existing transfer adapters, not a completed native
+coordinator replication pipeline.
+
+Generated release artifacts remain unchanged and unpublished for SnapSync. The
+README documents the intended standalone URL and explicitly identifies it as not
+yet published. Independent paths and default prefixes do not make simultaneous
+operations on the same datasets safe across two independent plugins. Native
+replication planning/transfer/finalization, shared cleanup ownership, remaining
+mutation authority and full release acceptance remain open.

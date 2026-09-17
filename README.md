@@ -1,20 +1,23 @@
-# ZFS Auto Snapshot for Unraid
+# ZFS SnapSync for Unraid
 
-ZFS Auto Snapshot is an Unraid plugin for managing ZFS snapshots from the WebGUI. You choose the datasets, set the retention rules, and decide whether it runs on a schedule or only when you press Run Now.
+ZFS SnapSync is an Unraid plugin for managing ZFS snapshots from the WebGUI. You choose the datasets, set the retention rules, and decide whether it runs on a schedule or only when you press Run Now.
 
 The plugin also includes ZFS Send replication, a Dataset Migrator, Snapshot Manager bulk and cleanup tools, and a diagnostics download for support.
 
 ## Standalone development: `fix/coordinator-completion`
 
-This branch is evolving into a separately named, standalone plugin. The new name
-and installation identity are not set yet. Development now prioritizes the native
-coordinator pipeline over compatibility with the original plugin's runtime queues.
-Existing ZFS safety checks remain requirements.
+This branch develops **ZFS SnapSync**, with plugin ID `zfs.snapsync`. Source
+configuration, runtime paths, services, settings routes and packaging now use its
+independent identity. Default snapshot prefixes are `snapsync-auto-` and
+`snapsync-send-`; manual holds use `snapsync-manual`.
 
-**This is source development, not a new standalone release.** The published UI
-preview remains `2026.09.17.01`; its installation identity and URLs are unchanged.
-Do not install this source branch alongside the original plugin expecting isolation:
-a separate plugin ID, paths, services and update manifest have not yet been created.
+**This is source development, not a published standalone release.** Existing
+checked-in release artifacts and the published `2026.09.17.01` UI preview belong
+to the original identity. The installation instructions below describe that
+older preview, not a SnapSync release. A standalone manifest will be published as
+`dist/zfs.snapsync.plg` after the remaining release gates pass. Do not enable both
+plugins against the same datasets: independent paths do not coordinate their ZFS
+operations. No existing configuration or pending work is automatically imported.
 See [implementation progress](docs/job-coordination-progress.md) for completed work
 and outstanding replication, packaging and real-host verification.
 
@@ -41,7 +44,7 @@ Runtime history is lost on reboot. Interrupted manual sends require explicit Ret
 ## Remaining plan
 
 - Move replication creation, preparation, fan-out, retries and finalization from the Bash queue handler into the coordinator.
-- Move deletion's internal task transitions under coordinator authority and complete batch cancellation integration.
+- Finish shared cleanup ownership and cancellation across multiple dependent replication runs.
 - Extend automatic replanning to work that has already started and to replication, with per-item completion evidence; complete reboot recovery based only on proven ZFS metadata.
 - Extend dependency/recovery status and verify all execution paths for zero routine flash writes, bounded idle work, and clock/timezone changes.
 
@@ -59,57 +62,54 @@ See the [implementation record and flash-write inventory](docs/job-coordination-
 - Replicates datasets with ZFS Send using separate send checkpoint snapshots.
 - Provides a redacted diagnostics zip for GitHub issues.
 
-The plugin only manages snapshots that match its configured snapshot prefix. By default that prefix is `autosnapshot-`.
+The plugin only manages snapshots that match its configured snapshot prefix. By default that prefix is `snapsync-auto-`.
 
 ## Install
 
 Minimum Unraid version: `6.12.0`, the first Unraid release series with native ZFS pool support.
 
-### Installing this development branch
+### Standalone release status
 
-The branch installation URL is:
+ZFS SnapSync has not yet been published. Do not use the old `zfs.autosnapshot.plg`
+artifacts to install it. The existing UI preview uses the original plugin identity
+and does not switch its clients to SnapSync automatically.
 
-```text
-https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/feat/ui-overhaul/dist/zfs.autosnapshot.plg
-```
+Once a standalone release is published, install its `dist/zfs.snapsync.plg` URL
+through **Plugins → Install Plugin**, then open **Settings → ZFS SnapSync**.
+Subsequent updates follow that manifest's branch URL through **Check for Updates**.
+Stop existing snapshot, replication and migration work before installing or
+updating. Configure SnapSync explicitly; it does not import the original plugin's
+configuration, queue or batch approvals. Disable the original schedulers before
+enabling SnapSync on the same datasets.
 
-The UI preview package is **`2026.09.17.01`**. Its manifest and package URLs point to this fork and `feat/ui-overhaul`. It updates `2026.09.16.02` and replaces the upstream installation without requiring an uninstall. Future source pushes do not automatically rebuild the package.
-
-Clients already on `feat/ui-overhaul` can use **Plugins → Check for Updates → Update**. Clients on upstream or `fix/job-coordination` must install the URL above once to switch to this UI preview. The coordination branch keeps its own update source; this release does not silently switch those clients. Let active snapshot, replication, and migration jobs finish before updating.
-
-To install or upgrade to this development package using its URL:
-
-1. In Unraid, open **Plugins → Install Plugin**.
-2. Paste the branch URL above and select **Install**.
-3. Open **Settings → ZFS Auto Snapshot**.
-4. Review the configuration and use Dry Run before enabling scheduled mutations.
-
-This fork uses the same plugin identity as upstream; it replaces the existing plugin rather than installing alongside it. Existing configuration is retained. Read the branch status and reboot limitations before using a development build.
-
-### Building and publishing an installable branch package
+### Building an installable branch package
 
 On a development machine with Git, Bash, tar and xz:
 
 ```bash
-git clone --branch feat/ui-overhaul --single-branch https://github.com/adnanklink/zfsautosnapshot-unraid.git
-cd zfsautosnapshot-unraid
+git clone --branch fix/coordinator-completion --single-branch https://github.com/adnanklink/zfssnapsync-auto-unraid.git
+cd zfssnapsync-auto-unraid
 
-# Example development version; choose a new, unused version for each publication.
-./scripts/build-release.sh 2026.09.17.02 \
-  https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/feat/ui-overhaul/dist
+# Choose a new, unused version for each publication.
+./scripts/build-release.sh <version> \
+  https://raw.githubusercontent.com/adnanklink/zfssnapsync-auto-unraid/fix/coordinator-completion/dist
 ```
 
-The script builds and verifies the package, generates a manifest with the fork's branch URLs and package checksum, and copies the manifest to the repository root. Before publication, update `VERSION`, `CHANGELOG.md` and the release notes in `zfs.autosnapshot.plg.in` to describe the chosen build, then rebuild. Publish the generated `.txz`, `dist/zfs.autosnapshot.plg`, `dist/zfs-autosnapshot.png` and root `zfs.autosnapshot.plg` on this same branch in a separate release-artifact commit. The Unraid URL needs those files on GitHub; a local build alone does not update it.
+The build verifies package contents and standalone paths, and generates
+`dist/zfs.snapsync.plg`, its `.txz` package, icon and a root manifest copy. Its update
+URL uses the supplied base URL. Update `VERSION`, `CHANGELOG.md` and
+`zfs.snapsync.plg.in` before publishing these generated artifacts in a separate
+release commit. A local build or source push does not publish an installable URL.
 
-The release workflow automatically publishes only `main` and `testing`. A push to `feat/ui-overhaul` runs verification but does not publish installation artifacts. Alternatively, after updating the version and release notes, manually run **Build Release Artifacts** for this branch if that workflow is available in the fork. Its version guard requires a new package version.
-
-### Existing upstream release
-
-To install the existing upstream release rather than this development work, use:
+The release workflow automatically publishes only `main` and `testing`; other
+branches require an explicit release build. After publication on this branch, the
+installation URL will be:
 
 ```text
-https://raw.githubusercontent.com/bstone108/zfsautosnapshot-unraid/main/dist/zfs.autosnapshot.plg
+https://raw.githubusercontent.com/adnanklink/zfssnapsync-auto-unraid/fix/coordinator-completion/dist/zfs.snapsync.plg
 ```
+
+This is the intended URL, **not a currently published SnapSync release**.
 
 ## First setup
 
@@ -170,7 +170,7 @@ Saving settings updates the scheduler. Cron provides a once-per-minute watchdog;
 Use the Run Now button in the WebGUI, or run this from a shell:
 
 ```bash
-/usr/local/sbin/zfs_autosnapshot
+/usr/local/sbin/zfs_snapsync
 ```
 
 ## ZFS Send
@@ -244,7 +244,7 @@ Auto Snapshot and ZFS Send prefixes must differ, and neither may start with the 
 
 **Restore tuning defaults** populates the form; choose Save to apply. Auto Snapshot resets retention to 14/30/183 days and disables the schedule with its default timing, preserving dataset choices, thresholds, prefix and Dry Run. ZFS Send resets retention to 14/30/183, parallelism to 1, rate limit to 0 and preparation concurrency to 16, preserving job definitions/frequencies, prefixes, connections and schedule pauses. Unsaved changes are indicated and trigger a navigation warning. Saves are atomic and reject stale page revisions. A scheduler failure is reported separately when configuration was saved successfully.
 
-During an upgrade or removal, a maintenance marker blocks new work while workers stop. Shutdown is verified before ownership is released. Queue records and permanent lock files survive upgrades. A failed upgrade retains `/boot/config/plugins/zfs.autosnapshot/maintenance`; rerun installation after resolving the reported shutdown error.
+During an upgrade or removal, a maintenance marker blocks new work while workers stop. Shutdown is verified before ownership is released. Queue records and permanent lock files survive upgrades. A failed upgrade retains `/boot/config/plugins/zfs.snapsync/maintenance`; rerun installation after resolving the reported shutdown error.
 
 Validation evidence and remaining operational limits are in [the reliability audit](docs/reliability-audit.md).
 
@@ -266,7 +266,7 @@ When reporting a bug, include:
 GitHub issues:
 
 ```text
-https://github.com/adnanklink/zfsautosnapshot-unraid/issues
+https://github.com/adnanklink/zfssnapsync-auto-unraid/issues
 ```
 
 Original upstream support thread (identify this development fork when reporting issues):
@@ -280,19 +280,19 @@ https://forums.unraid.net/topic/197348-plugin-zfs-auto-snapshot/
 Main config:
 
 ```text
-/boot/config/plugins/zfs.autosnapshot/zfs_autosnapshot.conf
+/boot/config/plugins/zfs.snapsync/zfs_snapsync.conf
 ```
 
 Main command:
 
 ```text
-/usr/local/sbin/zfs_autosnapshot
+/usr/local/sbin/zfs_snapsync
 ```
 
 Plugin WebGUI files:
 
 ```text
-/usr/local/emhttp/plugins/zfs.autosnapshot/
+/usr/local/emhttp/plugins/zfs.snapsync/
 ```
 
 You can edit the config file by hand if needed, but the WebGUI is the intended path.
@@ -302,7 +302,7 @@ You can edit the config file by hand if needed, but the WebGUI is the intended p
 Release artifacts can be built locally or by GitHub Actions. Source-change commits do not include generated artifacts. The source template is:
 
 ```text
-zfs.autosnapshot.plg.in
+zfs.snapsync.plg.in
 ```
 
 The generated plugin manifest and package are written under `dist/` during the build.
@@ -311,7 +311,7 @@ For a normal release:
 
 1. Update `VERSION`.
 2. Update `CHANGELOG.md`.
-3. Update `zfs.autosnapshot.plg.in`.
+3. Update `zfs.snapsync.plg.in`.
 4. Push the branch.
 5. On `main` or `testing`, let GitHub Actions build and commit generated artifacts. Other branches require a manual release workflow or separately published local build; see Install above.
 
