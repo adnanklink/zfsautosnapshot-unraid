@@ -324,3 +324,48 @@ partial-execution replanning, conservative reboot completion proof, full-path
 flash tracing and coordinator-driven real-ZFS acceptance remain unfinished.
 User-run Unraid checks remain the final release gate. Publish one completed main
 release afterward, with update manifests for existing fork preview clients.
+
+## Ownership update: journal and admission foundation
+
+The approved ownership update is being implemented on `fix/coordinator-completion`.
+The first increment introduces journal version 3: checksummed, sequenced RAM
+append records with atomic checkpoints after 1,024 records or 8 MiB. The checkpoint
+publishes before covered log records are removed. Recovery discards only an
+incomplete trailing append, rejects complete corrupt records and sequence gaps,
+and preserves accepted commands across interrupted compaction. Diagnostic readers
+replay the log and retry if checkpoint/log replacement races their read.
+
+Version 1/2 coordinator checkpoints remain readable. Pending manual runs are
+marked as requiring fresh approval during this ownership upgrade. Completed
+results remain intact, and active attempts retain ownership until shutdown is
+verified. This does not invalidate approvals on ordinary version 3 restarts.
+The complete legacy send/batch installation handoff remains to be implemented.
+
+Admission now maintains ready tasks, reverse dependencies, active tasks and a
+monotonic deadline heap in memory. The executor checks active attempts rather
+than repeatedly traversing historical attempts and tasks. Indexes rebuild from
+the journal after restart and invalidate canceled work and obsolete deadlines.
+Journal delta detection still traverses entity records at publication; moving
+large per-item execution onto this journal will also require measuring that cost.
+
+Preparation plans can be staged in chunks of at most 50 task specifications.
+Each chunk is ordered, checksummed through the journal and replay-safe. A final
+seal checks the complete count, digest, dependency graph and required finalizer
+before publishing executable child tasks. Sealing supports up to 50,001 tasks
+(50,000 items plus finalizer). The parent cannot report success before sealing,
+and children still wait for verified parent shutdown. The existing single-message
+protocol remains supported for small plans.
+
+Verification: full reliability suite; actual 601-item batch endpoints; actual
+Auto Snapshot and deletion-daemon fixtures; PHP parsing; new torn-append,
+compaction, sequence-gap, manual-upgrade and index-rebuild fixtures. A 10,000-task
+fixture verifies dependency/deadline/cancellation indexing. A 1,101-child staged
+plan verifies chunk replay, partial-plan exclusion and sealing after restart.
+The new storage/index/plan fixtures and coordinator runtime fixture also pass
+with read-only `/boot`. These checks do not certify all-path flash-write behavior.
+
+Remaining implementation: per-item authorization/results in the coordinator,
+unified deletion and Auto Snapshot mutation admission, full replication phases
+and scheduling, Snapshot Manager execution ownership and shared cancellation,
+installation handoff, compatibility/status migration and full acceptance gates.
+No release artifact, update URL or published version changes in this increment.
