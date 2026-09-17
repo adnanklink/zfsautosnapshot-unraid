@@ -1,10 +1,18 @@
 <?php
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 require_once __DIR__ . '/snapshot-manager-helpers.php';
+require_once __DIR__ . '/coordinator-worker-client.php';
 $dataset = $argv[1] ?? '';
 $token = $argv[2] ?? '';
 // Only an attempt granted by the coordinator may execute an approved manifest.
 if (getenv('ZFSAS_COORDINATED') !== '1' || !preg_match('/^[a-f0-9]{32}$/', $token)) { exit(1); }
+$sequence = 1;
+function zfsas_batch_check_grant(int &$sequence): void
+{
+    try { zfsas_coordinator_worker_report('progress', $sequence++, ['phase'=>'deletion_batch']); }
+    catch (Throwable $error) { fwrite(STDERR, $error->getMessage() . "\n"); exit(1); }
+}
+zfsas_batch_check_grant($sequence);
 if (is_file(zfsas_sm_plugin_config_dir() . '/maintenance')) { exit(0); }
 if (!zfsas_sm_is_valid_dataset_name($dataset)) { exit(1); }
 zfsas_sm_ensure_dir(zfsas_sm_batches_dir());
@@ -52,6 +60,7 @@ while ($more && !is_file(zfsas_sm_plugin_config_dir() . '/maintenance')) {
                 if ($cleanupCandidates !== null && empty($cleanupCandidates[$item['identity']])) {
                     $item['state'] = 'skipped'; $item['error'] = 'Cleanup eligibility changed after preview'; continue;
                 }
+                zfsas_batch_check_grant($sequence);
                 zfsas_sm_execute_item($batch, $item, $map);
             }
             unset($item);

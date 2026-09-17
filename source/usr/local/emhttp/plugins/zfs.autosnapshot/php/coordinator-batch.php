@@ -16,8 +16,11 @@ function zfsas_coordinator_project_batch(ZfsasCoordinatorState $journal, string 
         if ($legacyReview) {
             $batch = zfsas_sm_read_json_file($path);
             if (!$batch) { return; }
+            // Keep committed deletion outcomes; only unresolved authority needs
+            // fresh approval after an ownership upgrade.
+            zfsas_sm_batch_reconcile($batch);
             foreach ($batch['items'] as &$item) {
-                if (!in_array($item['state'], ['queued', 'running'], true)) { continue; }
+                if (!in_array($item['state'], ['queued', 'running', 'deleting'], true)) { continue; }
                 $item['state'] = 'failed'; $item['recoveryRequired'] = true;
                 $item['error'] = 'Execution ownership changed. Review the unfinished selection and approve a new batch.';
             }

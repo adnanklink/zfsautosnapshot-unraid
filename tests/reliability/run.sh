@@ -22,6 +22,7 @@ php tests/reliability/coordinator_staged_plan.php
 php tests/reliability/coordinator_replan.php
 php tests/reliability/coordinator_retention.php
 php tests/reliability/coordinator_delete.php
+php tests/reliability/coordinator_batch_handoff.php
 php tests/reliability/coordinator_socket.php
 php tests/reliability/coordinator_worker_socket.php
 php tests/reliability/coordinator_executor.php

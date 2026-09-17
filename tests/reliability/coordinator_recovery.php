@@ -3,10 +3,19 @@ require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.autosnapshot/php/c
 if (($argv[1] ?? '') === '--server') {
     $root = $argv[2];
     $journal = new ZfsasCoordinatorState($root);
+    $recovering = array_keys(array_filter($journal->state['attempts'], fn($attempt) => $attempt['state'] !== 'stopped'));
     $executor = new ZfsasCoordinatorExecutor($journal, $root, $root . '/runtime',
-        fn($task) => ['/bin/bash', $root . '/worker.sh', $root],
+        function ($task) use ($root, $journal, $recovering) {
+            foreach ($recovering as $token) {
+                if ($journal->state['attempts'][$token]['state'] !== 'stopped') {
+                    throw new RuntimeException('New grant before unrelated recovered worker stopped');
+                }
+            }
+            return $task['kind'] === 'delete' ? ['/bin/true'] : ['/bin/bash', $root . '/worker.sh', $root];
+        },
         fn($task, $code) => ['outcome' => $code === 0 ? 'success' : 'transient_failure']);
     $journal->submit('recovery', ['manual' => true, 'tasks' => ['one' => ['kind' => 'auto']]], time());
+    if ($recovering) { $journal->submit('unrelated', ['tasks'=>['other'=>['kind'=>'delete']]], time()); }
     while (true) { $executor->tick(hrtime(true) / 1e9); usleep(20000); }
 }
 $root = '/tmp/zfsas-recovery-test-' . bin2hex(random_bytes(8)); mkdir($root);
@@ -27,9 +36,9 @@ try {
     $process = launch($root);
     until(fn() => is_file($root . '/recovered'), $root);
     if (ZfsasCoordinatorExecutor::members($old['pid'], $old['start']) !== []) { throw new RuntimeException('Reclaimed work before old group shutdown'); }
-    until(function () use ($root) { $s = readState($root); return (array_values($s['runs'])[0]['state'] ?? '') === 'complete'; }, $root);
+    until(function () use ($root) { $s = readState($root); return count($s['runs']) === 2 && !array_filter($s['runs'], fn($run) => $run['state'] !== 'complete'); }, $root);
     $state = readState($root);
-    if (count($state['runs']) !== 1 || count($state['attempts']) !== 2) { throw new RuntimeException('Recovery lost run identity or duplicated execution'); }
+    if (count($state['runs']) !== 2 || count($state['attempts']) !== 3) { throw new RuntimeException('Recovery lost run identity or duplicated execution'); }
     echo "PASS: coordinator SIGKILL recovery stops surviving worker and pipeline child before issuing new attempt authority\n";
 } finally {
     if ($process) { proc_terminate($process, 9); proc_close($process); }

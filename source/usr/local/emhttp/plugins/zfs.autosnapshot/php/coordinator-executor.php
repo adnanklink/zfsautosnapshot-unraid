@@ -161,6 +161,13 @@ final class ZfsasCoordinatorExecutor
                 }
             }
         }
+        // A recovered worker can still hold resources outside its task kind.
+        // Keep the socket responsive, but issue no new grants until every old
+        // process group has been verified stopped. Ordinary cancellation does
+        // not impose this global recovery barrier.
+        foreach ($this->stopping as $stop) {
+            if ($stop['recovery']) { return $now + .1; }
+        }
         $active = [];
         foreach ($this->journal->activeTaskIds() as $id) {
             $kind = $this->journal->state['tasks'][$id]['kind'];
