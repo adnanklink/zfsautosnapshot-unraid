@@ -772,13 +772,15 @@ function zfsas_ops_send_job_state_label($job)
     return ucfirst(str_replace('_', ' ', $state));
 }
 
-function zfsas_ops_send_queue_status_payload($limit = 120)
+function zfsas_ops_send_queue_status_payload($limit = 120, $activityOrder = false)
 {
     $rows = [];
-    foreach (zfsas_ops_recent_send_jobs($limit) as $job) {
+    foreach (zfsas_ops_recent_send_jobs($limit, $activityOrder) as $job) {
         $step = zfsas_ops_send_job_step_parts($job);
         $rows[] = [
             'id' => (string) ($job['JOB_ID'] ?? ''),
+            'parentRunId' => (string) ($job['PARENT_RUN_ID'] ?? ''),
+            'scheduleId' => (string) ($job['SCHEDULE_JOB_ID'] ?? ''),
             'mode' => (string) ($job['JOB_MODE'] ?? ''),
             'action' => (string) ($job['JOB_ACTION'] ?? ''),
             'typeLabel' => zfsas_ops_send_job_type_label($job),
@@ -1277,7 +1279,7 @@ function zfsas_ops_find_matching_manual_send_job($snapshot, $destination)
     return null;
 }
 
-function zfsas_ops_recent_send_jobs($limit = 100)
+function zfsas_ops_recent_send_jobs($limit = 100, $activityOrder = false)
 {
     $jobs = zfsas_ops_list_jobs(['send']);
     $jobs = array_values(array_filter($jobs, function ($job) {
@@ -1290,7 +1292,13 @@ function zfsas_ops_recent_send_jobs($limit = 100)
 
         return true;
     }));
-    usort($jobs, function ($a, $b) {
+    usort($jobs, function ($a, $b) use ($activityOrder) {
+        if ($activityOrder) {
+            $terminal = ['complete', 'failed', 'canceled', 'skipped'];
+            return (int) in_array($a['STATE'] ?? '', $terminal, true) <=> (int) in_array($b['STATE'] ?? '', $terminal, true)
+                ?: (int) ($b['REQUESTED_EPOCH'] ?? 0) <=> (int) ($a['REQUESTED_EPOCH'] ?? 0)
+                ?: strnatcasecmp((string) ($a['JOB_ID'] ?? ''), (string) ($b['JOB_ID'] ?? ''));
+        }
         $leftSort = (int) ($a['QUEUE_SORT'] ?? PHP_INT_MAX);
         $rightSort = (int) ($b['QUEUE_SORT'] ?? PHP_INT_MAX);
         if ($leftSort !== $rightSort) {

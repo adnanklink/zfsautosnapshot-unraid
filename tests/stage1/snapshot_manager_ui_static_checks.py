@@ -3,7 +3,7 @@
 from pathlib import Path
 root = Path(__file__).resolve().parents[2]
 plugin = root / 'source/usr/local/emhttp/plugins/zfs.autosnapshot'
-page = (plugin / 'php/snapshot-manager-page.php').read_text()
+page = (plugin / 'php/views/snapshots.php').read_text()
 js = (plugin / 'js/snapshot-manager.js').read_text()
 selection = (plugin / 'js/snapshot-selection.js').read_text()
 for control in ['dataset-search', 'select-page', 'select-matching', 'clear-selection', 'review', 'approve', 'retry-failed', 'cleanup-mode', 'page-size']:

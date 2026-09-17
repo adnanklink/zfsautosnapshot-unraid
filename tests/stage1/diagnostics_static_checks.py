@@ -16,32 +16,27 @@ def assert_contains(text: str, needle: str, message: str) -> None:
 
 
 def extract_report_issue_block(settings: str) -> str:
-    marker = "<div class=\"zfsas-tool-title\">Report an issue</div>"
+    marker = '<h2>Report an issue</h2>'
     start = settings.find(marker)
     if start == -1:
-        raise AssertionError("Help tab must include a Report an issue tool block")
-    end = settings.find("<div class=\"zfsas-tool-row\">", start + len(marker))
-    if end == -1:
-        end = settings.find("</div>\n        </div>\n      </div>", start)
-    if end == -1:
-        raise AssertionError("Could not find end of Report an issue tool block")
-    return settings[start:end]
+        raise AssertionError("Help must include Report an issue")
+    return settings[start:settings.index('</section>', start)]
 
 
 def main() -> int:
-    settings = SETTINGS_PAGE.read_text()
+    settings = (PLUGIN / "php/views/help.php").read_text() + (PLUGIN / "php/views/tools.php").read_text() + (PLUGIN / "php/workspace.php").read_text()
     if not DIAGNOSTICS_PAGE.is_file():
         raise AssertionError("diagnostics.php endpoint must exist")
     diagnostics = DIAGNOSTICS_PAGE.read_text()
 
     assert_contains(
         settings,
-        "data-section-target=\"help\"",
+        "zfsas_ui_url('help')",
         "settings page must expose a Help tab",
     )
     assert_contains(
         settings,
-        "https://github.com/bstone108/zfsautosnapshot-unraid/issues",
+        "https://github.com/adnanklink/zfsautosnapshot-unraid/issues",
         "Help tab must link to the repository's GitHub issues page",
     )
     assert_contains(

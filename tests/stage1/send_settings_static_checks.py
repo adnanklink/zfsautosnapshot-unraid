@@ -18,7 +18,7 @@ def assert_contains(text: str, needle: str, message: str) -> None:
 
 def main() -> int:
     text = SEND_HELPERS.read_text()
-    settings = SEND_SETTINGS.read_text()
+    settings = SEND_SETTINGS.read_text() + (SEND_SETTINGS.parent / "views/replication.php").read_text()
     example = SEND_EXAMPLE.read_text()
     readme = README.read_text()
     assert_contains(

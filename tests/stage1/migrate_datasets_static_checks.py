@@ -6,7 +6,7 @@ import re
 ROOT = Path(__file__).resolve().parents[2]
 PAGE = ROOT / "source/usr/local/emhttp/plugins/zfs.autosnapshot/php/migrate-datasets.php"
 STATUS_ENDPOINT = ROOT / "source/usr/local/emhttp/plugins/zfs.autosnapshot/php/migrate-datasets-status.php"
-text = PAGE.read_text(encoding="utf-8")
+text = PAGE.read_text(encoding="utf-8") + (PAGE.parent / "views/migration.php").read_text() + (PAGE.parent.parent / "js/migration.js").read_text()
 status_endpoint_text = STATUS_ENDPOINT.read_text(encoding="utf-8")
 
 
@@ -32,7 +32,7 @@ require(
     "Preview button must be wired in JavaScript.",
 )
 require(
-    r'previewButton\.addEventListener\(\'click\'\s*,\s*function\s*\(\)\s*{.*?refreshStatus\(\);.*?}\s*\);',
+    r'previewButton\.addEventListener\(\'click\'\s*,\s*function\s*\(\)\s*{.*?refreshStatus\(true\);.*?}\s*\);',
     "Preview button must trigger a non-destructive status/preview refresh.",
     re.S,
 )

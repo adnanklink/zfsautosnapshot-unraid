@@ -4,15 +4,7 @@
   const base = '/plugins/zfs.autosnapshot/php/';
   const selection = new SnapshotSelection();
   const resources = new Map();
-  let embeddedVisible = true;
-  const visible = () => !document.hidden && embeddedVisible;
-  function reportHeight() { if (window.parent !== window) window.parent.postMessage({type: 'zfsas:snapshot-manager:height', height: document.documentElement.scrollHeight}, window.location.origin); }
-  new ResizeObserver(reportHeight).observe(document.body);
-  window.addEventListener('message', event => {
-    if (event.origin !== window.location.origin || event.source !== window.parent) return;
-    if (event.data?.type === 'zfsas:snapshot-manager:request-height') reportHeight();
-    if (event.data?.type === 'zfsas:snapshot-manager:visibility') { embeddedVisible = !!event.data.visible; if (visible()) { loadSnapshots(); batchStatus(); } }
-  });
+  const visible = () => !document.hidden;
   let datasets = [], rows = [], page = 1, pages = 1, sort = 'creation', direction = 'desc';
   let batch = null, reviewPage = 1, busy = false, filterTimer = null;
   const labels = {delete: 'Delete', hold: 'Add plugin hold', release: 'Release plugin hold', rollback: 'Rollback', take_snapshot: 'Take snapshot'};
@@ -35,7 +27,7 @@
       if (Array.isArray(data[key])) data[key].forEach(value => params.append(key + '[]', value));
       else params.set(key, data[key]);
     });
-    if (method === 'POST') params.set('csrf_token', document.querySelector('meta[name="csrf_token"]').content);
+    if (method === 'POST') params.set('csrf_token', document.querySelector('.zfsas-workspace')?.dataset.csrf || document.querySelector('meta[name="csrf_token"]')?.content || window.csrf_token || '');
     try {
       const response = await fetch(base + endpoint + (method === 'GET' ? '?' + params : ''), {
         method, credentials: 'same-origin', signal: controller.signal,

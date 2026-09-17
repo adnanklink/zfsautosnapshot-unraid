@@ -12,17 +12,23 @@ const plugin = path.resolve(__dirname, '../../source/usr/local/emhttp/plugins/zf
    const html = execFileSync('php',[plugin+'/php/'+(kind==='auto'?'settings.php':'send-settings.php')],{encoding:'utf8'});
    await page.route('http://config.test/**', async route=>{
     const url=new URL(route.request().url());
+    if(url.pathname.endsWith('.css')) return route.fulfill({contentType:'text/css',body:fs.readFileSync(plugin+'/css/'+path.basename(url.pathname),'utf8')});
     if(url.pathname.endsWith('.js')) return route.fulfill({contentType:'application/javascript',body:fs.readFileSync(plugin+'/js/'+path.basename(url.pathname),'utf8')});
     if(url.pathname==='/') return route.fulfill({contentType:'text/html',body:html});
-    let data={ok:true,jobs:[],pausedSchedules:[],pendingDeleteCount:0,content:'',datasets:[{dataset:'tank/data',pool:'tank',sendDestination:false},{dataset:'tank/dest',pool:'tank',sendDestination:true}]};
+    let data={ok:true,probe:true,spec:{kind:'interval',seconds:21600},sources:{},operations:[],schedules:[],jobs:[],pausedSchedules:[],pendingDeleteCount:0,content:'',datasets:[{dataset:'tank/data',pool:'tank',sendDestination:false},{dataset:'tank/dest',pool:'tank',sendDestination:true}]};
     return route.fulfill({contentType:'text/plain',body:'ZFSAS_JSON_BEGIN'+JSON.stringify(data)+'ZFSAS_JSON_END'});
    });
    await page.goto('http://config.test/');
    await page.waitForFunction(()=>document.querySelector('[data-config-tools]')?.dataset.ready==='1');
+   if(kind==='send') await page.locator('#replication-shared > summary').click();
+   else await page.locator('#automation-advanced > summary').click();
+   assert.equal(await page.locator('form[data-dirty]').getAttribute('data-dirty'),'false','Initial form became dirty during setup');
    const prefix=kind==='auto'?'prefix':'send_snapshot_prefix';
    await page.locator('[name="'+prefix+'"]').fill('unique-'+kind+'-');
    const retention=kind==='auto'?'keep_all_for_days':'send_keep_all_for_days';
    await page.locator('[name="'+retention+'"]').fill('99');
+   await page.locator(kind==='auto'?'#manual_run':'#run_send_now').click();
+   assert.match(await page.locator('#workspace-notice').textContent(),/Save or discard/);
    if(kind==='auto') {
     await page.waitForFunction(()=>document.querySelectorAll('.zfsas-dataset-row').length===2);
     await page.locator('.zfsas-dataset-checkbox').first().check();
@@ -30,23 +36,35 @@ const plugin = path.resolve(__dirname, '../../source/usr/local/emhttp/plugins/zf
     await page.selectOption('[name="schedule_mode"]','daily');
    } else {
     await page.waitForFunction(()=>document.querySelector('#new_job_source').options.length===3);
-    await page.selectOption('#new_job_source','tank/data');
     await page.locator('[name="send_max_parallel"]').fill('4');
     await page.locator('[name="send_rate_limit"]').fill('20M');
+    await page.locator('#open-new-job').click();
+    await page.selectOption('#new_job_source','tank/data');
     await page.locator('[name="new_job_time"]').fill('23:17');
     await page.selectOption('[name="new_job_day"]','2');
     await page.selectOption('#new_job_frequency','7d');
     await page.locator('[name="new_job_destination"]').fill('backup/data');
     await page.locator('#zfsas_add_send_job').click();
-    await page.waitForSelector('[name="job_time[0]"]');
+    await page.waitForSelector('[name="job_time[0]"]',{state:'attached'});
     assert.equal(await page.locator('[name="job_time[0]"]').inputValue(),'23:17');
     assert.equal(await page.locator('[name="job_day[0]"]').inputValue(),'2');
+    await page.getByRole('button',{name:'Edit',exact:true}).click();
+    const threshold=page.locator('[name="job_threshold[0]"]');
+    const prior=await threshold.inputValue();await threshold.fill('123G');
+    await page.keyboard.press('Escape');await page.waitForFunction(value=>document.querySelector('[name="job_threshold[0]"]').value===value,prior);
+    assert.equal(await page.evaluate(()=>document.activeElement.textContent),'Edit');
+    await page.getByRole('button',{name:'Edit',exact:true}).click();
+    await threshold.fill('123G');await page.locator('#finish-job-edit').click();
+    assert.equal(await threshold.inputValue(),'123G');
+
+    await page.locator('#open-new-job').click();
     await page.selectOption('#new_job_source','tank/data');
+    await page.keyboard.press('Escape');
    }
    await page.locator('[data-restore-tuning]').click();
    assert.equal(await page.locator('[name="'+retention+'"]').inputValue(),'14');
    assert.equal(await page.locator('[name="'+prefix+'"]').inputValue(),'unique-'+kind+'-');
-   assert.match(await page.locator('[data-dirty]').textContent(),/Unsaved/);
+   assert.match(await page.locator('span[data-dirty]').textContent(),/Unsaved/);
    if(kind==='auto') {
     assert(await page.locator('.zfsas-dataset-checkbox').first().isChecked());
     assert(await page.locator('[name="dry_run"]').isChecked());

@@ -10,9 +10,13 @@
     var feedback = panel.querySelector('[data-prefix-feedback]');
     function values() { return JSON.stringify(Array.from(new FormData(form).entries()).filter(function (p) { if (p[0] === 'csrf_token') return false;
         var dataset = p[0].match(/^dataset_(?:name|threshold)\[(\d+)\]$/);
-        return !dataset || form.elements['dataset_selected[' + dataset[1] + ']']?.checked; })); }
-    var baseline = values();
+        return !dataset || form.elements['dataset_selected[' + dataset[1] + ']']?.checked; }).sort(function(a,b){return a[0].localeCompare(b[0]) || String(a[1]).localeCompare(String(b[1]));})); }
+    var baseline = values(), touched = false;
+    form.addEventListener('input', function(){ touched = true; });
+    form.addEventListener('change', function(event){ if(event.isTrusted) touched = true; });
+    document.addEventListener('DOMContentLoaded', function(){ if(!touched) { baseline = values(); update(); } }, {once:true});
     function update() {
+      form.dataset.dirty = String(values() !== baseline);
       status.textContent = values() === baseline ? 'All changes saved.' : 'Unsaved changes — choose Save to apply.';
       var value = prefix.value.trim(), other = options.otherPrefix;
       var conflict = !value || !other || value.indexOf(other) === 0 || other.indexOf(value) === 0;
@@ -35,6 +39,9 @@
       form.elements.config_revision.value = event.detail.revision;
       baseline = values(); update();
     });
+    var discard=document.createElement('button'); discard.type='button'; discard.textContent='Discard changes';
+    discard.addEventListener('click',function(){ if(values()===baseline || window.confirm('Discard unsaved changes?')) { baseline=values(); window.location.reload(); } });
+    panel.appendChild(discard);
     window.addEventListener('beforeunload', function (event) {
       if (values() !== baseline) { event.preventDefault(); event.returnValue = ''; }
     });

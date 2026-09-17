@@ -3,6 +3,11 @@ require_once __DIR__ . '/response-helpers.php';
 require_once __DIR__ . '/migrate-datasets-helpers.php';
 
 $selectedDataset = zfsas_migrate_trim($_GET['dataset'] ?? '');
+if (($_GET['mode'] ?? '') === 'runtime') {
+    zfsas_emit_marked_json(['ok' => true, 'selectedDataset' => $selectedDataset,
+        'status' => zfsas_migrate_current_status(), 'logTail' => zfsas_migrate_status_log_tail(40)]);
+    exit;
+}
 $datasetError = null;
 $previewError = null;
 

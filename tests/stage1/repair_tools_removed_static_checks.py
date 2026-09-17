@@ -38,7 +38,7 @@ def main() -> int:
         if path.exists():
             fail(f"removed Repair/Recovery Tools path still exists: {path.relative_to(ROOT)}")
 
-    settings = SETTINGS.read_text(encoding="utf-8")
+    settings = SETTINGS.read_text(encoding="utf-8") + "".join(view.read_text() for view in PLUGIN.glob("php/views/*.php"))
     for snippet in FORBIDDEN_SETTINGS_SNIPPETS:
         if snippet in settings:
             fail(f"settings page still exposes Repair/Recovery Tools snippet: {snippet}")

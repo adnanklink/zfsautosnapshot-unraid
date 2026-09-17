@@ -1,6 +1,7 @@
 /* Run inside the disposable test image (Playwright Core + Chromium). */
 const {chromium} = require(process.env.PLAYWRIGHT_CORE || '/opt/zfsas-tests/node_modules/playwright-core');
 const fs = require('node:fs');
+const {execFileSync} = require('node:child_process');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 const plugin = path.resolve(__dirname, '../../source/usr/local/emhttp/plugins/zfs.autosnapshot');
@@ -14,8 +15,9 @@ const plugin = path.resolve(__dirname, '../../source/usr/local/emhttp/plugins/zf
     const all = () => Array.from({length: 10000 + Number(addNew)}, (_, i) => row(i));
     await page.route('http://zfsas.test/**', async route => {
       const url = new URL(route.request().url());
+      if (url.pathname.endsWith('.css')) return route.fulfill({contentType:'text/css',body:fs.readFileSync(plugin+'/css/'+path.basename(url.pathname),'utf8')});
       if (url.pathname.endsWith('.js')) return route.fulfill({contentType: 'application/javascript', body: fs.readFileSync(plugin + '/js/' + path.basename(url.pathname), 'utf8')});
-      if (url.pathname === '/') return route.fulfill({contentType: 'text/html', body: fs.readFileSync(plugin + '/php/snapshot-manager-page.php', 'utf8').replace(/<\?php[\s\S]*?\?>/g, '')});
+      if (url.pathname === '/') return route.fulfill({contentType: 'text/html', body: execFileSync('php', [plugin + '/php/snapshot-manager-page.php'], {encoding:'utf8'})});
       let payload;
       if (url.pathname.endsWith('snapshot-manager-list.php')) payload = {ok: true, datasets: [{dataset: 'tank/data', pool: 'tank', snapshotCount: 10000}, {dataset: 'tank/other', pool: 'tank', snapshotCount: 10000}]};
       else if (url.pathname.endsWith('snapshot-manager-dataset.php')) {

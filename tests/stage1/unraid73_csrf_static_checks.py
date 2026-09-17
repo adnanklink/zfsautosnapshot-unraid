@@ -18,8 +18,8 @@ def assert_contains(text: str, needle: str, message: str) -> None:
 
 def main() -> int:
     helpers = RESPONSE_HELPERS.read_text()
-    settings = SETTINGS_PAGE.read_text()
-    send_settings = SEND_SETTINGS_PAGE.read_text()
+    settings = SETTINGS_PAGE.read_text() + (SETTINGS_PAGE.parent / "views/automation.php").read_text() + (SETTINGS_PAGE.parent.parent / "js/automation.js").read_text()
+    send_settings = SEND_SETTINGS_PAGE.read_text() + (SEND_SETTINGS_PAGE.parent / "views/replication.php").read_text() + (SEND_SETTINGS_PAGE.parent.parent / "js/replication.js").read_text()
 
     assert_contains(
         helpers,

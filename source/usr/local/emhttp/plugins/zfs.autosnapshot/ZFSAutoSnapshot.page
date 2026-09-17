@@ -3,5 +3,6 @@ Icon="zfs-autosnapshot.png"
 Title="ZFS Auto Snapshot"
 ---
 <?php
-include '/usr/local/emhttp/plugins/zfs.autosnapshot/php/settings.php';
+$GLOBALS['zfsas_host_shell'] = true;
+include '/usr/local/emhttp/plugins/zfs.autosnapshot/php/workspace.php';
 ?>

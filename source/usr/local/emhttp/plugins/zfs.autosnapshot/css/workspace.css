@@ -1,0 +1,701 @@
+.zfsas-workspace {
+  --ui-bg:var(--body-background,#f5f7fa);
+  --ui-surface:var(--background-color,#fff);
+  --ui-text:var(--text-color,#202b3a);
+  --ui-muted:#64748b;
+  --ui-border:var(--border-color,#dce3ec);
+  --ui-accent:#2563b4;
+  --ui-soft:#edf3fc;
+  --ui-danger:#b42318;
+  --ui-input:var(--input-background-color,var(--ui-surface));
+  font:14px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;
+  color:var(--ui-text);
+  background:var(--ui-bg);
+  display:grid;
+  grid-template-columns:224px minmax(0,1fr);
+  min-height:calc(100vh - 160px);
+  margin:0;
+  border:1px solid var(--ui-border);
+  border-radius:12px;
+  isolation:isolate;
+  text-align:left}
+
+.zfsas-workspace * {
+  box-sizing:border-box}
+.zfsas-workspace [hidden] {
+  display:none!important}
+.zfsas-workspace a {
+  color:var(--ui-accent);
+  text-decoration:none}
+.zfsas-workspace a:hover {
+  text-decoration:underline}
+.zfsas-workspace button,.zfsas-workspace input,.zfsas-workspace select {
+  font:inherit}
+.zfsas-workspace button,.zfsas-workspace .btn {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  min-height:38px;
+  padding:8px 13px;
+  border:1px solid var(--ui-border);
+  border-radius:6px;
+  background:var(--ui-surface);
+  color:var(--ui-text);
+  cursor:pointer;
+  text-decoration:none;
+  white-space:normal;
+  line-height:1.3;
+  box-shadow:none;
+  font-weight:550;
+  margin:0}
+.zfsas-workspace button:hover,.zfsas-workspace .btn:hover {
+  border-color:var(--ui-accent);
+  background:var(--ui-soft);
+  text-decoration:none}
+.zfsas-workspace .btn-primary,.zfsas-workspace #approve {
+  background:var(--ui-accent);
+  color:#fff;
+  border-color:var(--ui-accent)}
+.zfsas-workspace .ui-danger,.zfsas-workspace [data-bulk=delete] {
+  color:var(--ui-danger)}
+.zfsas-workspace button:disabled {
+  opacity:.45;
+  cursor:not-allowed}
+.zfsas-workspace :focus-visible {
+  outline:3px solid var(--ui-accent);
+  outline-offset:3px}
+.zfsas-workspace input:not([type=checkbox]):not([type=hidden]),.zfsas-workspace select {
+  min-height:40px;
+  max-width:100%;
+  border:1px solid var(--ui-border);
+  border-radius:6px;
+  padding:8px 10px;
+  color:var(--ui-text);
+  background:var(--ui-input);
+  box-shadow:none}
+.zfsas-workspace input[type=checkbox] {
+  width:16px;
+  height:16px;
+  accent-color:var(--ui-accent);
+  vertical-align:middle}
+.zfsas-workspace label {
+  font-size:13px;
+  font-weight:550}
+.zfsas-workspace h1,.zfsas-workspace h2,.zfsas-workspace h3,.zfsas-workspace h4 {
+  color:var(--ui-text);
+  letter-spacing:-.025em;
+  line-height:1.25;
+  text-transform:none}
+.zfsas-workspace h1 {
+  font-size:30px;
+  margin:0 0 8px;
+  font-weight:650}
+.zfsas-workspace h2 {
+  font-size:18px;
+  margin:0 0 12px}
+.zfsas-workspace h3 {
+  font-size:17px;
+  margin:0 0 16px}
+.zfsas-workspace h4 {
+  font-size:15px}
+.zfsas-workspace p {
+  margin:0 0 14px}
+.zfsas-workspace code {
+  font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;
+  overflow-wrap:anywhere;
+  color:inherit;
+  background:transparent}
+.zfsas-workspace pre {
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+  max-height:480px;
+  overflow:auto;
+  background:var(--ui-bg);
+  padding:16px;
+  border-radius:6px;
+  font:12px/1.65 ui-monospace,monospace}
+.zfsas-workspace .ui-sidebar {
+  padding:28px 16px 18px;
+  border-right:1px solid var(--ui-border);
+  background:var(--ui-surface);
+  display:flex;
+  flex-direction:column;
+  gap:28px;
+  border-radius:12px 0 0 12px}
+.zfsas-workspace .ui-brand {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  font-size:14px;
+  font-weight:700;
+  letter-spacing:-.02em;
+  color:var(--ui-text);
+  text-decoration:none}
+.zfsas-workspace .ui-brand small {
+  display:block;
+  font-size:10px;
+  font-weight:500;
+  color:var(--ui-muted);
+  letter-spacing:.02em;
+  margin-top:3px}
+.zfsas-workspace .ui-brand-mark {
+  display:grid;
+  place-items:center;
+  width:34px;
+  height:38px;
+  flex-shrink:0;
+  background:var(--ui-accent);
+  color:#fff;
+  font-size:24px;
+  border-radius:8px}
+.zfsas-workspace #workspace-navigation {
+  display:grid;
+  gap:5px}
+.zfsas-workspace #workspace-navigation a {
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:10px 12px;
+  border-radius:6px;
+  color:var(--ui-muted);
+  font-weight:550;
+  text-decoration:none}
+.zfsas-workspace #workspace-navigation a:hover {
+  background:var(--ui-bg);
+  color:var(--ui-text)}
+.zfsas-workspace #workspace-navigation a[aria-current] {
+  background:var(--ui-soft);
+  color:var(--ui-accent)}
+.zfsas-workspace #workspace-navigation a:last-child {
+  margin-top:20px;
+  border-top:1px solid var(--ui-border);
+  border-radius:0;
+  padding-top:20px}
+.zfsas-workspace .ui-nav-icon {
+  font-size:20px;
+  width:23px;
+  text-align:center;
+  line-height:1}
+.zfsas-workspace .ui-sidebar-foot {
+  margin-top:auto;
+  padding:20px 10px 0;
+  display:grid;
+  gap:10px;
+  font-size:11px;
+  color:var(--ui-muted)}
+.zfsas-workspace .ui-sidebar-foot a {
+  color:var(--ui-muted)}
+.zfsas-workspace .ui-content {
+  min-width:0;
+  padding:32px 36px 20px}
+.zfsas-workspace .ui-page-header {
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:20px;
+  margin-bottom:28px}
+.zfsas-workspace .ui-page-header p {
+  color:var(--ui-muted);
+  margin:0}
+.zfsas-workspace .ui-page-header .ui-eyebrow {
+  font-size:10px;
+  letter-spacing:.16em;
+  font-weight:650;
+  margin-bottom:10px}
+.zfsas-workspace .ui-subtle-link {
+  font-size:13px}
+.zfsas-workspace .ui-page-header>.ui-subtle-link {
+  padding-top:30px;
+  white-space:nowrap}
+.zfsas-workspace .ui-tabs {
+  display:flex;
+  gap:24px;
+  border-bottom:1px solid var(--ui-border);
+  margin:-5px 0 24px}
+.zfsas-workspace .ui-tabs a {
+  padding:10px 0;
+  color:var(--ui-muted);
+  font-weight:550}
+.zfsas-workspace .ui-tabs a[aria-current] {
+  color:var(--ui-accent);
+  border-bottom:2px solid var(--ui-accent)}
+.zfsas-workspace .ui-card,.zfsas-workspace .zfsas-card,.zfsas-workspace .zfsas-send-card,.zfsas-workspace .zfsas-dm-card,.zfsas-workspace #manager,.zfsas-workspace #cleanup,.zfsas-workspace #review,.zfsas-workspace section[aria-label="Choose dataset"] {
+  background:var(--ui-surface);
+  border:1px solid var(--ui-border);
+  border-radius:9px;
+  padding:22px;
+  margin-bottom:20px;
+  min-width:0;
+  box-shadow:none}
+.zfsas-workspace .ui-tool-grid,.zfsas-workspace .ui-two-column {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:20px}
+.zfsas-workspace .ui-tool-grid>.ui-card {
+  display:flex;
+  flex-direction:column;
+  align-items:start;
+  gap:8px}
+.zfsas-workspace .ui-tool-grid>.ui-card .btn {
+  margin-top:auto}
+.zfsas-workspace .ui-kicker {
+  font-size:10px;
+  font-weight:650;
+  letter-spacing:.12em;
+  color:var(--ui-muted)}
+.zfsas-workspace .ui-footnote,.zfsas-workspace .muted,.zfsas-workspace .zfsas-help,.zfsas-workspace .zfsas-send-help,.zfsas-workspace .zfsas-dm-help {
+  font-size:12px;
+  color:var(--ui-muted);
+  line-height:1.6;
+  margin:6px 0 12px}
+.zfsas-workspace .ui-footer {
+  border-top:1px solid var(--ui-border);
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  font-size:11px;
+  color:var(--ui-muted);
+  margin-top:32px;
+  padding-top:18px}
+.zfsas-workspace .ui-badge,.zfsas-workspace .badge,.zfsas-workspace .zfsas-badge,.zfsas-workspace .zfsas-pool-chip {
+  display:inline-block;
+  font-size:11px;
+  line-height:1.5;
+  padding:3px 8px;
+  border-radius:4px;
+  border:1px solid var(--ui-border);
+  background:var(--ui-bg);
+  color:var(--ui-muted);
+  width:fit-content;
+  max-width:100%;
+  margin-right:4px}
+.zfsas-workspace .ui-badge[data-state=running] {
+  color:var(--ui-accent);
+  background:var(--ui-soft)}
+.zfsas-workspace .ui-badge[data-state=failed],.zfsas-workspace .error {
+  color:var(--ui-danger)}
+.zfsas-workspace .ui-badge[data-state=complete] {
+  color:#17745a}
+.zfsas-workspace .toolbar,.zfsas-workspace .zfsas-dataset-toolbar,.zfsas-workspace .zfsas-dm-toolbar,.zfsas-workspace .zfsas-log-toolbar {
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:10px;
+  margin-bottom:14px}
+.zfsas-workspace .toolbar label,.zfsas-workspace .filters label,.zfsas-workspace .zfsas-field,.zfsas-workspace .zfsas-send-field {
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  min-width:0}
+.zfsas-workspace .filters {
+  display:flex;
+  flex-wrap:wrap;
+  align-items:end;
+  gap:12px;
+  margin-bottom:16px}
+.zfsas-workspace .filters input {
+  width:170px}
+.zfsas-workspace .ui-advanced {
+  width:100%;
+  border-top:1px solid var(--ui-border);
+  padding:12px 0 0;
+  margin:8px 0 14px}
+.zfsas-workspace summary {
+  cursor:pointer;
+  font-size:13px;
+  font-weight:550;
+  color:var(--ui-accent);
+  padding:5px 0}
+.zfsas-workspace details[open]>summary {
+  margin-bottom:14px}
+.zfsas-workspace .sticky {
+  position:sticky;
+  top:0;
+  z-index:3;
+  padding:12px;
+  background:var(--ui-soft);
+  border:1px solid var(--ui-border);
+  border-radius:6px}
+.zfsas-workspace .table-wrap,.zfsas-workspace .zfsas-table-wrap,.zfsas-workspace .zfsas-send-table-wrap {
+  overflow:auto;
+  max-width:100%;
+  margin:12px 0}
+.zfsas-workspace table {
+  border-collapse:collapse;
+  width:100%;
+  font-size:13px;
+  background:transparent}
+.zfsas-workspace th {
+  font-weight:550;
+  color:var(--ui-muted);
+  font-size:11px;
+  letter-spacing:.015em;
+  background:var(--ui-bg);
+  white-space:nowrap}
+.zfsas-workspace td,.zfsas-workspace th {
+  text-align:left;
+  padding:12px 10px;
+  border-bottom:1px solid var(--ui-border);
+  vertical-align:middle}
+.zfsas-workspace tr:hover td {
+  background:var(--ui-bg)}
+.zfsas-workspace th button {
+  border:0;
+  background:transparent;
+  font-size:inherit;
+  color:inherit;
+  min-height:26px;
+  padding:0}
+.zfsas-workspace td button {
+  min-height:30px;
+  padding:6px 9px;
+  font-size:12px}
+.zfsas-workspace .zfsas-grid,.zfsas-workspace .zfsas-send-retention-grid,.zfsas-workspace .zfsas-send-inline-grid,.zfsas-workspace .zfsas-dm-summary-grid {
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:18px}
+.zfsas-workspace .zfsas-input,.zfsas-workspace .zfsas-send-input {
+  width:100%}
+.zfsas-workspace .zfsas-threshold-input {
+  max-width:180px}
+.zfsas-workspace .zfsas-checkline {
+  display:flex;
+  flex-direction:row;
+  align-items:center;
+  gap:8px}
+.zfsas-workspace .zfsas-schedule-row {
+  display:none}
+.zfsas-workspace .zfsas-time-row {
+  display:flex;
+  gap:10px;
+  align-items:center}
+.zfsas-workspace .zfsas-time-row input {
+  width:90px}
+.zfsas-workspace .zfsas-actions,.zfsas-workspace .zfsas-send-actions {
+  position:sticky;
+  bottom:0;
+  z-index:4;
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  justify-content:flex-end;
+  gap:10px;
+  padding:14px 18px;
+  border:1px solid var(--ui-border);
+  border-radius:8px;
+  background:var(--ui-surface);
+  box-shadow:0 -4px 16px #00000008}
+.zfsas-workspace [data-config-tools] {
+  border:1px solid var(--ui-border);
+  padding:12px 16px;
+  border-radius:6px;
+  margin-bottom:18px;
+  background:var(--ui-surface);
+  font-size:12px}
+.zfsas-workspace span[data-dirty] {
+  font-weight:600}
+.zfsas-workspace [data-config-tools] p {
+  margin:6px 0 0}
+.zfsas-workspace [data-config-tools] button {
+  min-height:30px;
+  font-size:12px}
+.zfsas-workspace .zfsas-alert,.zfsas-workspace .zfsas-send-alert,.zfsas-workspace .ui-notice {
+  padding:12px 16px;
+  border-left:3px solid var(--ui-accent);
+  background:var(--ui-soft);
+  border-radius:4px;
+  margin:12px 0;
+  font-size:13px}
+.zfsas-workspace .zfsas-alert-error,.zfsas-workspace .zfsas-send-alert-error {
+  border-color:var(--ui-danger);
+  color:var(--ui-danger)}
+.zfsas-workspace .ui-prose {
+  max-width:900px}
+.zfsas-workspace .ui-prose dt {
+  font-weight:600;
+  margin:18px 0 5px}
+.zfsas-workspace .ui-prose dd {
+  margin:0;
+  color:var(--ui-muted)}
+.zfsas-workspace .ui-menu-toggle {
+  display:none}
+.zfsas-workspace .ui-skip {
+  position:absolute;
+  left:-9999px}
+.zfsas-workspace .ui-skip:focus {
+  left:16px;
+  top:8px;
+  z-index:20;
+  background:var(--ui-surface);
+  padding:12px}
+.zfsas-workspace .ui-metrics {
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:16px;
+  margin-bottom:24px}
+.zfsas-workspace .ui-metric {
+  background:var(--ui-surface);
+  border:1px solid var(--ui-border);
+  border-radius:8px;
+  padding:20px}
+.zfsas-workspace .ui-metric>span {
+  display:block;
+  color:var(--ui-muted);
+  font-size:12px}
+.zfsas-workspace .ui-metric strong {
+  display:block;
+  font-size:26px;
+  letter-spacing:-.03em;
+  margin:7px 0}
+.zfsas-workspace .ui-metric small {
+  color:var(--ui-muted);
+  font-size:11px}
+.zfsas-workspace .ui-card-heading {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:16px}
+.zfsas-workspace .ui-card-heading h2 {
+  margin:0}
+.zfsas-workspace .ui-empty {
+  text-align:center;
+  padding:36px 20px;
+  color:var(--ui-muted)}
+.zfsas-workspace .ui-empty strong {
+  display:block;
+  font-size:16px;
+  color:var(--ui-text);
+  margin-bottom:8px}
+.zfsas-workspace dialog {
+  position:fixed;
+  inset:0 0 0 auto;
+  margin:0;
+  width:min(640px,100vw);
+  max-width:100vw;
+  height:100dvh;
+  max-height:100dvh;
+  padding:28px;
+  background:var(--ui-surface);
+  color:var(--ui-text);
+  border:0;
+  border-left:1px solid var(--ui-border);
+  box-shadow:-12px 0 48px #0002;
+  overflow:auto}
+.zfsas-workspace dialog::backdrop {
+  background:#14213380}
+.zfsas-workspace dialog .ui-dialog-header {
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:16px;
+  margin-bottom:24px}
+.zfsas-workspace dialog .ui-dialog-header h2 {
+  margin:0}
+.zfsas-workspace dialog label {
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  margin-bottom:16px}
+.zfsas-workspace dialog dl {
+  display:grid;
+  grid-template-columns:130px minmax(0,1fr);
+  gap:12px}
+.zfsas-workspace dialog dd {
+  margin:0;
+  overflow-wrap:anywhere}
+.zfsas-workspace dialog dt {
+  color:var(--ui-muted)}
+.zfsas-workspace progress {
+  width:100%;
+  accent-color:var(--ui-accent)}
+.zfsas-workspace .ui-stepper {
+  display:flex;
+  gap:0;
+  list-style:none;
+  padding:0;
+  margin:0 0 24px;
+  border:1px solid var(--ui-border);
+  border-radius:8px;
+  background:var(--ui-surface)}
+.zfsas-workspace .ui-stepper li {
+  flex:1;
+  padding:14px;
+  text-align:center;
+  font-size:12px;
+  color:var(--ui-muted)}
+.zfsas-workspace .ui-stepper li[aria-current] {
+  color:var(--ui-accent);
+  background:var(--ui-soft)}
+.zfsas-workspace .zfsas-progress-track {
+  height:6px;
+  background:var(--ui-bg);
+  border-radius:3px;
+  overflow:hidden}
+.zfsas-workspace .zfsas-progress-fill {
+  height:100%;
+  background:var(--ui-accent)}
+
+@media(max-width:1100px) {
+  .zfsas-workspace {
+  grid-template-columns:190px minmax(0,1fr)}
+.zfsas-workspace .ui-content {
+  padding:26px 22px}
+.zfsas-workspace .ui-brand {
+  font-size:12px}
+.zfsas-workspace .zfsas-grid,.zfsas-workspace .zfsas-send-retention-grid {
+  grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+
+@media(max-width:760px) {
+  .zfsas-workspace {
+  display:block;
+  border-radius:0}
+.zfsas-workspace .ui-sidebar {
+  border-right:0;
+  border-bottom:1px solid var(--ui-border);
+  padding:14px 18px;
+  display:flex;
+  flex-direction:row;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:12px;
+  border-radius:0}
+.zfsas-workspace .ui-brand {
+  font-size:14px}
+.zfsas-workspace .ui-menu-toggle {
+  display:block;
+  margin-left:auto}
+.zfsas-workspace #workspace-navigation {
+  display:none;
+  width:100%}
+.zfsas-workspace #workspace-navigation.is-open {
+  display:grid;
+  grid-template-columns:1fr 1fr}
+.zfsas-workspace #workspace-navigation a:last-child {
+  margin:0;
+  padding:10px 12px;
+  border:0}
+.zfsas-workspace .ui-sidebar-foot {
+  display:none}
+.zfsas-workspace .ui-content {
+  padding:22px 16px}
+.zfsas-workspace .ui-page-header>.ui-subtle-link {
+  display:none}
+.zfsas-workspace .ui-tool-grid,.zfsas-workspace .ui-two-column,.zfsas-workspace .ui-metrics,.zfsas-workspace .zfsas-grid,.zfsas-workspace .zfsas-send-inline-grid,.zfsas-workspace .zfsas-send-retention-grid,.zfsas-workspace .zfsas-dm-summary-grid {
+  grid-template-columns:1fr}
+.zfsas-workspace .ui-metrics {
+  gap:10px}
+.zfsas-workspace .ui-metric {
+  padding:14px;
+  display:grid;
+  grid-template-columns:1fr auto;
+  align-items:center}
+.zfsas-workspace .ui-metric strong {
+  grid-column:2;
+  grid-row:1 / span 2;
+  margin:0}
+.zfsas-workspace .ui-card,.zfsas-workspace .zfsas-card,.zfsas-workspace #manager {
+  padding:16px}
+.zfsas-workspace .ui-footer {
+  display:block}
+.zfsas-workspace .ui-footer span {
+  display:block;
+  margin-top:8px}
+.zfsas-workspace h1 {
+  font-size:26px}
+.zfsas-workspace .ui-stepper li {
+  padding:10px 4px;
+  font-size:11px}
+.zfsas-workspace .toolbar label {
+  max-width:100%}
+.zfsas-workspace .filters input {
+  width:100%}
+.zfsas-workspace dialog {
+  padding:20px}
+.zfsas-workspace .zfsas-actions,.zfsas-workspace .zfsas-send-actions {
+  position:static}
+}
+
+@media(prefers-reduced-motion:reduce) {
+  .zfsas-workspace * {
+  scroll-behavior:auto!important;
+  transition:none!important;
+  animation:none!important}
+}
+
+.zfsas-workspace .ui-operation-kind {
+  display:block;
+  color:var(--ui-muted);
+  font-size:10px;
+  margin-top:4px;
+  overflow-wrap:anywhere}
+.zfsas-workspace .ui-schedule-item {
+  border-bottom:1px solid var(--ui-border);
+  padding:10px 0;
+  overflow-wrap:anywhere}
+.zfsas-workspace .ui-schedule-item:first-child {
+  padding-top:0}
+.zfsas-workspace .ui-schedule-item:last-child {
+  border:0}
+.zfsas-workspace .ui-schedule-item strong {
+  font-size:13px;
+  font-weight:550}
+.zfsas-workspace .ui-schedule-item p {
+  margin:4px 0}
+.zfsas-workspace .ui-attention-item {
+  display:block;
+  width:100%;
+  text-align:left;
+  justify-content:start;
+  margin-bottom:10px}
+.zfsas-workspace #operation-actions {
+  margin-top:24px}
+.zfsas-workspace #operation-rows td:nth-child(2) {
+  max-width:320px}
+
+.zfsas-workspace .ui-job-editor,.zfsas-workspace .ui-job-editor tbody,.zfsas-workspace .ui-job-editor tr,.zfsas-workspace .ui-job-editor td {
+  display:block;
+  width:100%;
+  border:0;
+  padding:0;
+  background:transparent}
+.zfsas-workspace .ui-job-editor td {
+  margin-bottom:18px}
+.zfsas-workspace .ui-editor-label {
+  display:block;
+  font-size:13px;
+  font-weight:550;
+  margin-bottom:7px}
+.zfsas-workspace .ui-job-editor td input:not([type=checkbox]),.zfsas-workspace .ui-job-editor td select {
+  width:100%}
+.zfsas-workspace .zfsas-send-add-row {
+  display:grid;
+  gap:14px}
+.zfsas-workspace .zfsas-send-add-row .zfsas-send-field {
+  min-width:0}
+.zfsas-workspace #replication-shared>summary {
+  font-size:16px;
+  color:var(--ui-text)}
+.zfsas-workspace #replication-shared .zfsas-send-card {
+  margin-top:20px;
+  border:0;
+  border-top:1px solid var(--ui-border);
+  padding:20px 0 0;
+  border-radius:0}
+.zfsas-workspace #replication-job-list small {
+  max-width:280px}
+.zfsas-workspace #new-job-dialog .zfsas-send-field>label:empty {
+  display:none}
+
+
+.zfsas-workspace[data-theme=dark] .btn-primary,.zfsas-workspace[data-theme=dark] #approve {
+  color:#111b2a}
+
+
+.zfsas-workspace .zfsas-dm-stat-label { color: var(--ui-muted); font-size: 12px; }
+.zfsas-workspace .zfsas-dm-stat-value { margin-top: 4px; font-weight: 550; overflow-wrap: anywhere; }
+.zfsas-workspace .zfsas-progress { display: flex; align-items: center; gap: 10px; min-width: 100px; }
+.zfsas-workspace .zfsas-progress-track { flex: 1; }
+.zfsas-workspace .zfsas-progress-text { font-size: 12px; color: var(--ui-muted); }
