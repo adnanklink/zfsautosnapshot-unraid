@@ -464,3 +464,37 @@ owners and cancellation, Auto Snapshot mutations, full replication phase plannin
 configuration replanning, legacy installation handoff and the remaining release
 acceptance gates. No release artifact or update URL changes accompany this source
 increment.
+
+## Ownership update: deletion-batch grant and recovery barriers
+
+The remaining compatibility deletion-batch worker now validates its current
+attempt, generation and sequence over the coordinator socket before acquiring
+worker ownership, inspecting inventories or enqueueing an item. An environment
+flag alone is insufficient. It checks again for every item in its bounded chunk;
+expired or canceled ownership stops further submissions.
+
+Recovery now blocks all new attempt grants until surviving process groups have
+been verified stopped, including work of another task kind. A recovering batch
+can hold resources that its concurrency category does not describe. The socket
+remains responsive during this barrier; ordinary cancellation does not impose a
+global recovery barrier.
+
+Upgrade projection reconciles committed deletion results first, then marks
+unresolved `queued`, `running` and `deleting` items failed and recovery-required.
+Completed, skipped and failed results remain intact. This closes the case where
+an unresolved legacy `deleting` item could remain stranded without fresh review.
+
+`coordinator_batch_handoff.php` covers ungranted launches, an expired generation
+rejected by the real socket, acceptance of a current grant, unresolved deletion
+review and preservation of committed results. It also passes with read-only
+`/boot`. The crash fixture now queues an unrelated deletion during restart and
+asserts that no new command is admitted before old attempts have stopped. The
+full reliability suite and PHP checks pass. The actual batch endpoint suite
+also passes, including deletion retry exhaustion, fresh failed-only retry, daemon
+restart and the 601-item fixture. Temporary package verification passes.
+
+This is a recovery prerequisite, not the completed deletion-batch ownership
+migration: the compatibility worker still owns deletion-batch item transitions
+and must be replaced by journal-owned item/dependency transitions. Shared cleanup
+ownership, full replication integration and the previously listed release gates
+remain open.

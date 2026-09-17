@@ -130,3 +130,12 @@ failed-only retry, daemon restart and exact deletion checks.
 These checks do not replace the outstanding all-path flash trace, real-ZFS
 coordinator pipeline tests or complete installation handoff. Shared cleanup
 ownership and deletion-batch item authority remain open.
+
+Deletion-batch recovery now validates live attempt ownership before worker locks
+and before each item submission. The handoff fixture verifies rejection of missing
+or expired grants over the real socket, acceptance of current ownership, fresh
+review for unresolved legacy deletions and preservation of committed results; it
+passes with read-only `/boot`. Coordinator crash recovery also defers unrelated
+new grants until every surviving old process group has stopped. The full
+reliability suite covers this cross-task recovery barrier. Journal ownership of
+all deletion-batch item transitions remains unfinished.
