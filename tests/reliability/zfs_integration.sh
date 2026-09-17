@@ -72,6 +72,13 @@ run_pipeline_with_status 'Real full transfer' '' "$source_dataset@base" "$destin
 snapshots_have_same_guid "$source_dataset@base" "$destination@base" local
 printf 'incremental content\n' > "$fixture/source/incremental.txt"
 zfs snapshot "$source_dataset@next"
+php -r '
+require $argv[1];
+$result=ZfsasReplicationInspection::inspect(["sourceSnapshot"=>$argv[2]."@next","sourceGuid"=>$argv[4],"destination"=>$argv[3]]);
+if ($result["outcome"]!=="success" || $result["inspection"]["base"]["snapshot"]!==$argv[2]."@base"
+    || count($result["inspection"]["references"])!==3) { fwrite(STDERR,json_encode($result)); exit(1); }
+echo "PASS: native read-only inspection selects GUID-matched base on real ZFS\n";
+' "$ROOT/source/usr/local/emhttp/plugins/zfs.autosnapshot/php/replication-inspection.php" "$source_dataset" "$destination" "$(zfs get -H -p -o value guid "$source_dataset@next")"
 run_pipeline_with_status 'Real incremental transfer' "$source_dataset@base" "$source_dataset@next" "$destination"
 snapshots_have_same_guid "$source_dataset@next" "$destination@next" local
 # Existing unrelated destination must survive both a full receive and a mismatched base.

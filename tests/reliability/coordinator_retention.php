@@ -28,6 +28,10 @@ $childId = $child['runId'] . ':snapshot';
 $childAttempt = $state->claim($childId, 1, $old);
 $state->started($childId, $childAttempt, 123, '123');
 $state->result($childId, $childAttempt, ['outcome' => 'success'], 1, $old, true);
+$inspection=$state->submit('inspection',['tasks'=>['inspect'=>['kind'=>'prepare','parameters'=>['phase'=>'replication_inspect']]]],$old);
+$inspectionId=hash('sha256',$inspection['runId'].':inspect');
+file_put_contents($root.'/attempt-inputs/'.$inspectionId.'.inspection.json','{}');
+file_put_contents($root.'/attempt-inputs/'.str_repeat('f',64).'.inspection.json','{}');
 $state->prune($now);
 if (!isset($state->state['tasks'][$childId])) { throw new RuntimeException('Pruning lost an unfinished owner’s completed child'); }
 zfsas_coordinator_prune_artifacts($state, $root, $batches, $now, $root . '/delete-results');
@@ -38,6 +42,9 @@ if (!is_file($root . '/delete-results/active-delete.result') || is_file($root . 
 if (!is_file($root . '/attempt-inputs/' . $input . '.job.approval.json')
     || is_file($root . '/attempt-inputs/' . str_repeat('f', 64) . '.job.approval.json')) {
     throw new RuntimeException('Captured approval retention violated journal ownership');
+}
+if (!is_file($root.'/attempt-inputs/'.$inspectionId.'.inspection.json') || is_file($root.'/attempt-inputs/'.str_repeat('f',64).'.inspection.json')) {
+    throw new RuntimeException('Inspection capture retention lost active evidence or retained orphan input');
 }
 if (!is_dir($root . '/attempts/' . $token) || !is_dir($root . '/config/' . $revision)
     || is_dir($root . '/attempts/' . str_repeat('b', 48)) || is_dir($root . '/config/' . $orphan)) {

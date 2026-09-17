@@ -5,6 +5,7 @@ require_once __DIR__ . '/coordinator-executor.php';
 require_once __DIR__ . '/coordinator-retention.php';
 require_once __DIR__ . '/coordinator-auto-admission.php';
 require_once __DIR__ . '/coordinator-deletion.php';
+require_once __DIR__ . '/coordinator-replication-inspect.php';
 require_once __DIR__ . '/coordinator-batch.php';
 require_once __DIR__ . '/schedule-spec.php';
 require_once __DIR__ . '/snapshot-manager-helpers.php';
@@ -46,6 +47,9 @@ $submitAuto = static function (string $commandId, bool $manual, ?int $occurrence
 $command = static function (array $task) use ($root, $configDir, $journal, $deletion): ?array {
     if (is_file($configDir . '/maintenance')) { return null; }
     if ($task['kind'] === 'delete') { return $deletion->command($task); }
+    if ($task['kind'] === 'prepare' && ($task['parameters']['phase'] ?? '') === 'replication_inspect') {
+        return zfsas_coordinator_replication_inspection_command($task, $root);
+    }
     if ($task['kind'] === 'batch') {
         if (isset($task['items']) && ($task['parameters']['batch']['action'] ?? '') === 'delete') {
             $deletion->dispatchBatch($task);
@@ -68,6 +72,7 @@ $command = static function (array $task) use ($root, $configDir, $journal, $dele
     return zfsas_coordinator_auto_command($journal, $task, $pair, $root);
 };
 $outcome = static function ($task, $code) use ($configDir, $journal): array {
+    if ($task['kind'] === 'prepare') { return ['outcome'=>'transient_failure','message'=>'Inspection stopped without an explicit result.']; }
     if ($task['kind'] === 'delete') { return ['outcome'=>'transient_failure', 'message'=>'Deletion attempt stopped without an explicit result.', 'exitCode'=>$code]; }
     if ($task['kind'] === 'batch') {
         if (isset($task['items'])) { return in_array($code, [0, 75], true) ? $journal->itemTaskOutcome($task['id']) : ['outcome'=>'transient_failure', 'exitCode'=>$code]; }

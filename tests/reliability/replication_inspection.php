@@ -1,0 +1,38 @@
+<?php
+require __DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.autosnapshot/php/replication-inspection.php';
+function check($ok,$message){if(!$ok)throw new RuntimeException($message);}
+function reject($callback){try{$callback();}catch(InvalidArgumentException|RuntimeException $error){return;}throw new RuntimeException('Unsafe inspection accepted');}
+$request=['sourceSnapshot'=>'tank/source@new','sourceGuid'=>'300','destination'=>'backup/target'];
+$source="tank/source@old\t100\t9223372036854775808\ntank/source@base\t200\t9223372036854775809\ntank/source@new\t300\t9223372036854775810\n";
+$destination="backup/target@old\t100\t1\nbackup/target@base\t200\t2\n";
+$resume='-';$calls=[];$destinationGuid='20';
+$read=static function($args)use(&$calls,&$source,&$destination,&$resume,&$destinationGuid){
+    $calls[]=$args;$name=end($args);
+    if($args[0]==='list')return $name==='tank/source'?$source:$destination;
+    if(in_array('receive_resume_token',$args,true))return $resume;
+    return match($name){'tank/source'=>'10','backup/target'=>$destinationGuid,'tank/source@new'=>'300','tank/source@base'=>'200','backup/target@base'=>'200',default=>throw new RuntimeException('Unexpected query')};
+};
+$result=ZfsasReplicationInspection::inspect($request,$read);
+check($result['outcome']==='success' && $result['inspection']['base']['snapshot']==='tank/source@base','Base selection lost 64-bit TXG ordering');
+check(count($result['inspection']['references'])===3,'Required identities missing');
+check(!array_filter($calls,fn($args)=>!in_array($args[0],['get','list'],true)),'Inspection mutated ZFS');
+$destination="backup/target@base\t999\t1\n";
+$result=ZfsasReplicationInspection::inspect($request,$read);
+check($result['inspection']['base']===null && $result['inspection']['conflictCount']===1,'Name collision was accepted as common base');
+$resume='secret-resume-token';$calls=[];
+$result=ZfsasReplicationInspection::inspect($request,$read);
+check($result['recoveryRequired'] && !str_contains(json_encode($result),'secret-resume-token'),'Resume recovery exposed token or ran automatically');
+check(!array_filter($calls,fn($args)=>$args[0]==='list'),'Resume recovery unnecessarily scanned inventory');
+$resume='';reject(fn()=>ZfsasReplicationInspection::inspect($request,$read));$resume='-';
+reject(fn()=>ZfsasReplicationInspection::inspect($request+['destinationGuid'=>'21'],$read));
+reject(fn()=>ZfsasReplicationInspection::inspect(array_replace($request,['sourceGuid'=>'301']),$read));
+reject(fn()=>ZfsasReplicationInspection::inspect(array_replace($request,['destination'=>'tank/source/child']),$read));
+reject(fn()=>ZfsasReplicationInspection::inspect($request+['transport'=>'ssh'],$read));
+$source="tank/source@new\t300\t2\ntank/source@new\t300\t2\n";reject(fn()=>ZfsasReplicationInspection::inspect($request,$read));
+$source="tank/source@new\t300\t2\n";$destination='';
+$counter=0;$racing=static function($args)use($read,&$counter){if(end($args)==='backup/target'&&in_array('guid',$args,true)&&++$counter===2)return '999';return $read($args);};
+reject(fn()=>ZfsasReplicationInspection::inspect($request,$racing));
+$source='';for($i=0;$i<10000;$i++){$source.="tank/source@s$i\t".(1000+$i)."\t".(1000+$i)."\n";}$source.="tank/source@new\t300\t20000\n";
+$result=ZfsasReplicationInspection::inspect($request,$read);
+check($result['inspection']['sourceCount']===10001,'Large inventory lost members');
+echo "PASS: read-only replication inspection, exact GUID bases, 64-bit ordering, overlap and replacement rejection, resume review and 10,000 snapshots\n";
