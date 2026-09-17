@@ -47,7 +47,7 @@ crash=1
 (prepare_scheduled_job_snapshot) && exit 1
 [[ -f "$fixture/created" ]]
 source "$fixture/record"
-[[ -z "${job[SOURCE_SNAPSHOT]:-}" && -n "${job[SNAPSHOT_INTENT_HASH]}" ]]
+[[ -z "${job[SOURCE_SNAPSHOT]:-}" && -n "${job[SNAPSHOT_INTENT_HASH]}" && "${job[RECOVERY_REQUIRED]}" == 1 ]]
 cp "$fixture/command" "$fixture/first-command"
 crash=0; failure=''
 ! prepare_scheduled_job_snapshot
@@ -73,7 +73,7 @@ dataset_guid=10
 reset_job
 prepare_scheduled_job_snapshot
 send_member_manifest_valid job
-[[ "${job[MEMBER_1_SNAPSHOT_GUID]}" == 21 && "${job[MEMBER_1_DATASET_GUID]}" == 20 ]]
+[[ "${job[MEMBER_1_SNAPSHOT_GUID]}" == 21 && "${job[MEMBER_1_DATASET_GUID]}" == 20 && "${job[RECOVERY_REQUIRED]}" == 0 ]]
 # No recursive re-enumeration or replacement creation after evidence is committed.
 list_tree_datasets() { return 1; }; zfs() { exit 99; }
 prepare_scheduled_job_snapshot

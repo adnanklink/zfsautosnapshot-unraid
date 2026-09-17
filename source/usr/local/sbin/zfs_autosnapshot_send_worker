@@ -738,6 +738,7 @@ freeze_current_send_manifest() {
   job[MEMBER_MANIFEST_VERSION]=1
   job[MEMBER_MANIFEST_HASH]="$(send_member_manifest_digest job)" || return 1
   # The complete membership and identities are committed before any child can run.
+  if [[ -n "${job[SNAPSHOT_INTENT_HASH]:-}" ]]; then job[RECOVERY_REQUIRED]=0; fi
   persist_job
 }
 
@@ -818,6 +819,9 @@ prepare_scheduled_job_snapshot() {
   done
   # Explicit targets freeze recursive membership: children added after planning
   # are not silently included by a later recursive snapshot command.
+  # A nonzero exit may follow a side effect. Keep review/protection authority
+  # through exhausted retries until a GUID manifest is successfully committed.
+  job[RECOVERY_REQUIRED]=1
   persist_job || return 1
   log "Creating scheduled send checkpoint ${source_root}@${basename}"
   if ! snapshot_error="$("${create_cmd[@]}" 2>&1)"; then

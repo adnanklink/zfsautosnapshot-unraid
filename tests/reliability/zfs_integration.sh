@@ -32,6 +32,38 @@ zpool create -o cachefile=none -O mountpoint=none "$target_pool" "$fixture/targe
 target_guid="$(zpool get -H -o value guid "$target_pool")"
 source_dataset="$source_pool/data"; destination="$target_pool/data"
 zfs create -o mountpoint="$fixture/source" "$source_dataset"
+# Exercise production intent and GUID publication against actual ZFS metadata.
+# Prerequisite readiness is isolated here; this is not the coordinator phase test.
+(
+  zfs create -o mountpoint=none "$source_pool/intent"
+  zfs create -o mountpoint=none "$source_pool/intent/child"
+  worker="$ROOT/source/usr/local/sbin/zfs_autosnapshot_send_worker"
+  for function in prepare_scheduled_job_snapshot freeze_current_send_manifest; do
+    eval "$(sed -n "/^${function}() {/,/^}/p" "$worker")"
+  done
+  current_send_transport() { printf local; }
+  zfs_dataset_tree_actionable() { :; }; send_destination_actionable_for_transport() { :; }
+  spiped_transport_requires_receiver_inventory() { return 1; }
+  latest_checkpoint_basename_for_schedule() { :; }
+  fail_current_job_final() { printf '%s\n' "$1" >&2; return 1; }
+  fail_current_job() { fail_current_job_final "$@"; }
+  persist_job() { declare -p intent_job > "$fixture/intent-record"; }
+  declare -A intent_job=([JOB_ID]=real-intent [JOB_MODE]=scheduled [SOURCE_ROOT]="$source_pool/intent"
+    [DESTINATION_ROOT]="$target_pool/intent" [INCLUDE_CHILDREN]=1 [SNAPSHOT_PREFIX]=send-
+    [SEND_CONFIG_HASH]=fixture [SEND_TRANSPORT]=local)
+  declare -n job=intent_job
+  prepare_scheduled_job_snapshot
+  send_member_manifest_valid job
+  [[ "${job[MEMBER_COUNT]}" == 2 && "${job[RECOVERY_REQUIRED]}" == 0 ]]
+  for index in 0 1; do
+    [[ "$(zfs get -H -p -o value guid "${job[MEMBER_${index}_SNAPSHOT]}")" == "${job[MEMBER_${index}_SNAPSHOT_GUID]}" ]]
+  done
+  zfs create -o mountpoint=none "$source_pool/intent/later"
+  prepare_scheduled_job_snapshot
+  [[ "${job[MEMBER_COUNT]}" == 2 ]]
+  ! zfs list -H "$source_pool/intent/later@${job[SOURCE_SNAPSHOT_NAME]}" >/dev/null 2>&1
+)
+echo 'PASS: real ZFS creation intent, exact recursive targets, GUID manifest and fixed membership'
 printf 'base content\n' > "$fixture/source/base.txt"
 zfs snapshot "$source_dataset@base"
 declare -A job=([SEND_TRANSPORT]=local)
