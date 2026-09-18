@@ -1,7 +1,8 @@
 <?xml version='1.0' standalone='yes'?>
-<PLUGIN name="zfs.snapsync" author="Brandon Stone" version="2026.09.18.02" icon="zfs-snapsync.png" pluginURL="https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/fix/coordinator-completion/dist/zfs.snapsync.plg" support="https://github.com/adnanklink/zfsautosnapshot-unraid/issues" min="6.12.0" launch="Settings/ZFSSnapSync">Plain-English ZFS snapshot scheduling, retention cleanup, and low-space protection for Unraid.
+<PLUGIN name="zfs.snapsync" author="Adnan Nashawaty" version="2026.09.18.03" icon="zfs-snapsync.png" pluginURL="https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/fix/coordinator-completion/dist/zfs.snapsync.plg" support="https://github.com/adnanklink/zfsautosnapshot-unraid/issues" min="6.12.0" launch="Settings/ZFSSnapSync">Plain-English ZFS snapshot scheduling, retention cleanup, and low-space protection for Unraid.
   <CHANGES>
-### 2026.09.18.02 (2026-09-18)
+### 2026.09.18.03 (2026-09-18)
+- Update SnapSync author attribution and add an optional developer support link.
 - Fix indefinite Browse loading and add prominent dataset discovery status with retry.
 - Align Refresh datasets and move tuning defaults to compact bottom controls.
 - Standalone ZFS SnapSync identity, configuration, runtime paths and update manifest.
@@ -20,9 +21,9 @@ ZFS SnapSync adds plain-English scheduling and safe snapshot lifecycle managemen
 
   <SUPPORT>https://github.com/adnanklink/zfsautosnapshot-unraid/issues</SUPPORT>
 
-  <FILE Name="/boot/config/plugins/zfs.snapsync/zfs-snapsync-2026.09.18.02-noarch-1.txz" Min="6.12.0">
-    <URL>https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/fix/coordinator-completion/dist/zfs-snapsync-2026.09.18.02-noarch-1.txz</URL>
-    <MD5>ede02e83f9933be35a095860b828a0c3</MD5>
+  <FILE Name="/boot/config/plugins/zfs.snapsync/zfs-snapsync-2026.09.18.03-noarch-1.txz" Min="6.12.0">
+    <URL>https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/fix/coordinator-completion/dist/zfs-snapsync-2026.09.18.03-noarch-1.txz</URL>
+    <MD5>d0bcadbc8d34f9f12da10e7c96982a06</MD5>
   </FILE>
 
   <FILE Run="/bin/bash">
@@ -30,10 +31,10 @@ ZFS SnapSync adds plain-English scheduling and safe snapshot lifecycle managemen
 set -euo pipefail
 
 PKG_DIR="/boot/config/plugins/zfs.snapsync"
-PKG_FILE="zfs-snapsync-2026.09.18.02-noarch-1.txz"
+PKG_FILE="zfs-snapsync-2026.09.18.03-noarch-1.txz"
 PKG_PATH="${PKG_DIR}/${PKG_FILE}"
 PKG_URL="https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/fix/coordinator-completion/dist/${PKG_FILE}"
-PKG_MD5="ede02e83f9933be35a095860b828a0c3"
+PKG_MD5="d0bcadbc8d34f9f12da10e7c96982a06"
 PKG_NAME="zfs-snapsync"
 
 if command -v upgradepkg >/dev/null 2>&1; then
