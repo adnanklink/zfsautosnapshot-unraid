@@ -80,7 +80,9 @@ function zfsas_config_save($kind, $dir, array $submitted, $revision, $render, $s
             } catch (InvalidArgumentException | JsonException $error) { $result['errors'][] = $error->getMessage(); return $result; }
         }
         if ($kind === 'send') {
-            try { $submitted['SEND_SCHEDULE_SPECS'] = zfsas_send_schedule_specs_save($send, $submitted, $submitted['__schedule_options'] ?? [], time()); }
+            try {
+                $submitted['SEND_CLEANUP_POLICIES'] = zfsas_send_cleanup_save($submitted, zfsas_send_parse_jobs($submitted['SEND_JOBS'] ?? ''), []);
+                $submitted['SEND_SCHEDULE_SPECS'] = zfsas_send_schedule_specs_save($send, $submitted, $submitted['__schedule_options'] ?? [], time()); }
             catch (InvalidArgumentException | JsonException $error) { $result['errors'][] = $error->getMessage(); return $result; }
         }
         $prefixes = zfsas_known_send_prefixes($dir);

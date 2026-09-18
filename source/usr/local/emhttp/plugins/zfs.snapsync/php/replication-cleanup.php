@@ -5,6 +5,18 @@ require_once __DIR__.'/snapshot-cleanup.php';
 /** Read-only destination retention plan; estimates never constitute space approval. */
 function zfsas_replication_cleanup(array $request, array $inspection, array $policy, ?callable $read=null, ?int $now=null): array
 {
+    return zfsas_replication_cleanup_candidates($request, $inspection, $policy, $read, $now, false);
+}
+
+/** A proposal only: callers must obtain a fresh coordinator deletion grant. */
+function zfsas_replication_anchor_candidates(array $request, array $inspection, array $policy, ?callable $read=null, ?int $now=null): array
+{
+    if (($policy['mode'] ?? 'retention_only') !== 'older_anchors') { return []; }
+    return zfsas_replication_cleanup_candidates($request, $inspection, $policy, $read, $now, true);
+}
+
+function zfsas_replication_cleanup_candidates(array $request, array $inspection, array $policy, ?callable $read, ?int $now, bool $anchors): array
+{
     if (($inspection['mode'] ?? '')==='full') { return []; }
     ZfsasReplicationInspection::validate($request);
     foreach(['keepAll','keepDaily','keepWeekly'] as $field){
@@ -33,22 +45,37 @@ function zfsas_replication_cleanup(array $request, array $inspection, array $pol
     uasort($rows,static fn($a,$b)=>$compare($b['txg'],$a['txg']));
     $protectedNames=[];$protectedGuids=[];
     foreach($inspection['references'] as $reference){$protectedNames[$reference['snapshot']]=true;$protectedGuids[$reference['guid']]=true;}
-    $newest=true;$days=[];$weeks=[];$tasks=[];
+    $newest=true;$newestRow=null;$days=[];$weeks=[];$tasks=[];
     foreach($rows as $row){
         if(!str_starts_with($row['snapshot'],$prefix)){continue;}
-        if($newest){$newest=false;continue;}
+        if($newest){$newest=false;$newestRow=$row;continue;}
         $age=$now-$row['created'];$eligible=false;
         if($age>$policy['keepWeekly']*86400){$eligible=true;}
         elseif($age>$policy['keepDaily']*86400){$key=zfsas_sm_retention_week($row['created']);$eligible=isset($weeks[$key]);$weeks[$key]=true;}
         elseif($age>$policy['keepAll']*86400){$key=date('Y-m-d',$row['created']);$eligible=isset($days[$key]);$days[$key]=true;}
+        if ($anchors) { $eligible = !$eligible && $age > $policy['keepAll']*86400; }
         if(!$eligible||$row['holds']!=='0'||$row['clones']!=='-'||isset($protectedNames[$row['snapshot']])||isset($protectedGuids[$row['guid']])){continue;}
-        $id='native-retention-'.substr(hash('sha256',$row['snapshot'].'#'.$row['guid'].'|'.$policy['sendConfigHash']),0,40);
+        $id=($anchors ? 'native-anchor-' : 'native-retention-').substr(hash('sha256',$row['snapshot'].'#'.$row['guid'].'|'.$policy['sendConfigHash']),0,40);
         $job=['JOB_ID'=>$id,'REQUESTED_EPOCH'=>(string)$now,'QUEUE_SORT'=>(string)$now,'DATASET'=>$destination,
             'DATASET_GUID'=>$inspection['destinationDatasetGuid'],'SNAPSHOT'=>$row['snapshot'],'SNAPSHOT_NAME'=>explode('@',$row['snapshot'])[1],
             'SNAPSHOT_EPOCH'=>(string)$row['created'],'SNAPSHOT_GUID'=>$row['guid'],'SNAPSHOT_CREATETXG'=>$row['txg'],
+            'CLEANUP_REASON'=>$anchors ? 'low_space_anchor' : 'retention',
             'DELETE_POOL'=>explode('/',$destination)[0],'ESTIMATED_RECLAIM_BYTES'=>$row['used'],'SEND_PROTECTED'=>'1',
             'DELETE_SCOPE'=>'destination_checkpoint','SEND_SCHEDULE_JOB_ID'=>$policy['scheduleId'],'SEND_CONFIG_HASH'=>$policy['sendConfigHash']];
+        if ($anchors) {
+            $job['PRESSURE_NEWEST_SNAPSHOT']=$newestRow['snapshot'];
+            $job['PRESSURE_NEWEST_GUID']=$newestRow['guid'];
+            $job['PRESSURE_CUTOFF']=(string)($now-$policy['keepAll']*86400);
+        }
         $tasks['cleanup-'.count($tasks)]=['kind'=>'delete','dataset'=>$destination,'parameters'=>['deleteJob'=>$job,'nativeSchedule'=>true],'dependencies'=>[]];
+    }
+    if ($anchors) {
+        uasort($tasks, static function ($a, $b) use ($compare) {
+            $a=$a['parameters']['deleteJob']; $b=$b['parameters']['deleteJob'];
+            return $compare($a['SNAPSHOT_EPOCH'],$b['SNAPSHOT_EPOCH'])
+                ?: $compare($a['SNAPSHOT_CREATETXG'],$b['SNAPSHOT_CREATETXG'])
+                ?: strcmp($a['SNAPSHOT'],$b['SNAPSHOT']);
+        });
     }
     return $tasks;
 }

@@ -74,4 +74,7 @@ SEND_SPIPED_KEY_PATH=""
 # dataset's active pool/quota constraints before a send run proceeds.
 # children = 1 to send the entire source subtree under the chosen destination
 # root, 0 to send only the selected dataset itself.
+# Versioned per-job policies: retention_only (default) or older_anchors (local only).
+# Older anchors never includes snapshots inside the keep-all window.
+SEND_CLEANUP_POLICIES='{"version":1,"jobs":{}}'
 SEND_JOBS=""

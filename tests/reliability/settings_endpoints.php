@@ -71,5 +71,16 @@ check(json_decode($config['SEND_SCHEDULE_SPECS'],true)===$specs,'Unrelated endpo
 $before=file_get_contents($dir.'/zfs_send.conf');
 $response=finish_endpoint(start_endpoint('save-send-settings.php',$post+['job_time'=>['25:00'],'config_revision'=>zfsas_config_revision($dir)]));
 check(empty($response['saved']) && file_get_contents($dir.'/zfs_send.conf')===$before,'Invalid calendar time changed config');
+$response=finish_endpoint(start_endpoint('save-send-settings.php',$post+['job_cleanup_policy'=>['older_anchors'],'config_revision'=>zfsas_config_revision($dir)]));
+check(!empty($response['saved']),'Explicit anchor policy save failed');
+$config=zfsas_send_parse_config_file($dir.'/zfs_send.conf',zfsas_send_defaults());
+check(zfsas_send_cleanup_mode($config,['id'=>$id,'transport'=>'local'])==='older_anchors','Saved anchor authorization lost');
+$response=finish_endpoint(start_endpoint('save-send-settings.php',$post+['config_revision'=>zfsas_config_revision($dir)]));
+check(!empty($response['saved']),'Unrelated policy save failed');
+$config=zfsas_send_parse_config_file($dir.'/zfs_send.conf',zfsas_send_defaults());
+check(zfsas_send_cleanup_mode($config,['id'=>$id,'transport'=>'local'])==='older_anchors','Unrelated save changed authorization');
+$before=file_get_contents($dir.'/zfs_send.conf');
+$response=finish_endpoint(start_endpoint('save-send-settings.php',$post+['job_cleanup_policy'=>['unsafe'],'config_revision'=>zfsas_config_revision($dir)]));
+check(empty($response['saved']) && file_get_contents($dir.'/zfs_send.conf')===$before,'Invalid cleanup mode wrote configuration');
 unlink($runner);
 echo "PASS: real save endpoints, all prefix overlap directions, safe stems, stale/concurrent saves, conflict repair, prefix history\n";
