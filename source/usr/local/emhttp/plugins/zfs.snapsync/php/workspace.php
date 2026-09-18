@@ -2,7 +2,7 @@
 require_once __DIR__ . '/response-helpers.php';
 if (!defined('ZFSAS_WORKSPACE')) { define('ZFSAS_WORKSPACE', true); }
 function zfsas_ui_h($value) { return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8'); }
-function zfsas_ui_url($section, $tab = '') { return '/Settings/ZFSSnapSync?' . http_build_query(array_filter(['section' => $section, 'tab' => $tab])); }
+function zfsas_ui_url($section, $tab = '') { return (!empty($GLOBALS['zfsas_top_tab']) ? '/ZFSSnapSyncTab?' : '/Settings/ZFSSnapSync?') . http_build_query(array_filter(['section' => $section, 'tab' => $tab])); }
 $uiSection = is_string($_GET['section'] ?? null) ? $_GET['section'] : 'overview';
 $uiTab = is_string($_GET['tab'] ?? null) ? $_GET['tab'] : '';
 if ($uiSection === 'main') { $uiSection = 'snapshots'; $uiTab = 'automation'; }
@@ -27,7 +27,7 @@ if ($uiStandalone) { ?><!doctype html><html lang="en"><head><meta charset="utf-8
 <div class="zfsas-workspace" data-section="<?= zfsas_ui_h($uiSection) ?>" data-csrf="<?= zfsas_ui_h($uiCsrf) ?>">
 <a class="ui-skip" href="#workspace-content">Skip to content</a>
 <aside class="ui-sidebar">
-  <a class="ui-brand" href="<?= zfsas_ui_url('overview') ?>"><span class="ui-brand-mark" aria-hidden="true">Z</span><span>ZFS SnapSync<small>Protection workspace</small></span></a>
+  <a class="ui-brand" href="<?= zfsas_ui_url('overview') ?>"><img class="ui-brand-mark" src="/plugins/zfs.snapsync/images/zfs-snapsync.png?v=2026.09.18.04" alt="" width="40" height="40"><span>ZFS SnapSync<small>Protection workspace</small></span></a>
   <button type="button" class="ui-menu-toggle" aria-expanded="false" aria-controls="workspace-navigation">Menu</button>
   <nav id="workspace-navigation" aria-label="Plugin navigation">
   <?php $icons = ['overview' => '▦', 'snapshots' => '▤', 'replication' => '⇄', 'activity' => '◷', 'tools' => '◇', 'help' => '?']; foreach ($uiSections as $key => $item): ?>

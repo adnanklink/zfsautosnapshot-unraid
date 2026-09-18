@@ -1,0 +1,11 @@
+Menu="Tasks:85"
+Name="ZFS SnapSync"
+Title="ZFS SnapSync"
+Icon="zfs-snapsync.png"
+Cond="is_file('/boot/config/plugins/zfs.snapsync/show-tab') && trim(file_get_contents('/boot/config/plugins/zfs.snapsync/show-tab')) === '1'"
+---
+<?php
+$GLOBALS['zfsas_host_shell'] = true;
+$GLOBALS['zfsas_top_tab'] = true;
+include '/usr/local/emhttp/plugins/zfs.snapsync/php/workspace.php';
+?>

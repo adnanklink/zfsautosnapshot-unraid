@@ -17,6 +17,7 @@ summary.operations.push({id:'coordinator:native',nativeId:'native-run',type:'rep
    if(discoveryRequests===1){await new Promise(resolve=>setTimeout(resolve,300));data={ok:false,error:'Test discovery failure'};}
    if(discoveryRequests===3) await new Promise(resolve=>setTimeout(resolve,1200));
  }
+ if(url.pathname.endsWith('save-interface-settings.php')) data={ok:true,enabled:true,revision:'saved-revision'};
  if(url.pathname.endsWith('send-queue-action.php'))mutationRequests++;
  if(url.pathname.endsWith('workspace-summary.php')){summaryRequests++;data=summary;}
  if(url.pathname.endsWith('migrate-datasets-status.php') && url.searchParams.get('dataset'))data.preview={folders:[]};
@@ -82,6 +83,14 @@ summary.operations.push({id:'coordinator:native',nativeId:'native-run',type:'rep
  assert.equal(await policy.inputValue(),'retention_only','Cancel did not restore cleanup policy');
  await policy.selectOption('older_anchors');await page.locator('#finish-job-edit').click();
  assert.equal(await page.locator('#zfsas_send_jobs_body select[name^="job_cleanup_policy["]').last().inputValue(),'older_anchors','Editor lost explicit opt-in');
+ }
+ if(query==='section=tools'){
+ assert(!(await page.locator('[name=show_tab]').isChecked()));
+ await page.locator('[name=show_tab]').check();
+ const [request]=await Promise.all([page.waitForRequest(r=>r.url().endsWith('save-interface-settings.php')),page.getByRole('button',{name:'Save interface preference'}).click()]);
+ assert.match(request.postData(),/show_tab=1/);
+ await page.waitForFunction(()=>document.getElementById('interface-status').textContent.includes('Saved.'));
+ assert(await page.locator('#interface-reload').isVisible());
  }
  if(query.endsWith('tab=migrator')){await page.selectOption('#migrate_dataset','tank/data');assert(await page.locator('#migrate_start').isDisabled());await page.locator('#migrate_preview').click();await page.waitForTimeout(100);await page.locator('#migrate-review-confirm').check();assert(await page.locator('#migrate_start').isEnabled());}
  fs.mkdirSync('/tmp/zfsas-ui-screenshots',{recursive:true});const name=query.replaceAll(/[=&]/g,'-');await page.screenshot({path:'/tmp/zfsas-ui-screenshots/'+name+'-light.png',fullPage:true});

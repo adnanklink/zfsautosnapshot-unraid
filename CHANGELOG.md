@@ -5,6 +5,11 @@ It answers one question: "What changed for me?"
 
 ## Development releases
 
+### 2026.09.18.04 (2026-09-18)
+
+- Apply the approved SnapSync logo to the workspace, Help, README, and Unraid plugin icons.
+- Add an optional top-level Unraid tab under Tools → Interface, with persistent, revision-checked settings.
+
 ### 2026.09.18.03 (2026-09-18)
 
 - Attribute ZFS SnapSync to Adnan Nashawaty while preserving original-project credits.

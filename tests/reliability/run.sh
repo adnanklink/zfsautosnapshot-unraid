@@ -12,6 +12,7 @@ bash tests/reliability/destination.sh
 bash tests/reliability/dependencies.sh
 bash tests/reliability/send_occurrences.sh
 bash tests/reliability/local_send_cutover.sh
+php tests/reliability/interface_settings.php
 php tests/reliability/settings_endpoints.php
 php tests/reliability/snapshots.php
 php tests/reliability/batch_item_recovery.php
