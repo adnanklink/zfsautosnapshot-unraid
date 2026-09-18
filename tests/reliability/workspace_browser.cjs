@@ -9,6 +9,7 @@ summary.operations.push({id:'coordinator:native',nativeId:'native-run',type:'rep
  const html=execFileSync('php',['-r','parse_str($argv[1],$_GET); require $argv[2];',query,plugin+'/php/workspace.php'],{encoding:'utf8'});
  const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];let summaryRequests=0,mutationRequests=0,discoveryRequests=0;page.on('pageerror',e=>errors.push(e.message));
  await page.route('http://workspace.test/**',async route=>{const url=new URL(route.request().url());
+ if(url.pathname.endsWith('.png'))return route.fulfill({contentType:'image/png',body:fs.readFileSync(plugin+url.pathname.replace('/plugins/zfs.snapsync',''))});
  if(/\.(js|css)$/.test(url.pathname))return route.fulfill({contentType:url.pathname.endsWith('.js')?'application/javascript':'text/css',body:fs.readFileSync(plugin+url.pathname.replace('/plugins/zfs.snapsync',''),'utf8')});
  if(url.pathname==='/')return route.fulfill({contentType:'text/html',body:html});
  let data={ok:true,probe:true,spec:{kind:'interval',seconds:21600},status:{},datasets:[{dataset:'tank/data',mountpoint:'/mnt/tank/data',pool:'tank',sendDestination:false}],snapshots:[],jobs:[],pausedSchedules:[],pendingDeleteCount:0,content:'Test log',logTail:[],docker:{runningContainers:[]}};
@@ -45,6 +46,7 @@ summary.operations.push({id:'coordinator:native',nativeId:'native-run',type:'rep
    }
  }
  await page.waitForTimeout(500);
+ assert(await page.locator('.ui-brand-mark').evaluate(img=>img.complete && img.naturalWidth>0),'Brand icon did not load');
  assert.equal(await page.locator('.zfsas-workspace').count(),1,query);assert.equal(await page.locator('h1').count(),1,query);assert.equal(await page.locator('iframe').count(),0);
  if(query==='section=activity' || query.endsWith('tab=automation')){
  const groups=query==='section=activity' ? [['#activity-state','#activity-refresh']] : [['#dataset_pool_filter','#dataset_select_visible','#dataset_clear_visible','#dataset_select_all','#dataset_clear_all'],['#manual_run','#zfsas_save_btn'],['[data-cancel]','[data-resume]']];
@@ -97,7 +99,7 @@ summary.operations.push({id:'coordinator:native',nativeId:'native-run',type:'rep
  assert(await page.locator('#interface-reload').isVisible());
  }
  if(query.endsWith('tab=migrator')){await page.selectOption('#migrate_dataset','tank/data');assert(await page.locator('#migrate_start').isDisabled());await page.locator('#migrate_preview').click();await page.waitForTimeout(100);await page.locator('#migrate-review-confirm').check();assert(await page.locator('#migrate_start').isEnabled());}
- fs.mkdirSync('/tmp/zfsas-ui-screenshots',{recursive:true});const name=query.replaceAll(/[=&]/g,'-');await page.screenshot({path:'/tmp/zfsas-ui-screenshots/'+name+'-light.png',fullPage:true});
+ fs.mkdirSync('/tmp/zfsas-ui-screenshots',{recursive:true});const name=query.replaceAll(/[=&]/g,'-');await page.screenshot({path:'/tmp/zfsas-ui-screenshots/'+name+'-light.png',fullPage:query!=='section=snapshots&tab=automation'});
  await page.evaluate(()=>document.body.style.backgroundColor='rgb(25,25,25)');await page.waitForTimeout(50);await page.screenshot({path:'/tmp/zfsas-ui-screenshots/'+name+'-dark.png',fullPage:true});
  await page.setViewportSize({width:900,height:1000});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Tablet overflow: '+query);
  await page.setViewportSize({width:390,height:844});await page.locator('.ui-menu-toggle').click();assert.equal(await page.locator('.ui-menu-toggle').getAttribute('aria-expanded'),'true');await page.locator('.ui-menu-toggle').click();await page.screenshot({path:'/tmp/zfsas-ui-screenshots/'+name+'-mobile.png',fullPage:true});

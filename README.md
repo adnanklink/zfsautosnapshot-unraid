@@ -1,6 +1,6 @@
-# ZFS SnapSync
+# ZFS SnapSync for Unraid
 
-![ZFS SnapSync — Snapshots. In sync.](source/usr/local/emhttp/plugins/zfs.snapsync/images/zfs-snapsync-wordmark.png) for Unraid
+![ZFS SnapSync — Snapshots. In sync.](source/usr/local/emhttp/plugins/zfs.snapsync/images/zfs-snapsync-wordmark.png)
 
 Manage snapshots, replicate datasets, and follow storage operations from one Unraid WebGUI. ZFS SnapSync brings scheduled snapshots, retention cleanup, local replication, snapshot browsing, and dataset migration into a shared workspace.
 
@@ -43,6 +43,30 @@ New installations start with no Auto Snapshot datasets selected and its schedule
 | **Help** | Find guidance and support links. |
 
 The interface adapts to light and dark Unraid themes and smaller screens. Runtime views describe the current boot, not a permanent historical ledger.
+
+## Screenshots
+
+Captured from the current interface using demo datasets and operation records, without the surrounding Unraid navigation. These illustrate the UI, not a live server’s status.
+
+**Overview** — current work, schedules, and operations that need attention.
+
+![SnapSync Overview showing running operations and recovery notices](docs/screenshots/overview.png)
+
+<details>
+<summary>Snapshot automation: dataset selection and retention settings</summary>
+
+![Snapshot Automation showing dataset selection, retention windows, and run controls](docs/screenshots/automation.png)
+
+</details>
+
+<details>
+<summary>Replication in the dark theme</summary>
+
+An example local replication job being configured before Save.
+
+![Dark-theme Replication view with an example source and destination job](docs/screenshots/replication-dark.png)
+
+</details>
 
 ## Snapshots and retention
 
