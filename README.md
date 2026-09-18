@@ -2,7 +2,7 @@
 
 Manage snapshots, replicate datasets, and follow storage operations from one Unraid WebGUI. ZFS SnapSync brings scheduled snapshots, retention cleanup, local replication, snapshot browsing, and dataset migration into a shared workspace.
 
-**Current testing release: `2026.09.18.02` · Requires Unraid 6.12.0 or newer**
+**Current testing release: `2026.09.18.03` · Requires Unraid 6.12.0 or newer**
 
 SnapSync is a standalone plugin under active development. Local replication uses the new coordinator; network replication and some recovery integration remain unfinished. Start testing with disposable datasets. See [Testing and known limitations](#testing-and-known-limitations) before enabling unattended work.
 
@@ -159,6 +159,10 @@ cd zfsautosnapshot-unraid
 Update `VERSION`, [CHANGELOG.md](CHANGELOG.md), and `zfs.snapsync.plg.in` for each release. The build verifies package contents and generates the manifest, package, and icon. Commit generated artifacts separately from source changes. Building or pushing source alone does not publish an installable update.
 
 The release workflow runs automatically on `main` and `testing`, or explicitly through workflow dispatch. This development branch uses an explicit publication step. Endpoint and ZFS tests require the documented disposable test environment; they use production-style paths and must not be run casually on a live Unraid host.
+
+## Support development
+
+ZFS SnapSync is developed by **Adnan Nashawaty**. If you find it useful, [support ongoing development on PayPal](https://www.paypal.com/paypalme/adnanklink).
 
 ## Credits
 

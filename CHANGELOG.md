@@ -5,6 +5,12 @@ It answers one question: "What changed for me?"
 
 ## Development releases
 
+### 2026.09.18.03 (2026-09-18)
+
+- Attribute ZFS SnapSync to Adnan Nashawaty while preserving original-project credits.
+- Add optional PayPal support links to the workspace footer, Help page, and README.
+- Correct the workspace branding and Help issue-tracker link.
+
 ### 2026.09.18.02 (2026-09-18)
 
 - Browse snapshots discovers datasets without first scanning every snapshot; timeouts now show an actionable error.

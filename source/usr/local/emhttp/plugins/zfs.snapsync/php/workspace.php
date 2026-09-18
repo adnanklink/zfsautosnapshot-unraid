@@ -37,7 +37,7 @@ if ($uiStandalone) { ?><!doctype html><html lang="en"><head><meta charset="utf-8
   <div class="ui-sidebar-foot"><span class="ui-badge">Development build</span><small><?= zfsas_ui_h($uiVersion) ?></small><a href="<?= zfsas_ui_url('help') ?>#recovery">Runtime history lives in RAM</a></div>
 </aside>
 <main id="workspace-content" class="ui-content" tabindex="-1">
-  <header class="ui-page-header"><div><p class="ui-eyebrow">ZFS AUTO SNAPSHOT</p><h1><?= zfsas_ui_h($uiSections[$uiSection][0]) ?></h1><p><?= zfsas_ui_h($uiSections[$uiSection][1]) ?></p></div><a class="ui-subtle-link" href="<?= zfsas_ui_url('help') ?>">Help &amp; recovery <span aria-hidden="true">↗</span></a></header>
+  <header class="ui-page-header"><div><p class="ui-eyebrow">ZFS SNAPSYNC</p><h1><?= zfsas_ui_h($uiSections[$uiSection][0]) ?></h1><p><?= zfsas_ui_h($uiSections[$uiSection][1]) ?></p></div><a class="ui-subtle-link" href="<?= zfsas_ui_url('help') ?>">Help &amp; recovery <span aria-hidden="true">↗</span></a></header>
   <?php if ($uiSection === 'snapshots'): ?><nav class="ui-tabs" aria-label="Snapshot views"><a <?= $uiTab === 'browse' ? 'aria-current="page"' : '' ?> href="<?= zfsas_ui_url('snapshots') ?>">Browse snapshots</a><a <?= $uiTab === 'automation' ? 'aria-current="page"' : '' ?> href="<?= zfsas_ui_url('snapshots', 'automation') ?>">Automation</a></nav><?php endif; ?>
   <div id="workspace-notice" role="status" aria-live="polite"></div>
   <script src="/plugins/zfs.snapsync/js/workspace.js"></script>
@@ -51,7 +51,7 @@ if ($uiStandalone) { ?><!doctype html><html lang="en"><head><meta charset="utf-8
       default: require __DIR__ . '/views/operations.php'; break;
   }
   ?>
-  <footer class="ui-footer">ZFS SnapSync <span>Development preview · Full replication coordination is still in progress.</span></footer>
+  <footer class="ui-footer">ZFS SnapSync by Adnan Nashawaty <span>Development preview · Full replication coordination is still in progress.</span> <a href="https://www.paypal.com/paypalme/adnanklink" target="_blank" rel="noopener noreferrer">Support development ↗</a></footer>
 </main>
 </div>
 <?php if ($uiStandalone) { ?></body></html><?php }
