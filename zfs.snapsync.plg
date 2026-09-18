@@ -1,0 +1,117 @@
+<?xml version='1.0' standalone='yes'?>
+<PLUGIN name="zfs.snapsync" author="Brandon Stone" version="2026.09.18.01" icon="zfs-snapsync.png" pluginURL="https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/fix/coordinator-completion/dist/zfs.snapsync.plg" support="https://github.com/adnanklink/zfsautosnapshot-unraid/issues" min="6.12.0" launch="Settings/ZFSSnapSync">Plain-English ZFS snapshot scheduling, retention cleanup, and low-space protection for Unraid.
+  <CHANGES>
+### 2026.09.18.01 (2026-09-18)
+- Standalone ZFS SnapSync identity, configuration, runtime paths and update manifest.
+- Independent default snapshot prefixes and manual hold tag; no automatic import of original plugin work.
+- Coordinator-owned deletion and batch journals with verified cancellation and RAM-only runtime history.
+- Native local scheduled replication and Run Now with measured space approval and verified completion.
+- Opt-in per-job retention anchor cleanup preserves the keep-all window and protected checkpoints.
+- Testing build: native SSH, shared cleanup ownership and broader release gates remain unfinished.
+- Stop original-plugin work and disable its schedules before using the same datasets; configuration is not imported.
+
+  </CHANGES>
+
+  <DESCRIPTION>
+ZFS SnapSync adds plain-English scheduling and safe snapshot lifecycle management for Unraid. It keeps recent snapshots, consolidates older ones by day/week, and cleans up for low-space pressure using your configured prefix safeguards.
+  </DESCRIPTION>
+
+  <SUPPORT>https://github.com/adnanklink/zfsautosnapshot-unraid/issues</SUPPORT>
+
+  <FILE Name="/boot/config/plugins/zfs.snapsync/zfs-snapsync-2026.09.18.01-noarch-1.txz" Min="6.12.0">
+    <URL>https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/fix/coordinator-completion/dist/zfs-snapsync-2026.09.18.01-noarch-1.txz</URL>
+    <MD5>ecdc105b428a9f84627f39b62b370246</MD5>
+  </FILE>
+
+  <FILE Run="/bin/bash">
+    <INLINE><![CDATA[
+set -euo pipefail
+
+PKG_DIR="/boot/config/plugins/zfs.snapsync"
+PKG_FILE="zfs-snapsync-2026.09.18.01-noarch-1.txz"
+PKG_PATH="${PKG_DIR}/${PKG_FILE}"
+PKG_URL="https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/fix/coordinator-completion/dist/${PKG_FILE}"
+PKG_MD5="ecdc105b428a9f84627f39b62b370246"
+PKG_NAME="zfs-snapsync"
+
+if command -v upgradepkg >/dev/null 2>&1; then
+  UPGRADEPKG="$(command -v upgradepkg)"
+elif [[ -x /sbin/upgradepkg ]]; then
+  UPGRADEPKG="/sbin/upgradepkg"
+elif [[ -x /usr/sbin/upgradepkg ]]; then
+  UPGRADEPKG="/usr/sbin/upgradepkg"
+else
+  echo "ERROR: upgradepkg not found on system." >&2
+  exit 1
+fi
+
+mkdir -p "${PKG_DIR}"
+
+download_pkg() {
+  if command -v wget >/dev/null 2>&1; then
+    wget --no-cache -O "${PKG_PATH}" "${PKG_URL}"
+  else
+    curl -fsSL "${PKG_URL}" -o "${PKG_PATH}"
+  fi
+}
+
+verify_md5() {
+  if command -v md5sum >/dev/null 2>&1; then
+    echo "${PKG_MD5}  ${PKG_PATH}" | md5sum -c -
+  else
+    [[ "$(md5 -q "${PKG_PATH}")" == "${PKG_MD5}" ]]
+  fi
+}
+
+if [[ ! -f "${PKG_PATH}" ]]; then
+  download_pkg
+fi
+
+if ! verify_md5; then
+  rm -f "${PKG_PATH}"
+  download_pkg
+  verify_md5
+fi
+
+"${UPGRADEPKG}" --install-new "${PKG_PATH}"
+
+if ! ls -1 /var/log/packages 2>/dev/null | grep -q "^${PKG_NAME}"; then
+  echo "Package registration missing after install; retrying with --reinstall." >&2
+  "${UPGRADEPKG}" --install-new --reinstall "${PKG_PATH}"
+fi
+
+if ! ls -1 /var/log/packages 2>/dev/null | grep -q "^${PKG_NAME}"; then
+  echo "ERROR: ${PKG_NAME} is still missing from /var/log/packages after install." >&2
+  exit 1
+fi
+
+if [ -x /usr/local/emhttp/plugins/zfs.snapsync/scripts/repair-permissions.sh ]; then
+  /usr/local/emhttp/plugins/zfs.snapsync/scripts/repair-permissions.sh || true
+fi
+
+if [ -x /usr/local/emhttp/plugins/zfs.snapsync/scripts/sync-cron.sh ]; then
+  /usr/local/emhttp/plugins/zfs.snapsync/scripts/sync-cron.sh || true
+fi
+    ]]></INLINE>
+  </FILE>
+
+  <FILE Run="/bin/bash" Method="remove">
+    <INLINE><![CDATA[
+set -euo pipefail
+
+if [ -x /usr/local/emhttp/plugins/zfs.snapsync/scripts/pre-remove.sh ]; then
+  /usr/local/emhttp/plugins/zfs.snapsync/scripts/pre-remove.sh || true
+fi
+
+removepkg zfs-snapsync >/dev/null 2>&1 || true
+
+# Fallback cleanup for installs that missed package DB registration.
+rm -f /usr/local/sbin/zfs_snapsync
+rm -rf /usr/local/emhttp/plugins/zfs.snapsync
+
+rm -f /boot/config/plugins/zfs.snapsync/zfs-snapsync-*-noarch-1.txz
+rm -f /boot/config/plugins/zfs.snapsync/zfs-snapsync-*-noarch-1.txz.md5
+rmdir /boot/config/plugins/zfs.snapsync 2>/dev/null || true
+    ]]></INLINE>
+  </FILE>
+</PLUGIN>
