@@ -5,7 +5,10 @@
 - Standalone ZFS SnapSync identity, configuration, runtime paths and update manifest.
 - Independent default snapshot prefixes and manual hold tag; no automatic import of original plugin work.
 - Coordinator-owned deletion and batch journals with verified cancellation and RAM-only runtime history.
-- Native replication coordinator integration remains under development.
+- Native local scheduled replication and Run Now with measured space approval and verified completion.
+- Opt-in per-job retention anchor cleanup preserves the keep-all window and protected checkpoints.
+- Testing build: native SSH, shared cleanup ownership and broader release gates remain unfinished.
+- Stop original-plugin work and disable its schedules before using the same datasets; configuration is not imported.
 
   </CHANGES>
 

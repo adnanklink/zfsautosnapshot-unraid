@@ -5,6 +5,15 @@ It answers one question: "What changed for me?"
 
 ## Development releases
 
+### 2026.09.18.01 (2026-09-18)
+
+- First standalone ZFS SnapSync testing build on fix/coordinator-completion; separate plugin identity and configuration from ZFS Auto Snapshot.
+- Local scheduled replication and Run Now use native coordinator tasks, stable submissions, measured space admission and verified child completion.
+- Optional per-job low-space cleanup removes older daily/weekly anchors one at a time while preserving the keep-all window, newest checkpoint and required references.
+- Runtime history stays in RAM. Cancel persistently pauses a schedule; interrupted manual sends require explicit recovery review.
+- Includes the reorganized WebGUI and pressure cleanup recovery, endpoint, browser and real-ZFS verification.
+- Testing release: native SSH, shared cleanup ownership and broader standalone release gates remain unfinished. Stop original-plugin work and disable its schedules before testing the same datasets. No automatic configuration migration.
+
 ### 2026.09.17.01 (2026-09-17)
 
 - UI preview on feat/ui-overhaul; full replication coordinator integration remains unfinished.

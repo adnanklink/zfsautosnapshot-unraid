@@ -11,13 +11,13 @@ configuration, runtime paths, services, settings routes and packaging now use it
 independent identity. Default snapshot prefixes are `snapsync-auto-` and
 `snapsync-send-`; manual holds use `snapsync-manual`.
 
-**This is source development, not a published standalone release.** Existing
-checked-in release artifacts and the published `2026.09.17.01` UI preview belong
-to the original identity. The installation instructions below describe that
-older preview, not a SnapSync release. A standalone manifest will be published as
-`dist/zfs.snapsync.plg` after the remaining release gates pass. Do not enable both
-plugins against the same datasets: independent paths do not coordinate their ZFS
-operations. No existing configuration or pending work is automatically imported.
+**Standalone testing release: `2026.09.18.01`.** Install the SnapSync manifest
+below to test this branch. This is a development build with unfinished release
+gates. It has an independent plugin identity; old Auto Snapshot preview clients
+are not switched automatically. Stop existing work and disable the original
+plugin's schedules before using SnapSync on the same datasets. Independent paths
+do not coordinate their ZFS operations. Configuration and pending work are not
+automatically imported.
 See [implementation progress](docs/job-coordination-progress.md) for completed work
 and outstanding replication, packaging and real-host verification.
 
@@ -43,7 +43,7 @@ Runtime history is lost on reboot. Interrupted manual sends require explicit Ret
 
 ## Remaining plan
 
-- Move replication creation, preparation, fan-out, retries and finalization from the Bash queue handler into the coordinator.
+- Complete native network replication integration; local scheduled replication and Run Now already use the coordinator.
 - Finish shared cleanup ownership and cancellation across multiple dependent replication runs.
 - Extend automatic replanning to work that has already started and to replication, with per-item completion evidence; complete reboot recovery based only on proven ZFS metadata.
 - Extend dependency/recovery status and verify all execution paths for zero routine flash writes, bounded idle work, and clock/timezone changes.
@@ -68,31 +68,35 @@ The plugin only manages snapshots that match its configured snapshot prefix. By 
 
 Minimum Unraid version: `6.12.0`, the first Unraid release series with native ZFS pool support.
 
-### Standalone release status
+### Install the standalone testing build
 
-ZFS SnapSync has not yet been published. Do not use the old `zfs.autosnapshot.plg`
-artifacts to install it. The existing UI preview uses the original plugin identity
-and does not switch its clients to SnapSync automatically.
+In **Plugins → Install Plugin**, paste:
 
-Once a standalone release is published, install its `dist/zfs.snapsync.plg` URL
-through **Plugins → Install Plugin**, then open **Settings → ZFS SnapSync**.
-Subsequent updates follow that manifest's branch URL through **Check for Updates**.
+```text
+https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/fix/coordinator-completion/dist/zfs.snapsync.plg
+```
+
+Then open **Settings → ZFS SnapSync**. Subsequent SnapSync releases on this branch
+are available through **Plugins → Check for Updates**. Version `2026.09.18.01`
+is newer than the previous UI preview, but uses the new `zfs.snapsync` identity;
+it does not upgrade or remove the original plugin automatically.
+
 Stop existing snapshot, replication and migration work before installing or
-updating. Configure SnapSync explicitly; it does not import the original plugin's
-configuration, queue or batch approvals. Disable the original schedulers before
-enabling SnapSync on the same datasets.
+updating. Disable the original schedulers before enabling SnapSync on the same
+datasets. Configure SnapSync explicitly; it does not import the original plugin's
+configuration, queue or batch approvals. Start testing on disposable datasets.
 
 ### Building an installable branch package
 
 On a development machine with Git, Bash, tar and xz:
 
 ```bash
-git clone --branch fix/coordinator-completion --single-branch https://github.com/adnanklink/zfssnapsync-auto-unraid.git
-cd zfssnapsync-auto-unraid
+git clone --branch fix/coordinator-completion --single-branch https://github.com/adnanklink/zfsautosnapshot-unraid.git
+cd zfsautosnapshot-unraid
 
 # Choose a new, unused version for each publication.
 ./scripts/build-release.sh <version> \
-  https://raw.githubusercontent.com/adnanklink/zfssnapsync-auto-unraid/fix/coordinator-completion/dist
+  https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/fix/coordinator-completion/dist
 ```
 
 The build verifies package contents and standalone paths, and generates
@@ -106,10 +110,10 @@ branches require an explicit release build. After publication on this branch, th
 installation URL will be:
 
 ```text
-https://raw.githubusercontent.com/adnanklink/zfssnapsync-auto-unraid/fix/coordinator-completion/dist/zfs.snapsync.plg
+https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/fix/coordinator-completion/dist/zfs.snapsync.plg
 ```
 
-This is the intended URL, **not a currently published SnapSync release**.
+This is the testing channel URL; its manifest also supplies the update URL.
 
 ## First setup
 
@@ -266,7 +270,7 @@ When reporting a bug, include:
 GitHub issues:
 
 ```text
-https://github.com/adnanklink/zfssnapsync-auto-unraid/issues
+https://github.com/adnanklink/zfsautosnapshot-unraid/issues
 ```
 
 Original upstream support thread (identify this development fork when reporting issues):
