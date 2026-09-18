@@ -866,5 +866,32 @@ ZFS container. The native scheduled/anchor fixture recorded 6,133 boot-path call
 and zero file-write opens or path metadata mutation attempts; the fixture also
 ran with boot flash read-only. This traces that fixture, not every plugin path.
 The actual Run Now endpoint and browser policy default/edit/cancel/preservation
-checks pass. Expanded pressure fault injection remains acceptance work. No release
+checks pass. The additional pressure fault coverage is recorded below. No release
 artifacts were added to the repository or published.
+
+
+## Pressure cleanup fault coverage
+
+Added two fixtures to the reliability suite without changing production behavior:
+
+- `pressure_faults.php` exercises torn RAM journal appends, discarding unsealed
+  manifests before re-preparation, preserving sealed manifests on restart,
+  out-of-order chunks, conflicting replay, invalid seals, stale worker attempts,
+  configuration invalidation, and cancellation between deletions. It traverses
+  51 candidates across two chunks using actual coordinator transitions, restarts
+  after a completed child, mixes completed/skipped results, and verifies no replay
+  or transfer admission after exhaustion. Sufficient space stops further deletion;
+  monotonic freeing deadlines reset on progress and fail after five stalled minutes
+  without consuming execution retries while waiting.
+- `pressure_preflight.php` invokes the actual PHP pre-deletion executable with
+  deterministic read-only ZFS command fixtures. It covers external space recovery,
+  receiver/selected/newest/base identity replacement, keep-all cutoff equality,
+  shared-GUID references, changed configuration revisions, invalid measurements,
+  impossible destination/ancestor quotas, and pending or unknown freeing work.
+  Every mocked ZFS invocation is asserted to be a read-only property query.
+
+Both fixtures pass; the full reliability suite passes with them included. This
+adds fault-path coverage to the earlier real-ZFS and read-only-flash evidence;
+these deterministic preflight cases themselves do not destroy real snapshots.
+The broader standalone release gates remain tracked separately. Nothing deployed
+or published by this coverage change.

@@ -236,3 +236,17 @@ container. Retention fixtures cover exact prefix scope, newest/base/shared-GUID
 protection, holds, clones and replacement identities; space fixtures cover configured
 headroom, incomplete metadata, overflow and measured freeing waits. Full-path
 syscall tracing and shared cleanup ownership remain outstanding.
+
+
+### Retention anchor fault-path coverage (2026-09-18)
+
+The reliability suite now includes `pressure_faults.php` and
+`pressure_preflight.php`. Coordinator tests cover interrupted journal publication,
+manifest replay/order/sealing, restart across child completion, 51-item traversal,
+configuration changes, cancellation between deletions, sufficient-space stopping,
+exhaustion, and monotonic freeing deadlines. The actual preflight CLI is tested
+against deterministic ZFS property responses for changed identities, keep-all and
+shared-reference protection, external space recovery, and quota/freeing failures.
+The complete reliability suite and the extended chunk-traversal fixture pass.
+Production code was unchanged; previous real-ZFS/flash-trace evidence remains
+separate from these injected fault cases.
