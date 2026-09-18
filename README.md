@@ -1,352 +1,174 @@
 # ZFS SnapSync for Unraid
 
-ZFS SnapSync is an Unraid plugin for managing ZFS snapshots from the WebGUI. You choose the datasets, set the retention rules, and decide whether it runs on a schedule or only when you press Run Now.
+Manage snapshots, replicate datasets, and follow storage operations from one Unraid WebGUI. ZFS SnapSync brings scheduled snapshots, retention cleanup, local replication, snapshot browsing, and dataset migration into a shared workspace.
 
-The plugin also includes ZFS Send replication, a Dataset Migrator, Snapshot Manager bulk and cleanup tools, and a diagnostics download for support.
+**Current testing release: `2026.09.18.01` · Requires Unraid 6.12.0 or newer**
 
-## Standalone development: `fix/coordinator-completion`
+SnapSync is a standalone plugin under active development. Local replication uses the new coordinator; network replication and some recovery integration remain unfinished. Start testing with disposable datasets. See [Testing and known limitations](#testing-and-known-limitations) before enabling unattended work.
 
-This branch develops **ZFS SnapSync**, with plugin ID `zfs.snapsync`. Source
-configuration, runtime paths, services, settings routes and packaging now use its
-independent identity. Default snapshot prefixes are `snapsync-auto-` and
-`snapsync-send-`; manual holds use `snapsync-manual`.
+## Install and update
 
-**Standalone testing release: `2026.09.18.01`.** Install the SnapSync manifest
-below to test this branch. This is a development build with unfinished release
-gates. It has an independent plugin identity; old Auto Snapshot preview clients
-are not switched automatically. Stop existing work and disable the original
-plugin's schedules before using SnapSync on the same datasets. Independent paths
-do not coordinate their ZFS operations. Configuration and pending work are not
-automatically imported.
-See [implementation progress](docs/job-coordination-progress.md) for completed work
-and outstanding replication, packaging and real-host verification.
-
-The interface now has a shared sidebar and six sections: **Overview, Snapshots, Replication, Activity, Tools, and Help**. It adapts to light/dark Unraid themes and smaller screens. Snapshot browsing is integrated directly, Automation has its own tab, replication jobs use Add/Edit drawers, and Activity brings recent operations and logs together. Dataset Migrator requires a preview and review acknowledgment before Start. Existing configuration and execution safeguards are preserved.
-
-Overview reads current runtime records and saved configuration. Missing sources are shown as unavailable, and recent records are not a complete historical ledger. Editing configuration does not change a running command; Save or Discard before using Run Now.
-
-Implemented in the current source:
-
-- Runtime queues, completion cursors, batch manifests, migration progress and coordinator records live in RAM. Flash is reserved for configuration, explicit Cancel/Resume decisions, and essential migration recovery checkpoints.
-- A PHP coordinator with a local Unix socket owns Auto Snapshot runs, Snapshot Manager item journals, individual deletion attempts and batch cancellation. It records attempt ownership before granting execution and verifies that old process groups have stopped before recovery.
-- Queued automatic snapshots can adopt updated settings before their first attempt, preserving the run ID and schedule occurrence. Changed manual requests require fresh approval; converted schedules retain their new first-run timing.
-- Snapshot Manager Send uses native coordinator tasks for local full/incremental transfers and explicit validated Retry. Recursive scheduled execution and prerequisite retention cleanup are implemented and tested through the coordinator, including measured space after cleanup. Local automatic timers and Run Now use this graph; native SSH remains unfinished; see the [standalone roadmap](docs/standalone-development.md).
-- Auto Snapshot cancellation persistently pauses its schedule until Resume. Status distinguishes a saved cancellation from completed worker shutdown.
-- New interval schedules start one interval after Save; Run Now does not move the cadence. Existing schedules preserve their actual alignment until explicitly converted. Send now has daily start-time and weekly day/time controls with shared schedule previews.
-- Waiting sends protect exact planned snapshots and bases so prerequisite cleanup can free space. Exhausted send failures remain visible while later scheduled occurrences can run.
-- Replication freezes recursive membership and snapshot/dataset GUIDs before publishing child transfers. Recovery preserves completed children; finalization requires matching identity evidence from every expected child. Older pending finalizers without this evidence fail safely.
-- Replication cleanup now requests coordinator-owned deletion workers. Work arriving during worker exit is retained and retried after verified shutdown.
-- Snapshot Manager executes at most 50 items per attempt, reuses run IDs for duplicate submissions, and requires fresh review for failed-only retries. Status polling does not start workers or rewrite manifests.
-- Dataset Migrator shares dataset locks with snapshot/send work and keeps safety checkpoints separate from recurring progress updates.
-
-Runtime history is lost on reboot. Interrupted manual sends require explicit Retry; interrupted batches require a fresh review, and earlier per-item results may be unavailable. Persistent schedule pauses and migration recovery checkpoints survive. Exactly-once execution across reboot is not guaranteed.
-
-## Remaining plan
-
-- Complete native network replication integration; local scheduled replication and Run Now already use the coordinator.
-- Finish shared cleanup ownership and cancellation across multiple dependent replication runs.
-- Extend automatic replanning to work that has already started and to replication, with per-item completion evidence; complete reboot recovery based only on proven ZFS metadata.
-- Extend dependency/recovery status and verify all execution paths for zero routine flash writes, bounded idle work, and clock/timezone changes.
-
-Stage-one and reliability suites, actual PHP endpoints, Chromium tests, PHP/ShellCheck checks, and temporary package verification have passed. Scoped read-only-flash syscall tests found no attempted boot-flash writes. Disposable real-ZFS tests cover full/incremental transfer, cancellation/resume, prerequisite cleanup under a quota shortage, and preservation of bases and unrelated snapshots. These checks do not certify the unfinished integration.
-
-See the [implementation record and flash-write inventory](docs/job-coordination-progress.md) and [reliability audit](docs/reliability-audit.md) for coverage and remaining limits.
-
-## What it does
-
-- Creates snapshots for the ZFS datasets you select.
-- Cleans up old plugin-created snapshots using keep-all, daily, and weekly retention windows.
-- Watches pool free space and can prune older eligible snapshots before a run when space gets low.
-- Lets you preview a run with Dry Run mode before allowing snapshot changes.
-- Shows run output and debug logs in the WebGUI.
-- Replicates datasets with ZFS Send using separate send checkpoint snapshots.
-- Provides a redacted diagnostics zip for GitHub issues.
-
-The plugin only manages snapshots that match its configured snapshot prefix. By default that prefix is `snapsync-auto-`.
-
-## Install
-
-Minimum Unraid version: `6.12.0`, the first Unraid release series with native ZFS pool support.
-
-### Install the standalone testing build
-
-In **Plugins → Install Plugin**, paste:
+In **Plugins → Install Plugin**, paste this URL:
 
 ```text
 https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/fix/coordinator-completion/dist/zfs.snapsync.plg
 ```
 
-Then open **Settings → ZFS SnapSync**. Subsequent SnapSync releases on this branch
-are available through **Plugins → Check for Updates**. Version `2026.09.18.01`
-is newer than the previous UI preview, but uses the new `zfs.snapsync` identity;
-it does not upgrade or remove the original plugin automatically.
+Open **Settings → ZFS SnapSync** after installation. Future builds on this testing channel appear through **Plugins → Check for Updates**. The manifest tracks `fix/coordinator-completion`; this is not the stable `main` channel. The repository retains its historical name, but this manifest installs `zfs.snapsync`.
 
-Stop existing snapshot, replication and migration work before installing or
-updating. Disable the original schedulers before enabling SnapSync on the same
-datasets. Configure SnapSync explicitly; it does not import the original plugin's
-configuration, queue or batch approvals. Start testing on disposable datasets.
+Stop snapshot, replication, and migration work before installing or updating. If you have ZFS Auto Snapshot installed, disable its schedules and stop its workers before using SnapSync on the same datasets. The plugins have separate configuration and do not coordinate their operations. SnapSync does not import the other plugin's settings, queues, or approvals, and installing it does not remove the other plugin.
 
-### Building an installable branch package
+## Get started
 
-On a development machine with Git, Bash, tar and xz:
+1. Open **Snapshots → Automation** and select a test dataset.
+2. Review its snapshot prefix, retention windows, and free-space target.
+3. Use Auto Snapshot's **Dry Run** to inspect planned actions before enabling its schedule.
+4. Save settings, then use **Run Now** or wait for the first scheduled occurrence.
+5. Follow the run in **Activity** and inspect its snapshots under **Snapshots**.
+6. To test replication, add a local job under **Replication**, save it, and run it against a disposable destination.
 
-```bash
-git clone --branch fix/coordinator-completion --single-branch https://github.com/adnanklink/zfsautosnapshot-unraid.git
-cd zfsautosnapshot-unraid
+New installations start with no Auto Snapshot datasets selected and its schedule disabled. Save or discard pending settings before Run Now. Dry Run applies to Auto Snapshot; it is not a global simulation mode for replication or migration.
 
-# Choose a new, unused version for each publication.
-./scripts/build-release.sh <version> \
-  https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/fix/coordinator-completion/dist
-```
+## The workspace
 
-The build verifies package contents and standalone paths, and generates
-`dist/zfs.snapsync.plg`, its `.txz` package, icon and a root manifest copy. Its update
-URL uses the supplied base URL. Update `VERSION`, `CHANGELOG.md` and
-`zfs.snapsync.plg.in` before publishing these generated artifacts in a separate
-release commit. A local build or source push does not publish an installable URL.
+| Section | What you can do |
+| --- | --- |
+| **Overview** | See current operations, schedule state, and unavailable services. |
+| **Snapshots** | Browse and filter snapshots, review bulk actions, preview cleanup, and configure Auto Snapshot. |
+| **Replication** | Add or edit send jobs, configure retention and connections, and start runs. |
+| **Activity** | Follow running work, dependency waits, failures, cancellation, and available recovery actions. |
+| **Tools** | Preview dataset migrations and download diagnostics. |
+| **Help** | Find guidance and support links. |
 
-The release workflow automatically publishes only `main` and `testing`; other
-branches require an explicit release build. After publication on this branch, the
-installation URL will be:
+The interface adapts to light and dark Unraid themes and smaller screens. Runtime views describe the current boot, not a permanent historical ledger.
 
-```text
-https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/fix/coordinator-completion/dist/zfs.snapsync.plg
-```
+## Snapshots and retention
 
-This is the testing channel URL; its manifest also supplies the update URL.
+Auto Snapshot creates snapshots for selected datasets and applies three retention windows. Defaults are:
 
-## First setup
+| Snapshot age | Normal retention |
+| --- | --- |
+| Up to 14 days | Keep every snapshot. |
+| After 14 days, through 30 days | Keep one per day. |
+| After 30 days, through 183 days | Keep one per week. |
+| Older than 183 days | Eligible for cleanup, subject to protection checks. |
 
-The plugin starts safe: no datasets are selected and the schedule is disabled until you save your own settings.
+Configure these windows in the WebGUI. Automatic cleanup uses managed snapshot prefixes and excludes protected snapshots. Holds, clones, replication references, and incomplete metadata can prevent deletion.
 
-Basic setup:
+Auto Snapshot's free-space cleanup is separate from age-based retention. It can consider eligible snapshots from other selected datasets on the same pool when they can relieve the relevant space constraint. Unselected datasets are excluded. Local replication has a narrower policy, described below.
 
-1. Select the datasets you want the plugin to manage.
-2. Set a free-space target for each dataset's pool, such as `100G` or `2T`.
-3. Check the snapshot prefix. The default is usually fine.
-4. Choose your retention windows.
-5. Choose a schedule, or leave it disabled and use Run Now.
-6. Save settings.
+### Browse and review actions
 
-If you want to see what would happen first, turn on Dry Run mode and start a manual run. Dry Run logs the planned actions without creating or deleting snapshots.
+Snapshot Manager works on one dataset at a time, with search, filters, and pagination. It supports large inventories and selections across pages. **Select all matching** captures a fixed set of snapshot identities; snapshots created afterward do not join that selection.
 
-## Retention and free-space cleanup
+- Bulk Delete, Add plugin hold, and Release plugin hold require review of the selected snapshots. External holds cannot be released by SnapSync.
+- Send and Rollback act on a single selected snapshot. Rollback refuses to remove newer, unselected snapshots.
+- Cleanup previews make no changes, expire after five minutes, and bind approval to exact names and GUIDs. Changed configuration or identities require review or cause items to be skipped.
+- Explicit requests contain at most 500 identities, and batches execute in chunks of at most 50. Failed-only retry opens a fresh review.
 
-Retention has three normal windows:
+**Used** and **Written** are different ZFS measurements. Zero does not mean a snapshot is empty, and Written totals do not predict how much space deletion will reclaim.
 
-- Keep every snapshot for the newest period.
-- After that, keep one snapshot per day.
-- After that, keep one snapshot per week.
+## Replication
 
-Anything older than the weekly window is eligible for cleanup, as long as it was created with the configured snapshot prefix.
+A replication job specifies a source, destination, schedule, whether to include child datasets, and a destination free-space target. Add or edit a job, choose **Done**, then **Save replication**. Monitor execution in **Activity**.
 
-The default example config uses:
+Local scheduled jobs and configured-job Run Now use coordinator-owned preparation, cleanup, space checks, transfer, and verification. Recursive membership is captured for the run, and every expected child must report verified success before the run completes. Snapshot Manager also supports explicit local sends and validated Retry of interrupted receives.
 
-- keep all snapshots for 14 days
-- keep daily snapshots until 30 days
-- keep weekly snapshots until 183 days
+Replication checkpoints use a separate prefix from Auto Snapshot. The defaults are `snapsync-auto-` and `snapsync-send-`. Prefixes must differ and neither may begin with the other. Changing a prefix does not rename or delete existing snapshots.
 
-You can change those values in the WebGUI.
+SnapSync verifies destination identity, snapshot GUIDs, incremental bases, and resume targets. It does not automatically destroy a destination or force receive rollback to make a transfer succeed. An existing receiver without a suitable base requires explicit resolution.
 
-Free-space cleanup is separate from normal age-based retention. Each selected dataset can have a pool free-space target. If a pool is below that target before a run, the plugin looks for eligible old snapshots that can free space on that same pool.
+SSH jobs currently use the existing network execution path; native coordinator SSH integration is unfinished. The incomplete spiped transport is hidden from the WebGUI. The local low-space policy below does not apply to network jobs.
 
-That does not always mean it deletes from only the dataset that showed the warning. If several selected datasets share the same storage pool, or share quota space in a way where deleting a snapshot from one can free space for another, the plugin may prune the older eligible snapshot from the other dataset first. The goal is to free space safely while keeping the newest useful snapshots.
+### Optional low-space anchor cleanup
 
-Unselected datasets are not part of automatic cleanup.
+Local jobs default to **Preserve retained snapshots**. You can enable **Delete older retained snapshots when space is needed** for an individual job. Saving that choice authorizes future automatic removal of older daily/weekly restore points when ordinary retention cannot provide enough space.
 
-## Scheduling
+This policy:
 
-You do not have to write cron by hand unless you want to.
+- Preserves every snapshot in the keep-all window, the newest checkpoint, required replication references, held snapshots, and clones.
+- Considers only that job's snapshots on the exact receiving dataset. Recursive children are evaluated individually.
+- Deletes eligible anchors oldest first, one at a time, and checks measured space after each deletion.
+- Stops when space is sufficient or fails with a space reason when protected history or quotas prevent progress.
 
-The WebGUI supports:
+Space approval requires the stream estimate plus the greater of the configured free-space target, 16 MiB, or 5% of the estimate. Estimated reclaimable bytes never substitute for measuring available space.
 
-- disabled / manual only
-- every N minutes
-- every N hours
-- daily at a chosen time
-- weekly on a chosen day and time
-- custom cron for advanced use
+The opt-in applies to local scheduled jobs and configured-job Run Now. It grants no cleanup authority to Snapshot Manager manual sends.
 
-Saving settings updates the scheduler. Cron provides a once-per-minute watchdog; Auto Snapshot execution is submitted to the coordinator. New elapsed intervals are anchored at Save. Legacy schedules show their actual alignment and require explicit conversion; saving unrelated settings does not convert them. New calendar schedules run once through repeated daylight-saving times and catch up at the first valid time after a nonexistent local time.
+## Scheduling and cancellation
 
-## Running manually
+Auto Snapshot offers interval, daily, weekly, and custom five-field cron schedules. Replication offers its configured intervals and daily/weekly start-time controls, using the host timezone.
 
-Use the Run Now button in the WebGUI, or run this from a shell:
+New elapsed intervals start one interval after Save. Run Now and completion times do not shift their cadence. Existing schedule formats preserve their timing until explicitly converted. Missed local scheduled occurrences coalesce into one latest catch-up; a job cannot overlap its own active run. Exhausted retries leave the occurrence accepted so it is not immediately recreated.
 
-```bash
-/usr/local/sbin/zfs_snapsync
-```
+Canceling an automatic or configured replication run persistently pauses its schedule until **Resume**. The cancellation decision is saved before workers are signaled. Activity distinguishes that committed decision from verified worker shutdown. A snapshot already deleted before cancellation cannot be restored by canceling the run.
 
-## ZFS Send
+Configuration saves are atomic and revision checked. If another page changed the settings, reload before saving. The UI reports configuration-save success separately from scheduler-application success.
 
-Open **Replication** to replicate selected datasets to destination datasets. Add or Edit a job in its drawer, choose Done, then Save replication. Shared connection and tuning settings are grouped separately. Monitor transfers in **Activity**.
+## Runtime state and recovery
 
-Each send job has:
+Recurring queues, progress, batch manifests, and coordinator history live in RAM. Boot flash stores configuration, explicit control decisions such as Cancel/Resume, and essential migration recovery checkpoints.
 
-- a source dataset
-- a destination dataset
-- a frequency, with a local start time for daily schedules and day/time for weekly schedules
-- an option to include child datasets
-- a destination free-space target
+| Event | What to expect |
+| --- | --- |
+| Coordinator restart in the same boot | RAM records can be recovered after old worker shutdown is verified. |
+| Host reboot or power loss | Runtime history is lost. Automatic work plans again from current configuration and ZFS metadata. |
+| Interrupted manual send | Explicit recovery review and validated Retry are required; it is not automatically resumed after reboot. |
+| Interrupted snapshot batch | Review again; earlier per-item results may no longer be available. |
+| Saved schedule pause | Remains paused across reboot until Resume. |
 
-ZFS Send uses its own send checkpoint snapshots instead of the normal autosnapshot prefix. That keeps replication checkpoints separate from regular autosnapshot cleanup.
-
-The send page also has a queue view. Scheduled sends and one-off sends go through the same queue, so you can see what is waiting, running, failed, or ready to retry. Active jobs show step and progress updates when the browser supports it.
-
-Transport choices are per send job:
-
-- Local sends replicate to a destination dataset visible on the same Unraid host.
-- SSH transport can send over the network using non-interactive SSH. Configure the remote host, port, user, and optional local private-key path; the plugin stores connection metadata and paths, not raw passwords or private-key contents.
-- spiped code and config plumbing are retained for future encrypted transport work, but the feature is incomplete and intentionally hidden from the WebGUI. Use SSH for active network sends until spiped receiver-side inventory and receive verification are implemented.
-
-Destination cleanup uses the same keep-all, daily, and weekly style retention policy. The newest confirmed send checkpoint is protected so the next incremental send still has a base snapshot. For SSH sends, cleanup/protection uses remote SSH destination snapshots instead of assuming the destination dataset exists locally.
+Exactly-once scheduling across reboot is not guaranteed. Discovered snapshots or resume tokens do not recreate manual execution approval.
 
 ## Dataset Migrator
 
-Dataset Migrator is for reorganizing a dataset that has several top-level folders and turning those folders into real child datasets.
+**Tools → Dataset Migrator** turns top-level folders into child datasets. For example, separate application folders in an `appdata` dataset can become datasets with independent snapshot histories.
 
-A common use case is an `appdata` dataset for Docker containers. The migrator can turn each application's configuration folder into its own child dataset. Then each app can have its own snapshots, so you can roll back one damaged or deleted app folder without reverting the entire appdata dataset and losing changes from every other app.
+Choose a parent dataset, generate a preview, review the proposed folders, and acknowledge the plan before starting. The migrator checks names and existing datasets, records container restoration information, stops affected containers, copies data, verifies it with manifests and checksums, then restores container settings and restarts them.
 
-The migrator is careful on purpose:
+Verification can take time. Stop external watchdogs that could restart containers during migration. If space becomes insufficient, the migration can wait for space before continuing. Recovery checkpoints survive reboot; recurring progress does not.
 
-1. You choose the parent dataset.
-2. It scans the top-level folders and shows the migration plan.
-3. It skips unsafe names, existing child datasets, and anything that does not look safe to move.
-4. Before copying, it records running Docker containers.
-5. It stops those containers and temporarily disables their Docker restart policy.
-6. It copies each folder into a new child dataset.
-7. It verifies the copy with file manifests and checksums.
-8. It restores Docker restart policies and starts the containers again.
+## Testing and known limitations
 
-Because it verifies the copy, it can be slow. That is expected.
+This testing build has passed reliability and stage-one suites, actual PHP endpoint checks, browser tests, PHP/Bash checks, ShellCheck, and package-content verification. Disposable ZFS pools have exercised transfers, cancellation and resume, low-space prerequisite cleanup, and retained-anchor deletion. Pressure fault tests cover interrupted journals, stale workers, chunk boundaries, configuration changes, cancellation between deletions, and space recovery.
 
-Stop any watchdogs or outside tools that might restart containers before you use it. If something relaunches containers during the migration, the tool may abort to avoid an unsafe copy. If free space runs low, the migration can pause and wait for you to free enough space before continuing.
+The traced native anchor-cleanup fixture ran with `/boot` read-only and recorded no file-write opens or path-metadata mutation attempts on boot flash. This is scoped evidence, not verification of every plugin path.
 
-## Snapshot Manager
+Remaining work includes native network replication, independently shared cleanup ownership, broader automatic replanning and recovery, complete per-mutation Auto Snapshot ownership, and all-path release acceptance. These limits are tracked in the [standalone roadmap](docs/standalone-development.md), [implementation record](docs/job-coordination-progress.md), and [reliability audit](docs/reliability-audit.md).
 
-Open **Snapshots → Browse snapshots** for Snapshot Manager. It works on one dataset at a time, with server-side search, filtering and pages of 50, 100 or 250 snapshots (100 by default). It supports large inventories, including 10,000-snapshot datasets. Filter by name, prefix/origin, dates, age, Used/Written bytes, holds, replication protection and pending actions. Dataset search works alongside the pool filter.
+For initial host testing, use disposable source and destination datasets. Exercise a snapshot run, a local transfer, Cancel/Resume, and recovery behavior before enabling recurring work. Keep low-space anchor cleanup off until you have reviewed its retention tradeoff.
 
-Used and Written measure different properties. Used is space exclusively referenced by that snapshot; Written is referenced space written since its predecessor. A zero value does not mean the snapshot contains no files. Written totals are not a reclaimable-space estimate.
+## Diagnostics and support
 
-Shift-click selects or deselects a range on the current page, skipping disabled rows. Selection survives sorting, paging and status refreshes. Changing the dataset or filters clears selection with an explanation. **Select all matching** captures existing snapshot identities; later snapshots do not join it.
+Download diagnostics from **Tools → Diagnostics** and report SnapSync problems in [this repository's issue tracker](https://github.com/adnanklink/zfsautosnapshot-unraid/issues).
 
-Bulk Delete, **Add plugin hold** and **Release plugin hold** open an exact-snapshot review before submission. External holds are displayed separately and cannot be released by the plugin. Send and Rollback act on one snapshot. Rollback refuses to remove newer, unselected snapshots. Ordinary Delete never expands to source/destination trees.
+Include the SnapSync version, Unraid version, operation involved, expected and actual behavior, reproduction steps, and the diagnostics archive. The archive includes redacted configuration, logs, runtime state, and read-only ZFS/system summaries. Review it before sharing.
 
-Large selections upload automatically in requests of at most 500 identities and execute in chunks of at most 50. The review and status panel shows eligible, excluded, queued, completed, skipped and failed items, including individual errors. Duplicate submission of an approved batch does not repeat work. Retry creates a fresh review containing failed items only.
+## Development
 
-**Preview cleanup** offers zero-change cleanup (retaining zero-written anchors and the newest snapshot) and the dataset's configured keep-all/daily/weekly retention policy. Auto Snapshot-managed snapshots are the default scope; retention requires a configured managed dataset. Holds, clones, replication checkpoints/bases, active transfers, pending deletion and incomplete metadata exclude snapshots. Preview makes no changes, expires after five minutes, and binds approval to exact names and GUIDs. Configuration or identity changes require a new preview or cause items to be skipped. Pool-wide low-space cleanup remains a separate automatic action.
-
-Recovery/Repair Tools remain removed. Legacy Snapshot Manager queue files are not replayed by the new batch worker; select and review those actions again.
-
-## Safe cancellation and settings
-
-Cancel saves the cancellation decision before signaling the entire current replication run. It persistently pauses that schedule until **Resume**. Canceled jobs cannot be retried or recreated by stale workers. A real crash can recover after surviving processes from the old attempt have stopped. Schedule completion requires explicit success from every expected child.
-
-Replication refuses destructive reseeding and forced receive rollback. Existing destinations require a verified common base or a matching resumable receive. Destination/base GUIDs and resume targets are checked before transfer. Resolve conflicts explicitly; the plugin will not destroy destination data to make a send succeed.
-
-Auto Snapshot and ZFS Send prefixes must differ, and neither may start with the other: `snap-` conflicts with `snap-send-`; `snap-auto-` and `snap-send-` are allowed. Both pages show the other configured prefix. Existing conflicts block affected automatic cleanup and replication until fixed. Previously used send prefixes remain protected; changing a prefix does not rename or delete snapshots.
-
-**Restore tuning defaults** populates the form; choose Save to apply. Auto Snapshot resets retention to 14/30/183 days and disables the schedule with its default timing, preserving dataset choices, thresholds, prefix and Dry Run. ZFS Send resets retention to 14/30/183, parallelism to 1, rate limit to 0 and preparation concurrency to 16, preserving job definitions/frequencies, prefixes, connections and schedule pauses. Unsaved changes are indicated and trigger a navigation warning. Saves are atomic and reject stale page revisions. A scheduler failure is reported separately when configuration was saved successfully.
-
-During an upgrade or removal, a maintenance marker blocks new work while workers stop. Shutdown is verified before ownership is released. Queue records and permanent lock files survive upgrades. A failed upgrade retains `/boot/config/plugins/zfs.snapsync/maintenance`; rerun installation after resolving the reported shutdown error.
-
-Validation evidence and remaining operational limits are in [the reliability audit](docs/reliability-audit.md).
-
-## Logs and diagnostics
-
-The main settings page includes run output and debug logs.
-
-**Tools → Diagnostics** provides the diagnostics download; Help links to it. The diagnostics zip is meant for GitHub issues and includes redacted plugin config, plugin logs, queue state, and read-only ZFS/zpool/system summaries.
-
-When reporting a bug, include:
-
-- what happened
-- which system was affected
-- how to reproduce it, if you know
-- plugin version
-- Unraid version
-- diagnostics zip
-
-GitHub issues:
-
-```text
-https://github.com/adnanklink/zfsautosnapshot-unraid/issues
-```
-
-Original upstream support thread (identify this development fork when reporting issues):
-
-```text
-https://forums.unraid.net/topic/197348-plugin-zfs-auto-snapshot/
-```
-
-## Files on Unraid
-
-Main config:
-
-```text
-/boot/config/plugins/zfs.snapsync/zfs_snapsync.conf
-```
-
-Main command:
-
-```text
-/usr/local/sbin/zfs_snapsync
-```
-
-Plugin WebGUI files:
-
-```text
-/usr/local/emhttp/plugins/zfs.snapsync/
-```
-
-You can edit the config file by hand if needed, but the WebGUI is the intended path.
-
-## Development notes
-
-Release artifacts can be built locally or by GitHub Actions. Source-change commits do not include generated artifacts. The source template is:
-
-```text
-zfs.snapsync.plg.in
-```
-
-The generated plugin manifest and package are written under `dist/` during the build.
-
-For a normal release:
-
-1. Update `VERSION`.
-2. Update `CHANGELOG.md`.
-3. Update `zfs.snapsync.plg.in`.
-4. Push the branch.
-5. On `main` or `testing`, let GitHub Actions build and commit generated artifacts. Other branches require a manual release workflow or separately published local build; see Install above.
-
-To reproduce a package locally:
+The repository name remains `zfsautosnapshot-unraid`. The standalone plugin ID is `zfs.snapsync`; its configuration is under `/boot/config/plugins/zfs.snapsync/` and WebGUI files under `/usr/local/emhttp/plugins/zfs.snapsync/`.
 
 ```bash
-./scripts/build-release.sh <version> <base_url>
+git clone --branch fix/coordinator-completion --single-branch \
+  https://github.com/adnanklink/zfsautosnapshot-unraid.git
+cd zfsautosnapshot-unraid
+
+./scripts/build-release.sh <new-version> \
+  https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/fix/coordinator-completion/dist
 ```
+
+Update `VERSION`, [CHANGELOG.md](CHANGELOG.md), and `zfs.snapsync.plg.in` for each release. The build verifies package contents and generates the manifest, package, and icon. Commit generated artifacts separately from source changes. Building or pushing source alone does not publish an installable update.
+
+The release workflow runs automatically on `main` and `testing`, or explicitly through workflow dispatch. This development branch uses an explicit publication step. Endpoint and ZFS tests require the documented disposable test environment; they use production-style paths and must not be run casually on a live Unraid host.
+
+## Credits
+
+ZFS SnapSync began from **ZFS Auto Snapshot for Unraid**, created by **Brandon Stone ([bstone108](https://github.com/bstone108))**. Thank you to Brandon and the original contributors for the snapshot-management foundation this project builds on.
+
+- [Original ZFS Auto Snapshot repository](https://github.com/bstone108/zfsautosnapshot-unraid)
+- [Original Unraid community thread](https://forums.unraid.net/topic/197348-plugin-zfs-auto-snapshot/)
+
+SnapSync is developed independently. Please report SnapSync-specific issues in this repository rather than to the original project's maintainers.
 
 ## License
 
-MIT License.
-
-### Local replication: low-space retention override
-
-Each local replication job defaults to **Preserve retained snapshots**. In its
-editor, you may enable **Delete older retained snapshots when space is needed**.
-Saving this choice authorizes automatic removal of older daily/weekly restore
-points when ordinary retention cannot provide enough space for a transfer.
-
-Cleanup preserves every snapshot in the keep-all window, the newest checkpoint,
-required replication bases and resume references, held snapshots, and clones.
-It only considers this job's snapshots on the exact receiving dataset; recursive
-children are handled individually. Anchors are removed oldest first, one at a
-time, with measured space checked again after each deletion. The target includes
-the transfer estimate plus the greater of the configured free-space target,
-16 MiB, or 5% of the estimate. If protected history or quotas prevent success,
-the run fails with a space reason instead of weakening these protections.
-
-This setting applies to native local scheduled runs and configured-job Run Now.
-It does not authorize cleanup for Snapshot Manager manual sends or network jobs.
-Cancel pauses the schedule until Resume. Runtime candidate lists and history are
-RAM-only: coordinator restarts can recover them within the same boot; reboot
-loses them and automatic work must plan again from current ZFS metadata.
+[MIT License](LICENSE). Original copyright and license notices are retained.
