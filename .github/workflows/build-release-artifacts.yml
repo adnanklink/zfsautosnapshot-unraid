@@ -35,19 +35,22 @@ jobs:
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "BASE_URL=https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${GITHUB_REF_NAME}/dist" >> "$GITHUB_ENV"
 
-      - name: Require a new version before publishing
+      - name: Validate an existing release or prepare a new version
         shell: bash
         run: |
           set -euo pipefail
           CURRENT_PACKAGE="dist/zfs-snapsync-${VERSION}-noarch-1.txz"
 
           if git ls-files --error-unmatch "$CURRENT_PACKAGE" >/dev/null 2>&1; then
-            echo "Release package ${CURRENT_PACKAGE} already exists in the branch." >&2
-            echo "Bump VERSION, CHANGELOG.md, and zfs.snapsync.plg.in before publishing a new build." >&2
-            exit 1
+            ./scripts/verify-release.sh "$CURRENT_PACKAGE"
+            cmp dist/zfs.snapsync.plg zfs.snapsync.plg
+            grep -Fq "version=\"${VERSION}\"" dist/zfs.snapsync.plg
+            grep -Fq "pluginURL=\"${BASE_URL}/zfs.snapsync.plg\"" dist/zfs.snapsync.plg
+            echo "RELEASE_EXISTS=true" >> "$GITHUB_ENV"
           fi
 
       - name: Build release artifacts
+        if: env.RELEASE_EXISTS != 'true'
         shell: bash
         run: |
           set -euo pipefail

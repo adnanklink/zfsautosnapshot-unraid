@@ -5,10 +5,10 @@
 <section class="ui-card"><h2>Looking for logs?</h2><p>Find current work and recent results in Activity. Open the relevant operation to see available details.</p><a class="ui-subtle-link" href="<?= zfsas_ui_url('activity') ?>">Go to Activity →</a></section>
 
 <?php require_once __DIR__ . '/../interface-settings.php'; $interface = zfsas_interface_read('/boot/config/plugins/zfs.snapsync'); ?>
-<section class="ui-card"><h2>Interface</h2><p>Add a ZFS SnapSync tab to Unraid’s main navigation. The Settings entry remains available.</p>
+<section class="ui-card"><h2>Interface</h2><p>Add a SnapSync tab to Unraid’s main navigation. The Settings entry remains available.</p>
 <form id="interface-settings">
 <input type="hidden" name="revision" value="<?= zfsas_ui_h($interface['revision']) ?>">
-<label><input type="checkbox" name="show_tab" <?= $interface['enabled'] ? 'checked' : '' ?>> Show ZFS SnapSync in the Unraid navigation</label>
+<label><input type="checkbox" name="show_tab" <?= $interface['enabled'] ? 'checked' : '' ?>> Show SnapSync in the Unraid navigation</label>
 <p><button type="submit" class="btn">Save interface preference</button> <a id="interface-reload" class="btn" href="/Settings/ZFSSnapSync?section=tools" hidden>Reload navigation</a></p>
 <p id="interface-status" role="status" aria-live="polite"></p>
 </form></section>

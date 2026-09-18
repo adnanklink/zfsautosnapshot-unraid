@@ -18,7 +18,7 @@ try {
     verify(zfsas_interface_read($dir)['enabled'], 'Stale save changed state');
     $page = file_get_contents(__DIR__ . '/../../source/usr/local/emhttp/plugins/zfs.snapsync/ZFSSnapSyncTab.page');
     $header = parse_ini_string(explode('---', $page)[0]);
-    verify($header['Menu'] === 'Tasks:85' && $header['Name'] === 'ZFS SnapSync', 'Top-level tab missing or mislabeled');
+    verify($header['Menu'] === 'Tasks:85' && $header['Name'] === 'SnapSync', 'Top-level tab missing or mislabeled');
     $condition = str_replace('/boot/config/plugins/zfs.snapsync', $dir, $header['Cond']);
     verify(eval('return ' . $condition . ';') === true, 'Enabled tab hidden');
     zfsas_interface_save($dir, false, $enabled['revision']);

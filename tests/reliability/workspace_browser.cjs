@@ -46,6 +46,10 @@ summary.operations.push({id:'coordinator:native',nativeId:'native-run',type:'rep
  }
  await page.waitForTimeout(500);
  assert.equal(await page.locator('.zfsas-workspace').count(),1,query);assert.equal(await page.locator('h1').count(),1,query);assert.equal(await page.locator('iframe').count(),0);
+ if(query==='section=activity' || query.endsWith('tab=automation')){
+ const groups=query==='section=activity' ? [['#activity-state','#activity-refresh']] : [['#dataset_pool_filter','#dataset_select_visible','#dataset_clear_visible','#dataset_select_all','#dataset_clear_all'],['#manual_run','#zfsas_save_btn'],['[data-cancel]','[data-resume]']];
+ for(const selectors of groups){const boxes=await Promise.all(selectors.map(selector=>page.locator(selector).boundingBox()));for(const box of boxes.slice(1)){assert(Math.abs((boxes[0].y+boxes[0].height)-(box.y+box.height))<3,'Misaligned controls: '+selectors.join(', '));}}
+ }
  if(query==='section=overview'){const button=page.getByRole('button',{name:'Details',exact:true}).first();await button.click();await page.getByRole('button',{name:'Show available log'}).click();await page.waitForTimeout(2300);assert.match(await page.locator('#operation-detail-log').textContent(),/Test log/);await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.getElementById('operation-detail').open);assert(await button.evaluate(el=>el===document.activeElement));
  await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));});const previous=summaryRequests;await page.waitForTimeout(2200);assert.equal(summaryRequests,previous,'Hidden Overview polled');await page.evaluate(()=>{delete document.hidden;document.dispatchEvent(new Event('visibilitychange'));});}
  if(query==='section=activity'){

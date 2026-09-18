@@ -2,6 +2,8 @@
 <PLUGIN name="zfs.snapsync" author="Adnan Nashawaty" version="__VERSION__" icon="zfs-snapsync.png" pluginURL="__BASE_URL__/zfs.snapsync.plg" support="https://github.com/adnanklink/zfsautosnapshot-unraid/issues" min="6.12.0" launch="Settings/ZFSSnapSync">Plain-English ZFS snapshot scheduling, retention cleanup, and low-space protection for Unraid.
   <CHANGES>
 ### __VERSION__ (__BUILD_DATE__)
+- Align Activity and Automation controls; shorten the optional tab to SnapSync.
+- Install and updates now track main; existing SnapSync clients can update normally.
 - New SnapSync logo and plugin icons; optional Unraid navigation tab under Tools → Interface.
 - Update SnapSync author attribution and add an optional developer support link.
 - Fix indefinite Browse loading and add prominent dataset discovery status with retry.

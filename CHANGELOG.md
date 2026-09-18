@@ -5,6 +5,12 @@ It answers one question: "What changed for me?"
 
 ## Development releases
 
+### 2026.09.18.05 (2026-09-18)
+
+- Align Activity toolbar controls and Automation filters and action buttons.
+- Shorten the optional Unraid tab label to SnapSync.
+- Promote the standalone plugin to main and move install/update URLs there. Existing SnapSync testing-channel users can update normally.
+
 ### 2026.09.18.04 (2026-09-18)
 
 - Apply the approved SnapSync logo to the workspace, Help, README, and Unraid plugin icons.

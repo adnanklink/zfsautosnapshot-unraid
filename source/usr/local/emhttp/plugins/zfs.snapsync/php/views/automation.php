@@ -21,9 +21,9 @@
 
         <p id="dataset-discovery-status" role="status" aria-live="polite">Saved selections are shown while datasets load.</p>
           <div class="zfsas-dataset-toolbar">
-            <div class="zfsas-pool-filter">
-              <label for="dataset_name_filter">Dataset search</label><input id="dataset_name_filter" type="search" class="zfsas-input">
-              <label for="dataset_pool_filter">Pool</label>
+
+              <label for="dataset_name_filter">Dataset search<input id="dataset_name_filter" type="search" class="zfsas-input"></label>
+              <label for="dataset_pool_filter">Pool
               <select id="dataset_pool_filter" class="zfsas-select">
                 <option value="__all">All pools</option>
                 <?php foreach ($datasetPools as $poolName => $poolStats) : ?>
@@ -31,8 +31,7 @@
                     <?php echo h($poolName); ?> (<?php echo (int) $poolStats['total']; ?>)
                   </option>
                 <?php endforeach; ?>
-              </select>
-            </div>
+              </select></label>
             <button type="button" class="btn" id="dataset_select_visible">Select shown</button>
             <button type="button" class="btn" id="dataset_clear_visible">Clear shown</button>
             <button type="button" class="btn" id="dataset_select_all">Select all</button>
@@ -115,8 +114,8 @@
         <h3>Run Schedule</h3>
         <div id="auto-coordinator-status">
           <p data-status role="status">Checking coordinator status…</p>
-          <button type="button" class="btn" data-cancel disabled>Cancel run and pause</button>
-          <button type="button" class="btn" data-resume disabled>Resume schedule</button>
+          <div class="toolbar"><button type="button" class="btn" data-cancel disabled>Cancel run and pause</button>
+          <button type="button" class="btn" data-resume disabled>Resume schedule</button></div>
           <p>Runtime history is kept in RAM and is lost on reboot. A saved pause remains until Resume.</p>
         </div>
         <p>Existing interval schedules retain their cron alignment until converted. New intervals first run one interval after Save; Run Now does not change that time.</p>

@@ -4,7 +4,7 @@
 
 Manage snapshots, replicate datasets, and follow storage operations from one Unraid WebGUI. ZFS SnapSync brings scheduled snapshots, retention cleanup, local replication, snapshot browsing, and dataset migration into a shared workspace.
 
-**Current testing release: `2026.09.18.04` · Requires Unraid 6.12.0 or newer**
+**Current testing release: `2026.09.18.05` · Requires Unraid 6.12.0 or newer**
 
 SnapSync is a standalone plugin under active development. Local replication uses the new coordinator; network replication and some recovery integration remain unfinished. Start testing with disposable datasets. See [Testing and known limitations](#testing-and-known-limitations) before enabling unattended work.
 
@@ -13,10 +13,10 @@ SnapSync is a standalone plugin under active development. Local replication uses
 In **Plugins → Install Plugin**, paste this URL:
 
 ```text
-https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/fix/coordinator-completion/dist/zfs.snapsync.plg
+https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/main/dist/zfs.snapsync.plg
 ```
 
-Open **Settings → ZFS SnapSync** after installation. Future builds on this testing channel appear through **Plugins → Check for Updates**. The manifest tracks `fix/coordinator-completion`; this is not the stable `main` channel. The repository retains its historical name, but this manifest installs `zfs.snapsync`.
+Open **Settings → ZFS SnapSync** after installation. Future builds appear through **Plugins → Check for Updates**. The install and update manifest now tracks `main`; this remains a development release with the limitations listed below. Existing SnapSync testing-channel clients receive an update that switches them to `main`. The repository retains its historical name, but this manifest installs `zfs.snapsync`.
 
 Stop snapshot, replication, and migration work before installing or updating. If you have ZFS Auto Snapshot installed, disable its schedules and stop its workers before using SnapSync on the same datasets. The plugins have separate configuration and do not coordinate their operations. SnapSync does not import the other plugin's settings, queues, or approvals, and installing it does not remove the other plugin.
 
@@ -141,7 +141,7 @@ For initial host testing, use disposable source and destination datasets. Exerci
 
 ## Unraid navigation
 
-Enable **Tools → Interface → Show ZFS SnapSync in the Unraid navigation**, save, then select **Reload navigation**. The optional top-level tab is off by default. Its preference survives updates and reboots; the Settings entry remains available.
+Enable **Tools → Interface → Show SnapSync in the Unraid navigation**, save, then select **Reload navigation**. The optional top-level tab is off by default. Its preference survives updates and reboots; the Settings entry remains available.
 
 ## Diagnostics and support
 
@@ -154,17 +154,17 @@ Include the SnapSync version, Unraid version, operation involved, expected and a
 The repository name remains `zfsautosnapshot-unraid`. The standalone plugin ID is `zfs.snapsync`; its configuration is under `/boot/config/plugins/zfs.snapsync/` and WebGUI files under `/usr/local/emhttp/plugins/zfs.snapsync/`.
 
 ```bash
-git clone --branch fix/coordinator-completion --single-branch \
+git clone --branch main --single-branch \
   https://github.com/adnanklink/zfsautosnapshot-unraid.git
 cd zfsautosnapshot-unraid
 
 ./scripts/build-release.sh <new-version> \
-  https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/fix/coordinator-completion/dist
+  https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/main/dist
 ```
 
 Update `VERSION`, [CHANGELOG.md](CHANGELOG.md), and `zfs.snapsync.plg.in` for each release. The build verifies package contents and generates the manifest, package, and icon. Commit generated artifacts separately from source changes. Building or pushing source alone does not publish an installable update.
 
-The release workflow runs automatically on `main` and `testing`, or explicitly through workflow dispatch. This development branch uses an explicit publication step. Endpoint and ZFS tests require the documented disposable test environment; they use production-style paths and must not be run casually on a live Unraid host.
+The release workflow runs automatically on `main` and `testing`, or explicitly through workflow dispatch. Promoted releases include verified packages; the workflow validates these without replacing an existing version. Endpoint and ZFS tests require the documented disposable test environment; they use production-style paths and must not be run casually on a live Unraid host.
 
 ## Support development
 
