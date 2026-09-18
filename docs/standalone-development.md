@@ -36,9 +36,9 @@ incremental transfer, explicit Retry of interrupted receives and verification of
 all expected children. Snapshot Manager Send uses this coordinator path.
 
 The native scheduled-run graph also captures recursive membership, creates
-snapshots with intent metadata and verifies every member. It is exercised through
-the coordinator RPC, but automatic timer admission remains on the previous path
-until native cleanup/retention policy is integrated. SSH, shared cleanup ownership,
+snapshots with intent metadata and verifies every member. Local automatic timers and configured-job Run Now now use this graph. Per-job
+opt-in anchor cleanup preserves the keep-all window and exact replication references
+and admits one measured deletion at a time. SSH, shared cleanup ownership,
 remaining automatic snapshot mutation ownership and full release acceptance are
 still unfinished.
 

@@ -835,3 +835,36 @@ A proposed extension to delete retention anchors under low-space pressure was
 rejected by automatic approval review pending explicit user approval. That command
 made no changes. Native cleanup remains limited to retention-eligible snapshots;
 insufficient space after permitted cleanup fails without deleting retained anchors.
+
+## Opt-in retention anchor cleanup implementation
+
+Local replication now captures a versioned per-job cleanup policy. The default is
+retention-only. The `older_anchors` choice permits daily/weekly anchors outside the
+keep-all window, only within the job's exact receiver dataset and prefix. Newest
+checkpoints, exact replication references, holds and clones remain exclusions.
+Ordinary retention runs first. A bounded RAM manifest is sealed before pressure
+cleanup; the coordinator admits one deletion, waits for verified shutdown, then
+remeasures space. Dataset identity, policy revision, required references, keep-all
+cutoff and available space are checked again under the deletion gate. A fresh
+worker grant precedes mutation. Reference-quota limits and impossible quota targets
+fail without sacrificing anchors; freeing waits have a five-minute no-progress
+limit. No runtime manifest or progress is written to flash.
+
+Local timer admission and Run Now now use native coordinator runs. Run Now uses
+stable command IDs, shares per-job overlap exclusion and does not shift cadence.
+Old local queue admission is disabled; unstarted local records are retired and
+interrupted manual work requires review. Existing active workers retain their
+dataset gates. Network jobs retain their previous execution path. Old local
+scheduled deletion inbox entries are quarantined rather than replayed.
+
+Verification so far: reliability and stage-one suites; policy and real save
+endpoints; native timing and legacy cutover fixtures; browser workspace suite;
+PHP syntax and ShellCheck; temporary package build. The disposable real-ZFS suite
+also passed with retained-anchor pressure cleanup and a read-only flash fixture.
+The policy fixture covers 10,000 snapshots. A host-provided strace and its libraries were mounted read-only into the disposable
+ZFS container. The native scheduled/anchor fixture recorded 6,133 boot-path calls
+and zero file-write opens or path metadata mutation attempts; the fixture also
+ran with boot flash read-only. This traces that fixture, not every plugin path.
+The actual Run Now endpoint and browser policy default/edit/cancel/preservation
+checks pass. Expanded pressure fault injection remains acceptance work. No release
+artifacts were added to the repository or published.

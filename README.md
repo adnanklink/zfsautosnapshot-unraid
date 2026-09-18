@@ -30,7 +30,7 @@ Implemented in the current source:
 - Runtime queues, completion cursors, batch manifests, migration progress and coordinator records live in RAM. Flash is reserved for configuration, explicit Cancel/Resume decisions, and essential migration recovery checkpoints.
 - A PHP coordinator with a local Unix socket owns Auto Snapshot runs, Snapshot Manager item journals, individual deletion attempts and batch cancellation. It records attempt ownership before granting execution and verifies that old process groups have stopped before recovery.
 - Queued automatic snapshots can adopt updated settings before their first attempt, preserving the run ID and schedule occurrence. Changed manual requests require fresh approval; converted schedules retain their new first-run timing.
-- Snapshot Manager Send uses native coordinator tasks for local full/incremental transfers and explicit validated Retry. Recursive scheduled execution and prerequisite retention cleanup are implemented and tested through the coordinator, including measured space after cleanup. Automatic timer routing and native SSH remain unfinished; see the [standalone roadmap](docs/standalone-development.md).
+- Snapshot Manager Send uses native coordinator tasks for local full/incremental transfers and explicit validated Retry. Recursive scheduled execution and prerequisite retention cleanup are implemented and tested through the coordinator, including measured space after cleanup. Local automatic timers and Run Now use this graph; native SSH remains unfinished; see the [standalone roadmap](docs/standalone-development.md).
 - Auto Snapshot cancellation persistently pauses its schedule until Resume. Status distinguishes a saved cancellation from completed worker shutdown.
 - New interval schedules start one interval after Save; Run Now does not move the cadence. Existing schedules preserve their actual alignment until explicitly converted. Send now has daily start-time and weekly day/time controls with shared schedule previews.
 - Waiting sends protect exact planned snapshots and bases so prerequisite cleanup can free space. Exhausted send failures remain visible while later scheduled occurrences can run.
@@ -324,3 +324,25 @@ To reproduce a package locally:
 ## License
 
 MIT License.
+
+### Local replication: low-space retention override
+
+Each local replication job defaults to **Preserve retained snapshots**. In its
+editor, you may enable **Delete older retained snapshots when space is needed**.
+Saving this choice authorizes automatic removal of older daily/weekly restore
+points when ordinary retention cannot provide enough space for a transfer.
+
+Cleanup preserves every snapshot in the keep-all window, the newest checkpoint,
+required replication bases and resume references, held snapshots, and clones.
+It only considers this job's snapshots on the exact receiving dataset; recursive
+children are handled individually. Anchors are removed oldest first, one at a
+time, with measured space checked again after each deletion. The target includes
+the transfer estimate plus the greater of the configured free-space target,
+16 MiB, or 5% of the estimate. If protected history or quotas prevent success,
+the run fails with a space reason instead of weakening these protections.
+
+This setting applies to native local scheduled runs and configured-job Run Now.
+It does not authorize cleanup for Snapshot Manager manual sends or network jobs.
+Cancel pauses the schedule until Resume. Runtime candidate lists and history are
+RAM-only: coordinator restarts can recover them within the same boot; reboot
+loses them and automatic work must plan again from current ZFS metadata.
