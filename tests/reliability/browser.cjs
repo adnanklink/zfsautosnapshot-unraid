@@ -19,7 +19,7 @@ const plugin = path.resolve(__dirname, '../../source/usr/local/emhttp/plugins/zf
       if (url.pathname.endsWith('.js')) return route.fulfill({contentType: 'application/javascript', body: fs.readFileSync(plugin + '/js/' + path.basename(url.pathname), 'utf8')});
       if (url.pathname === '/') return route.fulfill({contentType: 'text/html', body: execFileSync('php', [plugin + '/php/snapshot-manager-page.php'], {encoding:'utf8'})});
       let payload;
-      if (url.pathname.endsWith('snapshot-manager-list.php')) payload = {ok: true, datasets: [{dataset: 'tank/data', pool: 'tank', snapshotCount: 10000}, {dataset: 'tank/other', pool: 'tank', snapshotCount: 10000}]};
+      if (url.pathname.endsWith('dataset-inventory.php')) payload = {ok: true, datasets: [{dataset: 'tank/data', pool: 'tank', snapshotCount: 10000}, {dataset: 'tank/other', pool: 'tank', snapshotCount: 10000}]};
       else if (url.pathname.endsWith('snapshot-manager-dataset.php')) {
         datasetRequests++;
         const dataset = url.searchParams.get('dataset'), search = url.searchParams.get('search') || '';

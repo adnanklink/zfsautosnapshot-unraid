@@ -14,13 +14,13 @@
   <?php endif; ?>
 
   <form method="post" action="<?php echo zfsas_send_h($saveApiUrl); ?>" data-ajax-action="<?php echo zfsas_send_h($saveApiUrl); ?>" id="zfsas_send_form">
-    <?php echo zfsas_config_tools_markup('send', $configDir, $pageConfig); ?>
     <input type="hidden" name="return_to" value="<?php echo zfsas_send_h($defaultReturnUrl); ?>">
     <?php if ($csrfToken !== '') : ?>
     <input type="hidden" name="csrf_token" value="<?php echo zfsas_send_h($csrfToken); ?>">
     <?php endif; ?>
 
 <section class="ui-card"><div class="ui-card-heading"><div><h2>Replication jobs</h2><p class="muted">Each job keeps its own checkpoint chain for safe incremental transfers.</p></div><button type="button" class="btn btn-primary" id="open-new-job">Add job</button></div>
+<p id="dataset-discovery-status" role="status" aria-live="polite">Discovering ZFS datasets…</p>
 <div id="replication-job-list"></div>
 <div id="replication-job-storage" hidden><?php if (count($formJobs) === 0) : ?>
         <div class="zfsas-send-empty">No ZFS send jobs are configured yet. Add one below, then save.</div>
@@ -176,7 +176,7 @@
     </details>
 <dialog id="new-job-dialog" aria-labelledby="new-job-title"><div class="ui-dialog-header"><h2 id="new-job-title">Add replication job</h2><button type="button" data-close-dialog>Cancel</button></div><p class="muted">Add the job to this form, then Save replication to activate it.</p>      <div class="zfsas-send-add-row">
         <div class="zfsas-send-field">
-          <p id="dataset-discovery-status" class="zfsas-send-help"></p><label for="new_job_source">Source dataset</label>
+          <label for="new_job_source">Source dataset</label>
           <select id="new_job_source" name="new_job_source" class="zfsas-send-select">
             <option value="">Select source dataset</option>
             <?php foreach ($availableDatasets as $dataset) : ?>
@@ -239,6 +239,7 @@
       <button type="button" class="btn btn-primary" id="save_send_btn" <?php if (($_GET['saved'] ?? '') === '1' && !$isPostRequest) : ?>data-show-saved="1"<?php endif; ?>>Save replication</button>
       <noscript><button type="submit" class="btn btn-primary">Save replication</button></noscript>
     </div>
+    <?php echo zfsas_config_tools_markup('send', $configDir, $pageConfig); ?>
   </form>
 <script src="/plugins/zfs.snapsync/js/config-tools.js"></script>
 

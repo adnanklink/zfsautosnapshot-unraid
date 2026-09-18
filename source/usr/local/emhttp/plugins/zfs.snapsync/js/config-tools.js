@@ -17,11 +17,14 @@
     document.addEventListener('DOMContentLoaded', function(){ if(!touched) { baseline = values(); update(); } }, {once:true});
     function update() {
       form.dataset.dirty = String(values() !== baseline);
+      status.hidden = values() === baseline;
+      if (discard) discard.hidden = values() === baseline;
       status.textContent = values() === baseline ? 'All changes saved.' : 'Unsaved changes — choose Save to apply.';
       var value = prefix.value.trim(), other = options.otherPrefix;
       var conflict = !value || !other || value.indexOf(other) === 0 || other.indexOf(value) === 0;
       prefix.setCustomValidity(conflict ? 'Prefixes must differ and neither may begin with the other.' : '');
       feedback.textContent = 'Other configured prefix: ' + other + '. ' + (conflict ? 'Conflict: neither prefix may be the beginning of the other. Automatic cleanup and replication are blocked until resolved.' : 'Prefixes are separate.');
+      feedback.hidden = !conflict;
       feedback.style.color = conflict ? '#b42318' : '';
     }
     form.addEventListener('input', update);

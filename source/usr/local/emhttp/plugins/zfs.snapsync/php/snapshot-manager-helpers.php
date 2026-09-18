@@ -264,10 +264,10 @@ function zfsas_sm_exec_lines($command, &$exitCode = null)
 function zfsas_sm_list_datasets(&$error = null)
 {
     $error = null;
-    $command = 'zfs list -H -o name -t filesystem,volume';
+    $command = 'timeout -k 2 15 zfs list -H -o name -t filesystem,volume';
     $lines = zfsas_sm_exec_lines($command, $exitCode);
     if ($exitCode !== 0) {
-        $error = 'Unable to list ZFS datasets.';
+        $error = in_array($exitCode, [124, 137], true) ? 'ZFS dataset discovery timed out. Check pool availability and retry.' : 'Unable to list ZFS datasets.';
         return [];
     }
 

@@ -2,6 +2,8 @@
 <PLUGIN name="zfs.snapsync" author="Brandon Stone" version="__VERSION__" icon="zfs-snapsync.png" pluginURL="__BASE_URL__/zfs.snapsync.plg" support="https://github.com/adnanklink/zfsautosnapshot-unraid/issues" min="6.12.0" launch="Settings/ZFSSnapSync">Plain-English ZFS snapshot scheduling, retention cleanup, and low-space protection for Unraid.
   <CHANGES>
 ### __VERSION__ (__BUILD_DATE__)
+- Fix indefinite Browse loading and add prominent dataset discovery status with retry.
+- Align Refresh datasets and move tuning defaults to compact bottom controls.
 - Standalone ZFS SnapSync identity, configuration, runtime paths and update manifest.
 - Independent default snapshot prefixes and manual hold tag; no automatic import of original plugin work.
 - Coordinator-owned deletion and batch journals with verified cancellation and RAM-only runtime history.

@@ -3,6 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 # Endpoint fixtures intentionally write production paths; require disposable isolation.
 [[ -f /.dockerenv ]] || { echo 'Run this suite in the disposable test container.' >&2; exit 1; }
+bash tests/reliability/dataset_discovery.sh
 bash tests/reliability/cancellation.sh
 bash tests/reliability/ownership.sh
 bash tests/reliability/send_manifest.sh

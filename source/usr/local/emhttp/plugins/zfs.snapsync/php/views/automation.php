@@ -9,7 +9,6 @@
   <?php endif; ?>
 
   <form method="post" action="<?php echo h($saveApiUrl); ?>" data-ajax-action="<?php echo h($saveApiUrl); ?>" id="zfsas_settings_form">
-    <?php echo zfsas_config_tools_markup('auto', $configDir, $pageConfig); ?>
     <input type="hidden" name="return_to" value="<?php echo h($defaultSettingsReturnUrl); ?>">
     <?php if ($csrfToken !== '') : ?>
     <input type="hidden" name="csrf_token" value="<?php echo h($csrfToken); ?>">
@@ -20,7 +19,7 @@
           Check the datasets you want this plugin to manage. Only checked datasets are included in automated snapshot cleanup and creation.
         </div>
 
-        <p id="dataset-discovery-status" class="zfsas-help">Saved selections are shown while datasets load.</p>
+        <p id="dataset-discovery-status" role="status" aria-live="polite">Saved selections are shown while datasets load.</p>
           <div class="zfsas-dataset-toolbar">
             <div class="zfsas-pool-filter">
               <label for="dataset_name_filter">Dataset search</label><input id="dataset_name_filter" type="search" class="zfsas-input">
@@ -237,6 +236,7 @@
         <noscript><button type="submit" class="btn btn-primary">Save automation</button></noscript>
       </div>
 
+    <?php echo zfsas_config_tools_markup('auto', $configDir, $pageConfig); ?>
   </form>
 <script src="/plugins/zfs.snapsync/js/config-tools.js"></script>
 </div>

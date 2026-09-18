@@ -5,6 +5,13 @@ It answers one question: "What changed for me?"
 
 ## Development releases
 
+### 2026.09.18.02 (2026-09-18)
+
+- Browse snapshots discovers datasets without first scanning every snapshot; timeouts now show an actionable error.
+- Dataset discovery has visible loading, failure and retry states in Automation and Replication, with bounded server-side discovery.
+- Align Refresh datasets with the dataset selector.
+- Move Restore tuning defaults to a compact bottom control while retaining unsaved-change warnings and prefix validation.
+
 ### 2026.09.18.01 (2026-09-18)
 
 - First standalone ZFS SnapSync testing build on fix/coordinator-completion; separate plugin identity and configuration from ZFS Auto Snapshot.

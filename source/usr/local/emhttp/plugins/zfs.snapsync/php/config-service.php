@@ -135,7 +135,7 @@ function zfsas_config_tools_markup($kind, $dir, $pair = null)
         'prefixField' => $kind === 'send' ? 'send_snapshot_prefix' : 'prefix'];
     return '<input type="hidden" name="config_revision" value="' . $pair['revision'] . '">'
         . '<div data-config-tools="' . htmlspecialchars(json_encode($options), ENT_QUOTES, 'UTF-8') . '">'
-        . '<button type="button" class="btn" data-restore-tuning>Restore tuning defaults</button> '
+        . '<button type="button" class="btn" title="Populate tuning defaults in this form. Save to apply." data-restore-tuning>Restore tuning defaults</button> '
         . '<span data-dirty role="status"></span><p data-prefix-feedback role="status"></p>'
-        . '<p>Restore tuning defaults populates this form. Choose Save to apply.</p></div>';
+        . '</div>';
 }

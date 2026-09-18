@@ -7,17 +7,43 @@ summary.operations.push({id:'coordinator:native',nativeId:'native-run',type:'rep
 (async()=>{const browser=await chromium.launch({executablePath:'/usr/bin/chromium',args:['--no-sandbox']});try{
  for(const query of ['section=overview','section=snapshots','section=snapshots&tab=automation','section=replication','section=activity','section=tools','section=tools&tab=migrator','section=help']){
  const html=execFileSync('php',['-r','parse_str($argv[1],$_GET); require $argv[2];',query,plugin+'/php/workspace.php'],{encoding:'utf8'});
- const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];let summaryRequests=0,mutationRequests=0;page.on('pageerror',e=>errors.push(e.message));
+ const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];let summaryRequests=0,mutationRequests=0,discoveryRequests=0;page.on('pageerror',e=>errors.push(e.message));
  await page.route('http://workspace.test/**',async route=>{const url=new URL(route.request().url());
  if(/\.(js|css)$/.test(url.pathname))return route.fulfill({contentType:url.pathname.endsWith('.js')?'application/javascript':'text/css',body:fs.readFileSync(plugin+url.pathname.replace('/plugins/zfs.snapsync',''),'utf8')});
  if(url.pathname==='/')return route.fulfill({contentType:'text/html',body:html});
  let data={ok:true,probe:true,spec:{kind:'interval',seconds:21600},status:{},datasets:[{dataset:'tank/data',mountpoint:'/mnt/tank/data',pool:'tank',sendDestination:false}],snapshots:[],jobs:[],pausedSchedules:[],pendingDeleteCount:0,content:'Test log',logTail:[],docker:{runningContainers:[]}};
+ if(url.pathname.endsWith('dataset-inventory.php')){
+   discoveryRequests++;
+   if(discoveryRequests===1){await new Promise(resolve=>setTimeout(resolve,300));data={ok:false,error:'Test discovery failure'};}
+   if(discoveryRequests===3) await new Promise(resolve=>setTimeout(resolve,1200));
+ }
  if(url.pathname.endsWith('send-queue-action.php'))mutationRequests++;
  if(url.pathname.endsWith('workspace-summary.php')){summaryRequests++;data=summary;}
  if(url.pathname.endsWith('migrate-datasets-status.php') && url.searchParams.get('dataset'))data.preview={folders:[]};
  return route.fulfill({contentType:'text/plain',body:'ZFSAS_JSON_BEGIN'+JSON.stringify(data)+'ZFSAS_JSON_END'});
  });
- await page.goto('http://workspace.test/?'+query);await page.waitForTimeout(500);
+ await page.addInitScript(()=>{const original=window.setTimeout;window.setTimeout=(fn,ms,...args)=>original(fn,ms===20000?800:ms,...args);});
+ await page.goto('http://workspace.test/?'+query);
+ if(query==='section=snapshots' || query.endsWith('tab=automation') || query==='section=replication'){
+   const browse=query==='section=snapshots',status=page.locator(browse?'#notice':'#dataset-discovery-status');
+   assert.match(await status.textContent(),/Discovering/);
+   await page.waitForTimeout(400);assert.match(await status.textContent(),/discovery failed/i);
+   const retry=page.getByRole('button',{name:browse?'Refresh datasets':'Retry dataset discovery',exact:true});
+   assert(await retry.isVisible());await retry.click();
+   await page.waitForFunction(()=>document.querySelector('#notice')?.textContent.includes('Choose a dataset') || document.querySelector('#dataset-discovery-status')?.textContent.includes('datasets discovered'));
+   if(browse){
+     assert.equal(await page.locator('#dataset option').count(),2);
+     const bounds=await page.locator('#dataset').boundingBox(),button=await retry.boundingBox();
+     assert(Math.abs(bounds.y+bounds.height-button.y-button.height)<3,'Refresh button is misaligned');
+     await retry.click();await page.waitForTimeout(900);
+     assert.match(await status.textContent(),/timed out/);assert(await retry.isEnabled());
+     await retry.click();await page.waitForTimeout(100);assert.match(await status.textContent(),/Choose a dataset/);
+   }else{
+     assert.equal(await page.locator('[data-config-tools] button:visible').count(),1);
+     assert(await page.locator('[data-config-tools]').evaluate(el=>el===el.parentElement.lastElementChild));
+   }
+ }
+ await page.waitForTimeout(500);
  assert.equal(await page.locator('.zfsas-workspace').count(),1,query);assert.equal(await page.locator('h1').count(),1,query);assert.equal(await page.locator('iframe').count(),0);
  if(query==='section=overview'){const button=page.getByRole('button',{name:'Details',exact:true}).first();await button.click();await page.getByRole('button',{name:'Show available log'}).click();await page.waitForTimeout(2300);assert.match(await page.locator('#operation-detail-log').textContent(),/Test log/);await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.getElementById('operation-detail').open);assert(await button.evaluate(el=>el===document.activeElement));
  await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));});const previous=summaryRequests;await page.waitForTimeout(2200);assert.equal(summaryRequests,previous,'Hidden Overview polled');await page.evaluate(()=>{delete document.hidden;document.dispatchEvent(new Event('visibilitychange'));});}

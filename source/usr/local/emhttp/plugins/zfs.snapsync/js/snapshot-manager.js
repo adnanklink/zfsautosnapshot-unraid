@@ -21,7 +21,8 @@
       resources.get(resource).abort();
     }
     const controller = new AbortController(); resources.set(resource, controller);
-    const timer = setTimeout(() => controller.abort(), 20000);
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, 20000);
     const params = new URLSearchParams();
     Object.keys(data).forEach(key => {
       if (Array.isArray(data[key])) data[key].forEach(value => params.append(key + '[]', value));
@@ -36,7 +37,11 @@
       });
       const payload = parse(await response.text());
       if (!response.ok || !payload.ok) throw new Error(payload.error || 'Request failed.');
+      if (resources.get(resource) !== controller) return null;
       return payload;
+    } catch (error) {
+      if (timedOut) throw new Error("Request timed out. Try refreshing again.");
+      throw error;
     } finally {
       clearTimeout(timer);
       if (resources.get(resource) === controller) resources.delete(resource);
@@ -108,18 +113,30 @@
   function datasetOptions() {
     const query = $('dataset-search').value.toLowerCase(), pool = $('pool').value;
     const filtered = datasets.filter(row => (!pool || row.pool === pool) && row.dataset.toLowerCase().includes(query));
-    $('dataset').innerHTML = '<option value="">Choose a dataset</option>' + filtered.map(row => '<option value="' + escape(row.dataset) + '">' + escape(row.dataset) + ' (' + row.snapshotCount + ')</option>').join('');
+    $('dataset').innerHTML = '<option value="">Choose a dataset</option>' + filtered.map(row => '<option value="' + escape(row.dataset) + '">' + escape(row.dataset) + '</option>').join('');
     $('dataset').value = selection.dataset;
   }
   async function loadDatasets() {
+    if (resources.has('datasets')) return;
+    const button = $('reload-datasets');
+    button.disabled = true; button.textContent = 'Loading datasets…';
+    $('dataset').setAttribute('aria-busy', 'true');
+    notice('Discovering ZFS datasets…');
     try {
-      const payload = await request('datasets', 'snapshot-manager-list.php', {});
+      const payload = await request('datasets', 'dataset-inventory.php', {});
       if (!payload) return;
       datasets = payload.datasets;
       const pool = $('pool').value;
       $('pool').innerHTML = '<option value="">All pools</option>' + [...new Set(datasets.map(row => row.pool))].sort().map(pool => '<option>' + escape(pool) + '</option>').join('');
       $('pool').value = pool; datasetOptions();
-    } catch (error) { if (error.name !== 'AbortError') notice(error.message, true); }
+      notice(datasets.length ? 'Choose a dataset to browse its snapshots.' : 'No ZFS datasets found.');
+    } catch (error) {
+      if (!datasets.length) $('dataset').innerHTML = '<option value="">Dataset discovery unavailable</option>';
+      notice('Dataset discovery failed. ' + error.message + ' Use Refresh datasets to retry.', true);
+    } finally {
+      button.disabled = false; button.textContent = 'Refresh datasets';
+      $('dataset').setAttribute('aria-busy', 'false');
+    }
   }
   function changeContext(dataset, message) {
     selection.context(dataset); rows = []; page = 1;
