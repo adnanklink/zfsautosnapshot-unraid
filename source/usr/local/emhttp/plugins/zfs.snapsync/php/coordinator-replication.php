@@ -19,6 +19,19 @@ function zfsas_coordinator_replication_command(array $task, string $root, string
             }
         }
     }
+    if ($journal !== null && ($parameters['phase'] ?? '')==='replication_space') {
+        $manifest=$task['id'].':pressure';
+        if (isset($journal->state['plans'][$manifest]) && empty($journal->state['plans'][$manifest]['sealed'])) {
+            // Unsealed work has granted no deletion; a stopped preparation may
+            // build a fresh inventory rather than mixing two manifests.
+            foreach (array_keys($journal->state['plans']) as $key) {
+                if ($key===$manifest || str_starts_with($key,$manifest.':')) { unset($journal->state['plans'][$key]); }
+            }
+            $journal->commit();
+        }
+        $parameters['pressurePlanned']=!empty($journal->state['plans'][$task['id'].':pressure']['sealed']);
+        $parameters['pressureCandidate']=$journal->pressureCandidate($task['id']);
+    }
     $directory = $root . '/attempt-inputs';
     if (!is_dir($directory) && !mkdir($directory,0700,true)) { throw new RuntimeException('Cannot create replication capture directory.'); }
     $path = $directory . '/' . hash('sha256',$task['id']) . '.replication.json';

@@ -8,6 +8,7 @@ require_once __DIR__ . '/coordinator-deletion.php';
 require_once __DIR__ . '/coordinator-replication-inspect.php';
 require_once __DIR__ . '/coordinator-replication.php';
 require_once __DIR__ . '/coordinator-scheduled-replication.php';
+require_once __DIR__ . '/coordinator-send-scheduling.php';
 require_once __DIR__ . '/coordinator-batch.php';
 require_once __DIR__ . '/schedule-spec.php';
 require_once __DIR__ . '/snapshot-manager-helpers.php';
@@ -37,7 +38,7 @@ $submitAuto = static function (string $commandId, bool $manual, ?int $occurrence
     foreach ($journal->state['runs'] as $run) {
         if (ZfsasCoordinatorState::terminal($run['state'])) { continue; }
         foreach ($run['tasks'] as $id) {
-            if ($journal->state['tasks'][$id]['kind'] === 'auto') { return ['runId' => $run['id'], 'blocked' => 'schedule_active']; }
+            if ($journal->state['tasks'][$id]['kind'] === 'auto' && empty($journal->state['tasks'][$id]['parameters']['nativeSchedule'])) { return ['runId' => $run['id'], 'blocked' => 'schedule_active']; }
         }
     }
     return $journal->submit($commandId, ['manual' => $manual, 'schedule' => $manual ? '' : 'auto',
@@ -111,9 +112,19 @@ $handler = static function (array $request) use ($journal, $executor, $submitAut
         foreach ($runs as &$run) {
             $run['canRetry'] = $run['manual'] && in_array($run['state'],['failed','canceled'],true) && !empty($journal->state['tasks'][$run['id'].':prepare']['parameters']['replication']);
             $run['nativeReplication']=isset($journal->state['tasks'][$run['id'].':prepare']['parameters']['replication']) || !empty($journal->state['tasks'][$run['id'].':prepare']['parameters']['nativeSchedule']);
+            $run['cleanup'] = ['policy'=>'retention_only','deleted'=>0,'skipped'=>0,'phase'=>'','currentSnapshot'=>null,'requiredBytes'=>null,'availableBytes'=>null,'stopReason'=>''];
             $run['kinds'] = []; $run['taskStatus'] = []; $run['blockedReasons'] = []; $run['nextRetry'] = null; $run['recoveryRequired'] = false;
             foreach ($run['tasks'] as $id) {
                 $task = $journal->state['tasks'][$id];
+                if (isset($task['parameters']['cleanupPolicy']['mode'])) { $run['cleanup']['policy']=$task['parameters']['cleanupPolicy']['mode']; }
+                if (isset($task['parameters']['pressure'])) {
+                    if ($task['state']==='complete') { $run['cleanup'][($task['result']['itemState'] ?? '')==='completed'?'deleted':'skipped']++; }
+                    else if (!ZfsasCoordinatorState::terminal($task['state'])) { $run['cleanup']['currentSnapshot']=$task['parameters']['deleteJob']['SNAPSHOT']; $run['cleanup']['phase']='anchor_deletion'; }
+                }
+                if (($task['parameters']['phase'] ?? '')==='replication_space') {
+                    foreach (['requiredBytes','availableBytes'] as $field) { if (isset($task['result'][$field])) { $run['cleanup'][$field]=$task['result'][$field]; } }
+                    if ($task['state']==='failed') { $run['cleanup']['stopReason']=$task['result']['message'] ?? ''; }
+                }
                 $run['kinds'][] = $task['kind'];
                 $run['taskStatus'][] = array_intersect_key($task, array_flip(['id','kind','dataset','state','attemptCount','retryAt','blocked','dependencies','references','progress','result']));
                 if ($task['blocked'] !== '') { $run['blockedReasons'][] = $task['blocked']; }
@@ -139,6 +150,18 @@ $handler = static function (array $request) use ($journal, $executor, $submitAut
     if ($action === 'retry') {
         if (!$loadConfig()) { throw new InvalidArgumentException('Configuration save is in progress. Retry the same command.'); }
         return zfsas_coordinator_retry_replication($journal,(string)($request['runId'] ?? ''),$config['revision'],$config['send']);
+    }
+    if ($action === 'replication_now') {
+        if (!$loadConfig()) { throw new InvalidArgumentException('Configuration save is in progress. Retry the same command.'); }
+        $command=$request['commandId'] ?? '';
+        if (!is_string($command) || !preg_match('/^[A-Za-z0-9_.:-]{1,100}$/D',$command)) { throw new InvalidArgumentException('Stable command ID required.'); }
+        $receipts=[];
+        foreach (zfsas_send_parse_jobs($config['send']['SEND_JOBS'] ?? '') as $job) {
+            if (($job['transport'] ?? 'local')!=='local') { continue; }
+            if (is_file(zfsas_ops_control_path('paused',$job['id']))) { $receipts[$job['id']]=['blocked'=>'paused']; continue; }
+            $receipts[$job['id']]=zfsas_coordinator_submit_schedule($journal,$job,$config,time(),true,$command.':'.$job['id']);
+        }
+        return ['commandId'=>$command,'runs'=>$receipts];
     }
     if ($action === 'scheduled_replication') {
         if (!$loadConfig()) { throw new InvalidArgumentException('Configuration save is in progress.'); }
@@ -207,7 +230,8 @@ $handler = static function (array $request) use ($journal, $executor, $submitAut
     throw new InvalidArgumentException('Unknown coordinator action.');
 };
 $calendar = [];
-$tick = static function (float $now) use ($journal, $executor, $root, $loadConfig, $submitAuto, $deletion, &$config, &$nextConfigCheck, &$nextPrune, &$calendar): float {
+$sendCalendars=[];
+$tick = static function (float $now) use ($journal, $executor, $root, $loadConfig, $submitAuto, $deletion, &$config, &$nextConfigCheck, &$nextPrune, &$calendar, &$sendCalendars): float {
     if ($now >= $nextConfigCheck) { $loadConfig(); $nextConfigCheck = $now + 30; }
     $executor->setLimits(['send'=>max(1,(int)$config['send']['SEND_MAX_PARALLEL']),'prepare'=>max(1,(int)$config['send']['SEND_PREP_EXTRA_WORKERS'])]);
     $schedule = $config['schedule']; $zone = $config['timezone']; $wall = time();
@@ -222,6 +246,10 @@ $tick = static function (float $now) use ($journal, $executor, $root, $loadConfi
     }
     if ($now >= $nextPrune) { $journal->prune($wall); zfsas_coordinator_prune_artifacts($journal, $root, zfsas_sm_batches_dir(), $wall); $nextPrune = $now + 3600; }
     $next = $calendar['next'];
+    try {
+        $sendNext=zfsas_coordinator_send_tick($journal,$config,$wall,$sendCalendars);
+        if ($sendNext!==null) { $next=min($next ?? PHP_INT_MAX,$sendNext); }
+    } catch (InvalidArgumentException $error) { $sendCalendars['error']=$error->getMessage(); }
     return min($deletion->tick($now), $executor->tick($now), $nextConfigCheck, $next === null ? $now + 30 : $now + max(.1, $next - $wall));
 };
 $server = new ZfsasCoordinatorSocket($runtime . '/control.sock', $handler, $tick);

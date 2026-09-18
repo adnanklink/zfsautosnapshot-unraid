@@ -17,6 +17,8 @@ is_valid_snapshot_name "${ATTEMPT_JOB[SNAPSHOT]}" || exit 1
 OUTCOME=validation_failure
 RESULT_STATE=failed
 RESULT_REASON=''
+RESULT_SEQUENCE=2
+PRESSURE_CAPTURE="$1.pressure.json"
 RESULT_MESSAGE='Deletion worker did not produce an explicit outcome.'
 queue_load_job_assoc() {
   local -n target="$2"
@@ -50,6 +52,23 @@ fail_delete_job() {
   [[ "$OUTCOME" == transient_failure ]] || OUTCOME=validation_failure
   RESULT_STATE=failed; RESULT_MESSAGE="$1"
 }
+coordinator_pressure_preflight() {
+  [[ "${ATTEMPT_JOB[CLEANUP_REASON]:-}" == low_space_anchor ]] || return 0
+  local message code=0
+  message="$(php /usr/local/emhttp/plugins/zfs.snapsync/php/replication-pressure-check.php "$PRESSURE_CAPTURE" 2>&1)" || code=$?
+  case "$code" in
+    0)
+      if ! printf '%s\n' '{}' | php "$CLIENT" pressure_authorize 2 >/dev/null; then
+        fail_delete_job 'Anchor deletion ownership expired.'
+        return 1
+      fi
+      RESULT_SEQUENCE=3
+      ;;
+    2) skip_delete_job "$message"; return 1 ;;
+    4) OUTCOME=wait; RESULT_REASON=space; RESULT_MESSAGE="$message"; return 1 ;;
+    *) fail_delete_job "$message"; return 1 ;;
+  esac
+}
 cleanup_attempt() { release_dataset_gates || true; }
 trap cleanup_attempt EXIT
 trap 'exit 143' TERM
@@ -64,5 +83,5 @@ elif ! unraid_array_actionable; then
 else
   process_delete_job
 fi
-php -r '$r=["outcome"=>$argv[1],"itemState"=>$argv[2],"message"=>substr($argv[3],0,4096)];if($argv[1]==="wait"){$r["reason"]=$argv[4];$r["delay"]=1;}echo json_encode($r);' \
-  "$OUTCOME" "$RESULT_STATE" "$RESULT_MESSAGE" "$RESULT_REASON" | php "$CLIENT" result 2 >/dev/null
+php -r '$r=["outcome"=>$argv[1],"itemState"=>$argv[2],"message"=>substr($argv[3],0,4096)];if($argv[1]==="wait"){$r["reason"]=$argv[4];$r["delay"]=$argv[4]==="space"?5:1;}echo json_encode($r);' \
+  "$OUTCOME" "$RESULT_STATE" "$RESULT_MESSAGE" "$RESULT_REASON" | php "$CLIENT" result "$RESULT_SEQUENCE" >/dev/null

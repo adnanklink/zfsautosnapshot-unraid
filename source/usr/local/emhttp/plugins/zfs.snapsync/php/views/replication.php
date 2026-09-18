@@ -36,6 +36,7 @@
               <th>Children</th>
               <th>Transport</th>
               <th>Destination free-space target</th>
+              <th>Low-space retention</th>
               <th style="width:90px;">Remove</th>
             </tr>
           </thead>
@@ -78,6 +79,14 @@
                   <?php endif; ?>
                 </td>
                 <td><input class="zfsas-send-input" name="job_threshold[<?php echo (int) $index; ?>]" value="<?php echo zfsas_send_h($job['threshold']); ?>"></td>
+                <td>
+                  <?php $cleanupMode=zfsas_send_cleanup_mode($config,$job); ?>
+                  <select class="zfsas-send-select" name="job_cleanup_policy[<?php echo (int)$index; ?>]">
+                    <option value="retention_only" <?php echo $cleanupMode==='retention_only'?'selected':''; ?>>Preserve retained snapshots</option>
+                    <option value="older_anchors" <?php echo $cleanupMode==='older_anchors'?'selected':''; ?>>Delete older retained snapshots when space is needed (local only)</option>
+                  </select>
+                  <div class="zfsas-send-help">Enabling this permanently removes older daily/weekly restore points, oldest first, until the space target is met. The keep-all window, newest checkpoint and required replication references remain protected. Only this job's snapshots on the receiving dataset are eligible.</div>
+                </td>
                 <td>
                   <input type="hidden" name="job_remove[<?php echo (int) $index; ?>]" value="0" class="zfsas-send-remove-flag">
                   <button type="button" class="btn zfsas-send-remove-row">Remove</button>

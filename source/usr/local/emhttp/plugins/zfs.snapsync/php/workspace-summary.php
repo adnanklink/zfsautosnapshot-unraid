@@ -28,7 +28,7 @@ function zfsas_workspace_summary(): array
             $result['operations'][] = ['id' => 'coordinator:' . $run['id'], 'nativeId' => $run['id'], 'coordinator'=>true,'manual'=>$run['manual'] ?? false,'type' => $auto ? 'auto' : ($replication ? 'replication' : 'batch'),
                 'title' => $auto ? 'Automatic snapshots' : ($replication ? 'Replication' : 'Snapshot batch'), 'source' => implode(', ', array_unique($datasets)),
                 'destination' => '', 'state' => $run['state'], 'message' => implode(' ', array_unique($details)),
-                'createdAt' => $run['createdAt'], 'finishedAt' => $run['finishedAt'], 'progress' => null,
+                'cleanup'=>$run['cleanup'] ?? null, 'createdAt' => $run['createdAt'], 'finishedAt' => $run['finishedAt'], 'progress' => null,
                 'blocked' => $run['blockedReasons'] ?? [], 'retryAt' => $run['nextRetry'] ?? null,
                 'recoveryRequired' => $run['recoveryRequired'] ?? false,
                 'actions' => !in_array($run['state'], array_merge($terminal, ['canceling']), true) ? ['cancel'] : (!empty($run['canRetry']) ? ['retry'] : []),

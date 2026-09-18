@@ -3,6 +3,7 @@ if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 require_once __DIR__ . '/coordinator-worker-client.php';
 require_once __DIR__ . '/replication-plan.php';
 require_once __DIR__ . '/send-helpers.php';
+require_once __DIR__ . '/replication-pressure.php';
 try {
     zfsas_coordinator_worker_report('progress',2,['phase'=>'replication_validation','message'=>'Revalidating captured replication identities.']);
     $path = $argv[1] ?? ''; $task = getenv('ZFSAS_TASK_ID');
@@ -24,6 +25,10 @@ try {
                 $result['message'] = 'Verified expected receiver snapshot and dataset GUIDs.';
             } elseif (in_array($phase,['replication_space','replication_transfer'],true)) {
                 if (!$complete) { $result = zfsas_replication_space($parameters); }
+                if (!$complete && $phase === 'replication_space' && ($result['outcome'] ?? '')==='validation_failure' && ($result['reason'] ?? '')==='space') {
+                    $sequence=3;
+                    $result=zfsas_replication_pressure_proposal($parameters,$result,$sequence);
+                }
                 if (!$complete && $phase === 'replication_transfer' && $result['outcome'] === 'success') {
                     $rate = $parameters['rateLimit'] ?? '0';
                     if (zfsas_send_normalize_rate_limit($rate) === null || ($rate !== '0' && !trim((string)shell_exec('command -v mbuffer 2>/dev/null')))) {

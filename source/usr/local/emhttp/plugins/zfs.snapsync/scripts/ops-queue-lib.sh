@@ -1626,6 +1626,7 @@ claim_send_job_path_for_launch() {
 
   printf -v "$result_job_id_var" ''
   job_load "$path" launch_job || return 1
+  legacy_local_send_job launch_job && return 1
   job_id="$(job_get launch_job JOB_ID)"
   [[ -n "$job_id" ]] || return 1
   acquire_job_claim "$job_id" || return 1
@@ -4489,6 +4490,7 @@ enqueue_scheduled_send_jobs_due_locked() {
   run_group_id="scheduled-${requested_epoch}"
 
   for job_id in "${SCHEDULE_JOB_IDS[@]}"; do
+    [[ "${SCHEDULE_TRANSPORT[$job_id]:-local}" == local ]] && continue
     schedule_paused "$job_id" && continue
     frequency="${SCHEDULE_FREQUENCY[$job_id]}"
     if [[ -n "${configured_due[$job_id]+set}" ]]; then
@@ -4728,6 +4730,40 @@ send_job_needs_preflight() {
   return 1
 }
 
+# Local replication is admitted exclusively by the native coordinator.
+retire_unstarted_local_send_jobs() {
+  local path id
+  local -A retired_job=()
+  while IFS= read -r path; do
+    job_load "$path" retired_job || continue
+    legacy_local_send_job retired_job || continue
+    case "${retired_job[STATE]:-}" in queued|retry_wait) ;; *) continue ;; esac
+    id="${retired_job[JOB_ID]:-}"
+    [[ -n "$id" ]] || continue
+    job_claim_active "$id" && continue
+    acquire_job_claim "$id" || continue
+    if job_load "$path" retired_job; then
+      case "${retired_job[STATE]:-}" in
+        queued|retry_wait)
+          retired_job[STATE]=failed
+          retired_job[PHASE]=coordinator_cutover
+          retired_job[MESSAGE]='Local execution moved to the coordinator. This old queue entry will not replay; review interrupted manual transfers before Retry.'
+          if [[ -n "${retired_job[ATTEMPT_TOKEN]:-}" || "${retired_job[JOB_MODE]:-}" == manual_snapshot ]]; then
+            retired_job[RECOVERY_REQUIRED]=1
+          fi
+          job_write "$path" retired_job || { release_job_claim "$id"; return 1; }
+          ;;
+      esac
+    fi
+    release_job_claim "$id"
+  done < <(list_job_files)
+}
+
+legacy_local_send_job() {
+  local -n legacy_job_ref="$1"
+  [[ "${legacy_job_ref[JOB_TYPE]:-}" == send && "${legacy_job_ref[SEND_TRANSPORT]:-${legacy_job_ref[TRANSPORT]:-local}}" == local ]]
+}
+
 send_job_matches_selector() {
   local assoc_name="$1"
   local selector="${2:-any}"
@@ -4735,6 +4771,7 @@ send_job_matches_selector() {
   local -n job_ref="$assoc_name"
   local action
 
+  legacy_local_send_job "$assoc_name" && return 1
   action="${job_ref[JOB_ACTION]:-}"
   case "$selector" in
     pool_prep)

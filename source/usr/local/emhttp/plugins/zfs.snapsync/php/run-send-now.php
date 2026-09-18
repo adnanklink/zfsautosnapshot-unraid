@@ -2,6 +2,7 @@
 require_once __DIR__ . '/response-helpers.php';
 require_once __DIR__ . '/send-helpers.php';
 require_once __DIR__ . '/send-queue-helpers.php';
+require_once __DIR__ . '/coordinator-client.php';
 
 $configPath = '/boot/config/plugins/zfs.snapsync/zfs_send.conf';
 $defaults = [
@@ -51,16 +52,18 @@ if (count($jobs) === 0) {
     ], 409);
 }
 
-$kickError = null;
-if (!zfsas_ops_start_queue_kicker($kickError, ['--manual-now'])) {
-    zfsas_emit_marked_json([
-        'ok' => false,
-        'error' => $kickError ?: 'Unable to queue a manual ZFS send run.',
-    ], 500);
+$commandId=$_POST['command_id'] ?? 'manual-send-'.bin2hex(random_bytes(16));
+try {
+    if (!is_string($commandId) || !preg_match('/^[A-Za-z0-9_.:-]{1,100}$/D',$commandId)) { throw new InvalidArgumentException('Invalid command ID.'); }
+    zfsas_coordinator_ensure();
+    $response=zfsas_coordinator_request(['action'=>'replication_now','commandId'=>$commandId]);
+    if (!$response['ok']) { throw new RuntimeException($response['error'] ?? 'Coordinator rejected submission.'); }
+    $network=array_filter($jobs,static fn($job)=>($job['transport'] ?? 'local')!=='local');
+    $kickError=null;
+    $networkQueued=!$network || zfsas_ops_start_queue_kicker($kickError,['--manual-now','--network-only']);
+    zfsas_emit_marked_json(['ok'=>true,'commandId'=>$commandId,'runs'=>$response['result']['runs'],
+        'jobCount'=>count($jobs),'networkQueued'=>$networkQueued,
+        'message'=>$networkQueued ? 'Replication requests accepted. Follow progress in Activity.' : 'Local requests accepted; network queue failed: '.$kickError]);
+} catch (Throwable $error) {
+    zfsas_emit_marked_json(['ok'=>false,'commandId'=>$commandId,'error'=>$error->getMessage()],503);
 }
-
-zfsas_emit_marked_json([
-    'ok' => true,
-    'message' => 'Manual ZFS send queue kick started. Scheduled send jobs due for this run are being enqueued.',
-    'jobCount' => count($jobs),
-]);

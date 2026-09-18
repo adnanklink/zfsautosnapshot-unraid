@@ -35,6 +35,7 @@ try{
                 $plan=zfsas_replication_plan($request,$result['inspection'],$p['revision'],$p['rateLimit']);
                 if ($result['inspection']['mode']!=='already_received' && is_array($p['cleanupPolicy'] ?? null)) {
                     foreach (['space','transfer'] as $phase) { $plan['tasks'][$phase]['parameters']['freeSpaceFloor']=$p['cleanupPolicy']['freeSpaceFloor'] ?? '0G'; }
+                    $plan['tasks']['space']['parameters']['cleanupPolicy']=$p['cleanupPolicy'];
                     $cleanup=zfsas_replication_cleanup($request,$result['inspection'],$p['cleanupPolicy']);
                     $plan['tasks']['space']['dependencies']=array_keys($cleanup);
                     $plan['tasks']=$cleanup+$plan['tasks'];

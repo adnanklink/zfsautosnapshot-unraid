@@ -61,6 +61,16 @@ final class ZfsasCoordinatorDeletion
             || !in_array($job['DELETE_SCOPE'], ['snapshot','destination_checkpoint'], true)) {
             $this->quarantine($line); return null;
         }
+        if (!str_starts_with($job['JOB_ID'],'sm-') && $job['SEND_SCHEDULE_JOB_ID']!=='') {
+            $config=zfsas_send_parse_config_file(zfsas_ops_plugin_config_dir().'/zfs_send.conf',zfsas_send_defaults());
+            foreach (zfsas_send_parse_jobs($config['SEND_JOBS'] ?? '') as $schedule) {
+                if ($schedule['id']===$job['SEND_SCHEDULE_JOB_ID'] && ($schedule['transport'] ?? 'local')==='local') {
+                    // Old inbox entries carry no native run authority. Keep them
+                    // for review rather than replaying old local cleanup plans.
+                    $this->quarantine($line); return null;
+                }
+            }
+        }
         $owner = '';
         if (preg_match('/^sm-([a-f0-9]{32})-/', $job['JOB_ID'], $match)) {
             $receipt = $this->journal->state['commands']['batch-' . $match[1]] ?? null;
@@ -217,6 +227,9 @@ final class ZfsasCoordinatorDeletion
             $approval = ['version'=>1, 'taskId'=>$task['id'], 'jobId'=>$job['JOB_ID'],
                 'batch'=>$parent['parameters']['batch'], 'item'=>$item['spec']];
             self::publish($path . '.approval.json', json_encode($approval, JSON_THROW_ON_ERROR));
+        }
+        if (isset($task['parameters']['pressure'])) {
+            self::publish($path.'.pressure.json',json_encode(['taskId'=>$task['id'],'job'=>$job,'pressure'=>$task['parameters']['pressure']],JSON_THROW_ON_ERROR));
         }
         $text = "JOB_TYPE=\"delete\"\n";
         foreach ($job as $key => $value) { $text .= $key . '="' . str_replace(['\\','"'], ['\\\\','\\"'], $value) . '"' . "\n"; }

@@ -43,7 +43,20 @@ summary.operations.push({id:'coordinator:native',nativeId:'native-run',type:'rep
  assert.match(batchRequest.postData(),/action=cancel/);assert.match(batchRequest.postData(),/run_id=batch-run/);
  await page.keyboard.press('Escape');
  }
- if(query==='section=replication'){await page.locator('#open-new-job').click();assert(await page.locator('#new-job-dialog').evaluate(el=>el.open));await page.keyboard.press('Escape');}
+ if(query==='section=replication'){
+ await page.locator('#open-new-job').click();assert(await page.locator('#new-job-dialog').evaluate(el=>el.open));
+ await page.locator('#new_job_source').evaluate(el=>el.add(new Option('tank/anchor-test','tank/anchor-test')));
+ await page.selectOption('#new_job_source','tank/anchor-test');await page.fill('#new_job_destination','backup/anchor-test');
+ await page.locator('#zfsas_add_send_job').click();
+ await page.getByRole('button',{name:'Edit',exact:true}).last().click();
+ const policy=page.locator('#job-editor-body select[name^="job_cleanup_policy["]');
+ assert.equal(await policy.inputValue(),'retention_only','New job inherited cleanup authority');
+ await policy.selectOption('older_anchors');await page.locator('#cancel-job-edit').click();
+ await page.getByRole('button',{name:'Edit',exact:true}).last().click();
+ assert.equal(await policy.inputValue(),'retention_only','Cancel did not restore cleanup policy');
+ await policy.selectOption('older_anchors');await page.locator('#finish-job-edit').click();
+ assert.equal(await page.locator('#zfsas_send_jobs_body select[name^="job_cleanup_policy["]').last().inputValue(),'older_anchors','Editor lost explicit opt-in');
+ }
  if(query.endsWith('tab=migrator')){await page.selectOption('#migrate_dataset','tank/data');assert(await page.locator('#migrate_start').isDisabled());await page.locator('#migrate_preview').click();await page.waitForTimeout(100);await page.locator('#migrate-review-confirm').check();assert(await page.locator('#migrate_start').isEnabled());}
  fs.mkdirSync('/tmp/zfsas-ui-screenshots',{recursive:true});const name=query.replaceAll(/[=&]/g,'-');await page.screenshot({path:'/tmp/zfsas-ui-screenshots/'+name+'-light.png',fullPage:true});
  await page.evaluate(()=>document.body.style.backgroundColor='rgb(25,25,25)');await page.waitForTimeout(50);await page.screenshot({path:'/tmp/zfsas-ui-screenshots/'+name+'-dark.png',fullPage:true});

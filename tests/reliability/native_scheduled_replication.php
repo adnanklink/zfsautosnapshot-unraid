@@ -10,10 +10,19 @@ exec('/bin/mount -t tmpfs -o size=8m tmpfs /boot',$mountOutput,$mountCode);check
 $config='/boot/config/plugins/zfs.snapsync';@mkdir($config,0770,true);
 file_put_contents($config.'/zfs_snapsync.conf',"DATASETS=\"\"\nPREFIX=\"snapsync-auto-\"\n");
 $id='abcdef123456';
-file_put_contents($config.'/zfs_send.conf',"SEND_SNAPSHOT_PREFIX=\"snapsync-send-\"\nSEND_KEEP_ALL_FOR_DAYS=\"0\"\nSEND_KEEP_DAILY_UNTIL_DAYS=\"0\"\nSEND_KEEP_WEEKLY_UNTIL_DAYS=\"0\"\nSEND_JOBS=\"$id|{$argv[1]}|{$argv[2]}|1d|0G|1|local\"\n");
+$anchors=getenv('ZFSAS_TEST_ANCHOR')==='1';
+$daily=$anchors?'1':'0';$weekly=$anchors?'2':'0';
+$policies=json_encode(['version'=>1,'jobs'=>(object)($anchors?[$id=>'older_anchors']:[])]);
+file_put_contents($config.'/zfs_send.conf',"SEND_SNAPSHOT_PREFIX=\"snapsync-send-\"\nSEND_KEEP_ALL_FOR_DAYS=\"0\"\nSEND_KEEP_DAILY_UNTIL_DAYS=\"$daily\"\nSEND_KEEP_WEEKLY_UNTIL_DAYS=\"$weekly\"\nSEND_CLEANUP_POLICIES='$policies'\nSEND_JOBS=\"$id|{$argv[1]}|{$argv[2]}|1d|0G|1|local\"\n");
+// This fixture submits an explicit occurrence; keep the autonomous timer in the future.
+file_put_contents($config.'/zfs_send.conf', "SEND_SCHEDULE_SPECS='".json_encode(['abcdef123456'=>['version'=>1,'kind'=>'interval','seconds'=>21600,'anchor'=>time()]])."'\n", FILE_APPEND);
 @mkdir('/var/local/emhttp',0770,true);file_put_contents('/var/local/emhttp/var.ini','mdState="STARTED"');
 exec('/bin/mount -o remount,ro /boot',$mountOutput,$mountCode);check($mountCode===0,'Cannot protect flash fixture');
-$daemon=proc_open([PHP_BINARY,$plugin.'/coordinator-daemon.php'],[1=>['file','/tmp/snapsync-schedule-daemon.log','a'],2=>['file','/tmp/snapsync-schedule-daemon.log','a']],$pipes);
+$daemonCommand=[PHP_BINARY,$plugin.'/coordinator-daemon.php'];
+if (getenv('ZFSAS_TRACE_ANCHOR')==='1') {
+ $daemonCommand=array_merge(['/trace-tools/ld-linux-x86-64.so.2','--library-path','/trace-tools','/trace-tools/strace','-D','-f','-yy','-s','512','-e','trace=%file','-o','/trace-output/anchor-files.log'],$daemonCommand);
+}
+$daemon=proc_open($daemonCommand,[1=>['file','/tmp/snapsync-schedule-daemon.log','a'],2=>['file','/tmp/snapsync-schedule-daemon.log','a']],$pipes);
 try{
  until(function(){try{return rpc(['action'=>'status']);}catch(Throwable $e){return false;}});
  $request=['action'=>'scheduled_replication','scheduleId'=>$id,'commandId'=>'recursive-fixture','occurrence'=>100];
@@ -30,6 +39,7 @@ try{
   check($source===$target,'Recursive child GUID differs');
  }
  $cleanupTasks=array_filter($run['taskStatus'],fn($task)=>$task['kind']==='delete');
+ if ($anchors) { check(str_contains(json_encode($run['taskStatus']),':pressure-'),'Retained anchor was not deleted through the pressure gate'); }
  check(count($cleanupTasks)===1,'Native graph omitted prerequisite retention');
  $cleanupId=reset($cleanupTasks)['id'];$spaceTask=null;
  foreach($run['taskStatus'] as $task){if(str_ends_with($task['id'],':member-00000:space'))$spaceTask=$task;}

@@ -37,7 +37,7 @@ trait ZfsasCoordinatorWorkerState
         $type = $request['type'] ?? '';
         $payload = $request['payload'] ?? null;
         if (!is_int($sequence) || $sequence < 1 || !is_array($payload)
-            || !in_array($type, ['progress', 'result', 'plan', 'plan_chunk', 'plan_seal', 'item_chunk', 'item_start', 'item_result'], true)) {
+            || !in_array($type, ['progress', 'result', 'plan', 'plan_chunk', 'plan_seal', 'item_chunk', 'item_start', 'item_result', 'pressure_chunk', 'pressure_seal', 'pressure_authorize'], true)) {
             throw new InvalidArgumentException('Invalid worker publication.');
         }
         $fingerprint = hash('sha256', json_encode(self::canonical(['type' => $type, 'payload' => $payload]), JSON_THROW_ON_ERROR));
@@ -50,7 +50,9 @@ trait ZfsasCoordinatorWorkerState
             throw new InvalidArgumentException('Out-of-order or conflicting worker publication.');
         }
         $response = ['accepted'=>true, 'sequence'=>$sequence];
-        if (str_starts_with($type, 'item_')) {
+        if (str_starts_with($type, 'pressure_')) {
+            $response += $this->reportPressure($taskId, $type, $payload);
+        } elseif (str_starts_with($type, 'item_')) {
             $response += $this->reportItem($taskId, $token, $type, $payload, $now);
         } elseif ($type === 'progress') {
             if (array_diff(array_keys($payload), ['phase', 'message', 'percent'])

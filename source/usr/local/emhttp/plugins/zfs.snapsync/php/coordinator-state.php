@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . "/coordinator-worker-state.php";
+require_once __DIR__ . "/coordinator-pressure.php";
 require_once __DIR__ . "/coordinator-journal.php";
 require_once __DIR__ . "/coordinator-indexes.php";
 require_once __DIR__ . "/coordinator-items.php";
@@ -7,7 +8,7 @@ require_once __DIR__ . "/coordinator-references.php";
 /** Single-writer, boot-local coordinator state. Never place this under /boot. */
 final class ZfsasCoordinatorState
 {
-    use ZfsasCoordinatorWorkerState, ZfsasCoordinatorJournal, ZfsasCoordinatorIndexes, ZfsasCoordinatorItems, ZfsasCoordinatorReferences;
+    use ZfsasCoordinatorPressure, ZfsasCoordinatorWorkerState, ZfsasCoordinatorJournal, ZfsasCoordinatorIndexes, ZfsasCoordinatorItems, ZfsasCoordinatorReferences;
     private string $root;
     private $lock;
     public array $state;
@@ -46,6 +47,21 @@ final class ZfsasCoordinatorState
             $existing = $this->state['commands'][$command];
             if (!hash_equals($existing['fingerprint'], $fingerprint)) { throw new InvalidArgumentException('Command ID already has different parameters.'); }
             return $existing;
+        }
+        $coordinationKey=$spec['coordinationKey'] ?? '';
+        if ($coordinationKey!=='') {
+            self::identifier($coordinationKey);
+            foreach ($this->state['runs'] as $run) {
+                if (($run['coordinationKey'] ?? $run['schedule'])===$coordinationKey && !self::terminal($run['state'])) {
+                    $receipt=['runId'=>$run['id'],'blocked'=>'schedule_active'];
+                    if (!empty($spec['manual'])) {
+                        $receipt+=['commandId'=>$command,'fingerprint'=>$fingerprint,'context'=>$spec['receiptData'] ?? []];
+                        $this->state['commands'][$command]=$receipt;
+                        $this->commit();
+                    }
+                    return $receipt;
+                }
+            }
         }
         $schedule = $spec['schedule'] ?? '';
         if ($schedule !== '') {
@@ -97,7 +113,7 @@ final class ZfsasCoordinatorState
             if (isset($task['items'])) { $this->registerItems($id, $task['items']); }
             $this->registerReferences($id, $task['references'] ?? []);
         }
-        $this->state['runs'][$runId] = ['id' => $runId, 'commandId' => $command, 'schedule' => $schedule,
+        $this->state['runs'][$runId] = ['id' => $runId, 'commandId' => $command, 'schedule' => $schedule, 'coordinationKey'=>$coordinationKey,
             'occurrence' => $spec['occurrence'] ?? null, 'revision' => $spec['revision'] ?? '',
             'manual' => (bool) ($spec['manual'] ?? false), 'createdAt' => $now, 'finishedAt' => null,
             'state' => 'queued', 'tasks' => $ids];
@@ -210,6 +226,7 @@ final class ZfsasCoordinatorState
     public function result(string $taskId, string $token, array $result, float $monotonic, int $now, bool $stopped): bool
     {
         if (!$stopped || !$this->owned($taskId, $token)) { return false; }
+        $result = $this->pressureOutcome($taskId, $result, $monotonic);
         $outcome = $result['outcome'] ?? '';
         if (!in_array($outcome, ['success', 'transient_failure', 'validation_failure', 'wait'], true)) { throw new InvalidArgumentException('Explicit task outcome required.'); }
         if ($outcome === 'wait' && !in_array($result['reason'] ?? '', ['dependency', 'resource', 'array', 'configuration', 'space'], true)) {

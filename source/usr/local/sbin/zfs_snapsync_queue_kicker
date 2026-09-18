@@ -38,6 +38,7 @@ enqueue_all_scheduled_jobs_now() {
   run_group_id="manual-${now_epoch}"
 
   for job_id in "${SCHEDULE_JOB_IDS[@]}"; do
+    [[ "${SCHEDULE_TRANSPORT[$job_id]:-local}" == local ]] && continue
     schedule_job_blocked "$job_id" && continue
     scheduled_send_job_zfs_actionable "$job_id" readiness_message || {
       log "Deferring manual send ${job_id}; ZFS source/destination is not ready: ${readiness_message}"
@@ -75,10 +76,11 @@ enqueue_all_scheduled_jobs_now() {
 }
 
 main() {
-  local now_epoch manual_now=0
+  local now_epoch manual_now=0 network_only=0
 
   while (( $# > 0 )); do
     case "$1" in
+      --network-only) network_only=1 ;;
       --manual-now)
         manual_now=1
         ;;
@@ -98,9 +100,17 @@ main() {
   zfsas_log_send_runtime_stamp "queue_kicker"
   log "Queue kicker $$ starting"
 
+  retire_unstarted_local_send_jobs
   reconcile_stale_jobs
   prune_old_jobs
 
+  if (( network_only == 0 )); then
+    if (( manual_now == 1 )); then
+      php /usr/local/emhttp/plugins/zfs.snapsync/php/coordinator-client.php replication_now || exit 1
+    else
+      php /usr/local/emhttp/plugins/zfs.snapsync/php/coordinator-client.php watchdog || exit 1
+    fi
+  fi
   now_epoch="$(date +%s)"
   if (( manual_now == 1 )); then
     enqueue_all_scheduled_jobs_now "$now_epoch"

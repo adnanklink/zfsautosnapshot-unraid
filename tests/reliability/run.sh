@@ -10,6 +10,7 @@ bash tests/reliability/send_snapshot_intent.sh
 bash tests/reliability/destination.sh
 bash tests/reliability/dependencies.sh
 bash tests/reliability/send_occurrences.sh
+bash tests/reliability/local_send_cutover.sh
 php tests/reliability/settings_endpoints.php
 php tests/reliability/snapshots.php
 php tests/reliability/batch_item_recovery.php
@@ -19,6 +20,9 @@ php tests/reliability/replication_inspection.php
 php tests/reliability/replication_membership.php
 php tests/reliability/replication_snapshot.php
 php tests/reliability/replication_cleanup.php
+php tests/reliability/retention_anchor_policy.php
+php tests/reliability/coordinator_pressure.php
+php tests/reliability/coordinator_send_scheduling.php
 php tests/reliability/replication_space.php
 php tests/reliability/replication_schedule_plan.php
 php tests/reliability/native_replication_plan.php

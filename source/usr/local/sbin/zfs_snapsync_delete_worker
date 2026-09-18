@@ -679,6 +679,10 @@ process_delete_job() {
       return 0
     fi
   fi
+  if declare -F coordinator_pressure_preflight >/dev/null && ! coordinator_pressure_preflight; then
+    release_dataset_gates
+    return 0
+  fi
   process_delete_job_locked
   release_dataset_gates
 }

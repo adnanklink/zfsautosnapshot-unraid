@@ -681,6 +681,7 @@ const pageOptions = JSON.parse(document.getElementById('replication-options').te
         '<td><select name="job_children[' + index + ']" class="zfsas-send-select">' + childrenOptions + '</select></td>' +
         '<td><select name="job_transport[' + index + ']" class="zfsas-send-select">' + transportOptions + '</select></td>' +
         '<td><input class="zfsas-send-input" name="job_threshold[' + index + ']" value="' + escapeHtml(threshold) + '"></td>' +
+        '<td><select class="zfsas-send-select" name="job_cleanup_policy[' + index + ']"><option value="retention_only">Preserve retained snapshots</option><option value="older_anchors">Delete older retained snapshots when space is needed (local only)</option></select><div class="zfsas-send-help">Permanently removes older daily/weekly restore points on this receiving dataset. Preserves the keep-all window, newest checkpoint and required references.</div></td>' +
         '<td><input type="hidden" name="job_remove[' + index + ']" value="0" class="zfsas-send-remove-flag"><button type="button" class="btn zfsas-send-remove-row">Remove</button></td>';
       if (jobsBody) {
         jobsBody.appendChild(row);
@@ -783,6 +784,7 @@ const pageOptions = JSON.parse(document.getElementById('replication-options').te
     saveButton.removeAttribute('data-show-saved');
   }
 
+  var pendingRunCommand = null;
   if (runButton) {
     runButton.addEventListener('click', function () {
       if (runBusy) {
@@ -790,11 +792,12 @@ const pageOptions = JSON.parse(document.getElementById('replication-options').te
       }
       runBusy = true;
       runButton.disabled = true;
+      pendingRunCommand = pendingRunCommand || ('manual-send-' + crypto.randomUUID());
       setRunStatus('Starting manual ZFS send run...', false);
 
       requestJsonPost(
         runApiUrl,
-        {},
+        {command_id: pendingRunCommand},
         function (data) {
           runBusy = false;
           runButton.disabled = false;
@@ -802,6 +805,7 @@ const pageOptions = JSON.parse(document.getElementById('replication-options').te
             setRunStatus('Manual ZFS send start failed: Unexpected response.', true);
             return;
           }
+          pendingRunCommand = null;
           setRunStatus((typeof data.message === 'string' && data.message.length > 0) ? data.message : 'Manual ZFS send started.', false);
           loadQueueJobs();
         },

@@ -32,6 +32,8 @@ echo 'PASS: exhausted send occurrence stays accepted after history clearing; nex
 rm "$CONFIG_DIR/send-control/paused/$schedule" "$OPS_JOBS_DIR/running.job"
 SCHEDULE_JOB_IDS=("$schedule")
 SCHEDULE_FREQUENCY["$schedule"]=6h
+# Network admission retains this legacy path; local timing is tested in PHP.
+SCHEDULE_TRANSPORT["$schedule"]=ssh
 SEND_SCHEDULE_SPECS='{"abcdef123456":{"version":1,"kind":"interval","seconds":21600,"anchor":1000}}'
 scheduled_send_job_zfs_actionable() { printf -v "$2" unavailable; printf 'probe\n' >> "$fixture/readiness"; return 1; }
 log() { :; }

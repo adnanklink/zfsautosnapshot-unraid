@@ -21,10 +21,11 @@ function zfsas_coordinator_ensure(): void
 if (PHP_SAPI === 'cli' && realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     try {
         $action = $argv[1] ?? 'watchdog';
-        if (!in_array($action, ['watchdog', 'reload', 'auto', 'delete', 'status', 'cancel', 'resume'], true)) { throw new InvalidArgumentException('Unknown coordinator command.'); }
+        if (!in_array($action, ['watchdog', 'reload', 'auto', 'replication_now', 'delete', 'status', 'cancel', 'resume'], true)) { throw new InvalidArgumentException('Unknown coordinator command.'); }
         if ($action !== 'status') { zfsas_coordinator_ensure(); }
         $request = ['action' => $action];
         if ($action === 'auto') { $request['commandId'] = $argv[2] ?? 'manual-auto-' . bin2hex(random_bytes(16)); }
+        if ($action === 'replication_now') { $request['commandId']=$argv[2] ?? 'manual-send-'.bin2hex(random_bytes(16)); }
         if ($action === 'cancel') { $request['runId'] = $argv[2] ?? ''; }
         $response = zfsas_coordinator_request($request);
         if ($action !== 'watchdog' || !$response['ok']) { echo json_encode($response, JSON_THROW_ON_ERROR) . "\n"; }

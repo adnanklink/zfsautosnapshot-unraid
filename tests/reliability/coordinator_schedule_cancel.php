@@ -7,6 +7,8 @@ function rpc($r){return zfsas_coordinator_request($r);}
 $config='/boot/config/plugins/zfs.snapsync';@mkdir($config,0770,true);
 file_put_contents($config.'/zfs_snapsync.conf',"DATASETS=\"\"\n");
 file_put_contents($config.'/zfs_send.conf',"SEND_JOBS=\"abcdef123456|tank/data|backup/data|1d|0G|0|local\"\n");
+// This fixture submits an explicit occurrence; keep the autonomous timer in the future.
+file_put_contents($config.'/zfs_send.conf', "SEND_SCHEDULE_SPECS='".json_encode(['abcdef123456'=>['version'=>1,'kind'=>'interval','seconds'=>21600,'anchor'=>time()]])."'\n", FILE_APPEND);
 @mkdir('/var/local/emhttp',0770,true);file_put_contents('/var/local/emhttp/var.ini','mdState="STOPPED"');
 $daemon=proc_open([PHP_BINARY,$plugin.'/coordinator-daemon.php'],[1=>['file','/tmp/schedule-cancel.log','a'],2=>['file','/tmp/schedule-cancel.log','a']],$pipes);
 try{

@@ -70,7 +70,7 @@ function zfsas_replication_space(array $parameters, ?callable $read=null, ?calla
                 'message'=>'Waiting for measured ZFS freeing work before rechecking destination space.'];
         }
 
-        return ['outcome'=>'validation_failure','reason'=>'space','message'=>"Insufficient destination space: need $required bytes including margin, measured $available available. No further cleanup is authorized by this plan; free space or review cleanup and Retry."];
+        return ['outcome'=>'validation_failure','reason'=>'space','requiredBytes'=>$required,'availableBytes'=>(int)$available,'message'=>"Insufficient destination space: need $required bytes including margin, measured $available available. No further cleanup is authorized by this plan; free space or review cleanup and Retry."];
     }
     return ['outcome'=>'success','requiredBytes'=>$required,'availableBytes'=>(int)$available];
 }
