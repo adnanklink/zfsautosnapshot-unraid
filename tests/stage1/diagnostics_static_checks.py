@@ -36,7 +36,7 @@ def main() -> int:
     )
     assert_contains(
         settings,
-        "https://github.com/adnanklink/zfssnapsync-auto-unraid/issues",
+        "https://github.com/adnanklink/zfsautosnapshot-unraid/issues",
         "Help tab must link to the repository's GitHub issues page",
     )
     assert_contains(
