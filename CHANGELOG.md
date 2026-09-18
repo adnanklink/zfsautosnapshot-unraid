@@ -5,6 +5,10 @@ It answers one question: "What changed for me?"
 
 ## Development releases
 
+### 2026.09.18.06 (2026-09-18)
+
+- Update install, update, source, and support links for the renamed `adnanklink/zfssnapsync-unraid` repository.
+
 ### 2026.09.18.05 (2026-09-18)
 
 - Align Activity toolbar controls and Automation filters and action buttons.

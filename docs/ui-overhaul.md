@@ -25,4 +25,4 @@ No new persistent runtime store is introduced. Runtime history disappears on reb
 
 ## Installation and updates
 
-Install `https://raw.githubusercontent.com/adnanklink/zfsautosnapshot-unraid/feat/ui-overhaul/dist/zfs.autosnapshot.plg` through **Plugins → Install Plugin** to switch to this preview. It is the same plugin identity and retains configuration; do not install two copies under different names. Let current jobs finish first. Preview clients receive later preview releases through Check for Updates. Clients on `fix/job-coordination` remain on that branch until explicitly switched.
+Install `https://raw.githubusercontent.com/adnanklink/zfssnapsync-unraid/feat/ui-overhaul/dist/zfs.autosnapshot.plg` through **Plugins → Install Plugin** to switch to this preview. It is the same plugin identity and retains configuration; do not install two copies under different names. Let current jobs finish first. Preview clients receive later preview releases through Check for Updates. Clients on `fix/job-coordination` remain on that branch until explicitly switched.
